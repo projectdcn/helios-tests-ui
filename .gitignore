@@ -1,0 +1,8 @@
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+results/
+*.egg-info/
+# real rack inventories carry hostnames; keep them local
+inventory/*.local.yaml

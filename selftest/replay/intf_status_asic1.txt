@@ -1,0 +1,7 @@
+     Interface  Lanes            Speed   MTU  FEC  Alias   Vlan    Oper  Admin  Type  Asym PFC
+--------------  ---------------  -----  ----  ---  ------  ------  ----  -----  ----  --------
+   Ethernet256  0,1,2,3,4,5,6,7   400G  9100   rs  etp0    trunk   up    up     OSFP  N/A
+   Ethernet264  0,1,2,3,4,5,6,7   400G  9100   rs  etp1    trunk   up    up     OSFP  N/A
+   Ethernet272  0,1,2,3,4,5,6,7   400G  9100   rs  etp2    trunk   up    up     OSFP  N/A
+   Ethernet280  0,1,2,3,4,5,6,7   400G  9100   rs  etp3    trunk   up    up     OSFP  N/A
+Ethernet-BP256  100,101           400G  9100   rs  Eth-BP  routed  up    up     N/A   N/A

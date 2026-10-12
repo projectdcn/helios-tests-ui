@@ -1,0 +1,126 @@
+# Helios full rack: 6 switch trays (2 ASICs each) + 18 compute trays (4 GPUs each).
+# Copy to inventory/<rack>.local.yaml (git-ignored) and fill in hosts/credentials.
+# Values marked VERIFY are placeholders — calibrate them on the first rack run.
+rack: helios-fullrack
+
+transport:
+  kind: ssh            # ssh | replay
+  connect_timeout: 15
+
+defaults:
+  switch:
+    user: admin
+    password_env: HELIOS_SWITCH_PASSWORD   # or key_file: ~/.ssh/helios
+  compute:
+    user: root
+    key_file: ~/.ssh/id_ed25519
+    gpus: 4
+
+switches:
+  - {name: sw1, host: helios-sw1}
+  - {name: sw2, host: helios-sw2}
+  - {name: sw3, host: helios-sw3}
+  - {name: sw4, host: helios-sw4}
+  - {name: sw5, host: helios-sw5}
+  - {name: sw6, host: helios-sw6}
+
+computes:
+  - {name: c01, host: helios-c01}
+  - {name: c02, host: helios-c02}
+  - {name: c03, host: helios-c03}
+  - {name: c04, host: helios-c04}
+  - {name: c05, host: helios-c05}
+  - {name: c06, host: helios-c06}
+  - {name: c07, host: helios-c07}
+  - {name: c08, host: helios-c08}
+  - {name: c09, host: helios-c09}
+  - {name: c10, host: helios-c10}
+  - {name: c11, host: helios-c11}
+  - {name: c12, host: helios-c12}
+  - {name: c13, host: helios-c13}
+  - {name: c14, host: helios-c14}
+  - {name: c15, host: helios-c15}
+  - {name: c16, host: helios-c16}
+  - {name: c17, host: helios-c17}
+  - {name: c18, host: helios-c18}
+  # per-GPU accelerator addresses for {src_addr}/{dst_addr} in commands.l2ping, e.g.
+  #   gpu_addrs: ["02:00:00:01:00:00", "02:00:00:01:00:01", ...]
+
+afm:                    # used by L2+ tranches; L1 does not need it
+  url: https://helios-afm:443
+  verify_tls: false
+  auth:
+    kind: session       # session | bearer | none
+    login_path: /v1/login                    # VERIFY
+    username_env: HELIOS_AFM_USER
+    password_env: HELIOS_AFM_PASSWORD
+  endpoints: {}         # VERIFY: filled in from the AFM API reference
+
+commands:
+  l2ping:
+    # VERIFY: the L2 ping tool AFM's ping check.sh uses. Placeholders:
+    #   {src_name} {src_gpu} {src_addr} {dst_name} {dst_host} {dst_gpu} {dst_addr}
+    cmd: null
+    success_regex: " 0% packet loss"
+    cross_pairs: ring    # ring (both directions) | all
+    timeout_s: 30
+  transferbench:
+    # VERIFY: plan says "2a 1G constrained to an explicit IFoE port subset".
+    in_domain: null      # e.g. "TransferBench a2a {size}"   placeholders: {name} {gpus} {ports} {size}
+    cross_domain: null   # placeholders: {src_name} {dst_name} {src_host} {dst_host} {gpus} {ports} {size}
+    ports: ""
+    size: 1G
+    bw_regex: null       # null = built-in defaults; set if the summary line differs
+    cross_pairs: ring
+    timeout_s: 600
+  rccl:
+    tests_dir: /opt/rccl-tests
+    collectives: [all_reduce, all_gather, reduce_scatter, alltoall, broadcast]
+    min_bytes: 1K
+    max_bytes: 1G
+    iters: 20
+    in_domain: "{rccl_tests_dir}/build/{collective}_perf -b {min_bytes} -e {max_bytes} -f 2 -g {gpus} -n {iters}"
+    # VERIFY: MPI flags / RCCL env for IFoE cross-domain
+    cross_domain: null   # placeholders: {np} {hostlist} {nodes} {collective} {rccl_tests_dir} {min_bytes} {max_bytes} {iters}
+    timeout_s: 900
+  switch:
+    fan_power: null      # platform-specific; prints "<fan> <watts>" per line
+
+thresholds:
+  switch:
+    namespaces: [asic0, asic1]
+    firmware_components: [BIOS, CPLD, FPGA]
+    fwutil_components: [BIOS, CPLD]
+    platform: {}         # e.g. {HwSKU: "...", ASIC: broadcom}
+    expected_fans: null  # VERIFY chassis fan count per tray
+    expected_psus: null  # VERIFY
+    fan_speed_pct: {min: 10, max: 100}
+    fan_speed_max_spread_pct: 20
+    fan_read_tolerance_pct: 10
+    hot_min_fan_pct: 60
+    stability: {samples: 6, interval_s: 10}
+    psu_voltage: {min: 11.4, max: 12.6}     # used only when STATE_DB has no thresholds
+    psu_current_max_a: null
+    psu_power_max_w: null
+    psu_capacity_w: null                    # VERIFY rated output per PSU
+    psu_redundant_spares: 1
+    psu_load_balance_max_dev_pct: 30
+    psu_temp_max_c: 70
+    psu_led_ok: [green]
+    psu_input_type: null                    # AC | DC
+    cpu_stress_s: 60
+    expect_all_admin_up: false              # MCH racks leave unused ports disabled
+    expected_lldp_neighbors: null
+    interface_speed: 400G
+    interface_mtu: 9100
+    err_window_s: 30
+    max_err_delta: 0
+    max_err_absolute: null
+    min_vlans: 1
+    exclude_ports: []
+  datapath:
+    parallel_computes: true                 # in-domain jobs on all trays at once
+    parallel_pairs: false                   # cross-domain pairs one at a time
+    transferbench: {in_domain_min_gbps: null, cross_domain_min_gbps: null}
+    rccl: {}                                # e.g. {all_reduce_min_busbw_gbps: 150}
+    rccl_cross: {}

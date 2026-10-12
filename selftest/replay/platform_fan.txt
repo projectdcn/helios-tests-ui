@@ -1,0 +1,8 @@
+  Drawer  LED            FAN  Speed  Direction  Presence  Status  Timestamp
+--------  ---  -------------  -----  ---------  --------  ------  -----------------
+FanTray1  N/A  FanTray1_Fan1    42%  intake     Present   OK      20261009 10:00:00
+FanTray1  N/A  FanTray1_Fan2    41%  intake     Present   OK      20261009 10:00:00
+FanTray2  N/A  FanTray2_Fan1    44%  intake     Present   OK      20261009 10:00:00
+FanTray2  N/A  FanTray2_Fan2    43%  intake     Present   OK      20261009 10:00:00
+   PSU 1  N/A    PSU 1 FAN 1    35%  intake     Present   OK      20261009 10:00:00
+   PSU 2  N/A    PSU 2 FAN 1    36%  intake     Present   OK      20261009 10:00:00

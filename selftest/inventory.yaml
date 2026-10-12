@@ -1,0 +1,39 @@
+# Self-test inventory: replays canned outputs (selftest/replay) instead of SSH.
+#   pytest tests --inventory selftest/inventory.yaml
+rack: selftest
+transport:
+  kind: replay
+  dir: replay
+
+switches:
+  - name: sw1
+computes:
+  - name: c1
+    gpus: 4
+  - name: c2
+    gpus: 4
+
+commands:
+  l2ping:
+    cmd: "ping-gpu --src {src_gpu} --dst {dst_name}:{dst_gpu}"
+    success_regex: " 0% packet loss"
+  transferbench:
+    in_domain: "TransferBench a2a {size}"
+    cross_domain: "TransferBench a2a {size} --remote {dst_host}"
+  rccl:
+    in_domain: "{rccl_tests_dir}/build/{collective}_perf -b {min_bytes} -e {max_bytes} -f 2 -g {gpus} -n {iters}"
+    cross_domain: "mpirun -np {np} -H {hostlist} {rccl_tests_dir}/build/{collective}_perf -b {min_bytes} -e {max_bytes} -f 2 -g 1"
+
+thresholds:
+  switch:
+    expected_fans: 4
+    expected_psus: 2
+    psu_capacity_w: 3000
+    psu_current_max_a: 250
+    stability: {samples: 2, interval_s: 0}
+    err_window_s: 0
+    cpu_stress_s: 0
+    expected_lldp_neighbors: 8
+  datapath:
+    transferbench: {in_domain_min_gbps: 500, cross_domain_min_gbps: 500}
+    rccl: {all_reduce_min_busbw_gbps: 100}

@@ -1,0 +1,6 @@
+Chassis    Module  Component  Version   Description
+---------  ------  ---------  --------  --------------------------------
+HELIOS-SW  N/A     BIOS       5.29.0.1  BIOS - Basic Input/Output System
+                   CPLD1      0x0F      Main board CPLD
+                   CPLD2      0x0A      Fan board CPLD
+                   FPGA       1.4.2     System FPGA

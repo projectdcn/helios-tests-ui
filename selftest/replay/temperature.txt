@@ -1,0 +1,5 @@
+Sensor  Temperature  High TH  Low TH  Crit High TH  Crit Low TH  Warning  Timestamp
+------  -----------  -------  ------  ------------  -----------  -------  -----------------
+ ASIC0         52.0    105.0     N/A         115.0          N/A  False    20261009 10:00:00
+ ASIC1         54.0    105.0     N/A         115.0          N/A  False    20261009 10:00:00
+   CPU         41.0     95.0     N/A         105.0          N/A  False    20261009 10:00:00

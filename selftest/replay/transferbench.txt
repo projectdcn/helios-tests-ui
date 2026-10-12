@@ -1,0 +1,5 @@
+TransferBench v1.50
+Test 1: a2a  1073741824 bytes
+...
+Summary: 12 transfers
+Aggregate bandwidth (GPU Timed):   612.48 GB/s

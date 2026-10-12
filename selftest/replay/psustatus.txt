@@ -1,0 +1,4 @@
+PSU    Model        Serial      HW Rev  Voltage (V)  Current (A)  Power (W)  Status  LED
+-----  -----------  ----------  ------  -----------  -----------  ---------  ------  -----
+PSU 1  PWR-3000-AC  PSU1SN0001  A1            12.05        92.10    1110.00  OK      green
+PSU 2  PWR-3000-AC  PSU2SN0002  A1            12.04        88.40    1064.00  OK      green

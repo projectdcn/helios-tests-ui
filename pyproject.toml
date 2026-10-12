@@ -1,0 +1,26 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "helios-tests"
+version = "0.1.0"
+description = "Automated test suite for AMD Helios full-rack scale-up (AFM / IFoE / SONiC)"
+requires-python = ">=3.10"
+dependencies = [
+    "pytest>=7.4",
+    "paramiko>=3.4",
+    "PyYAML>=6.0",
+    "requests>=2.31",
+]
+
+[project.optional-dependencies]
+tools = ["openpyxl>=3.1"]
+
+[tool.setuptools.packages.find]
+include = ["helios*"]
+
+[tool.pytest.ini_options]
+addopts = "-ra"
+log_file_level = "DEBUG"
+log_file_format = "%(asctime)s %(levelname)s %(name)s: %(message)s"
