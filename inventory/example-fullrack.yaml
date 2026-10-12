@@ -154,6 +154,9 @@ thresholds:
     psu_input_type: null                    # AC | DC
     cpu_stress_s: 60
     expect_all_admin_up: false              # MCH racks leave unused ports disabled
+    expected_up_ports: null                 # TC-SWH-030: list or regex of cabled ports (mini racks); per-switch override allowed
+    psu_identity_exempt_re: null            # e.g. "^PDB HSC" on busbar-fed trays (no FRU model/serial)
+    psu_load_balance: true                  # false where supplies don't load-share (busbar main/standby HSC)
     expected_lldp_neighbors: null
     interface_speed: 400G
     interface_mtu: 9100
@@ -166,7 +169,7 @@ thresholds:
     traffic_window_s: 35                    # TC-SWA-075: long enough to include an LLDP interval
     min_pkts_delta: 1
     vlan_member_symmetry: true              # TC-SWA-079
-    lldp_required_on_all_up_ports: true     # TC-SWA-223
+    lldp_required_on_all_up_ports: false    # TC-SWA-223: GPU-facing ports don't speak LLDP
     restart_container: lldp                 # TC-SWA-140
     swss_restart_namespaces: null           # TC-SWA-141 (default: first ASIC only)
     recover_timeout_s: 300

@@ -230,9 +230,19 @@ def test_all_fans_present(switch, inventory, checks):
 
 # ------------------------------------------------------------------- PSUs
 
+def _identity_exempt(inventory, name: str) -> bool:
+    """Busbar-fed trays report PDB hot-swap controllers ("PDB HSC Main/Standby") as PSUs;
+    they have no FRU model/serial. ``switch.psu_identity_exempt_re`` names such entries."""
+    rx = inventory.th("switch.psu_identity_exempt_re")
+    return bool(rx and re.search(rx, name))
+
+
 @pytest.mark.tc("TC-SWH-007")
-def test_psu_model_and_serial(switch, checks):
-    for r in _psu_rows(switch):
+def test_psu_model_and_serial(switch, inventory, checks):
+    rows = [r for r in _psu_rows(switch) if not _identity_exempt(inventory, r.get("PSU", ""))]
+    if not rows:
+        pytest.skip(f"{switch.name}: every PSU entry is exempt from FRU identity (switch.psu_identity_exempt_re)")
+    for r in rows:
         for col in ("Model", "Serial"):
             checks.check(r.get(col, "").upper() not in BAD_VERSIONS, f"{switch.name}: {r['PSU']} {col} {r.get(col)!r}")
     checks.assert_all()
@@ -257,8 +267,8 @@ def test_psu_status_ok(switch, checks):
 
 
 @pytest.mark.tc("TC-SWH-020")
-def test_psu_model_and_manufacturer(switch, checks):
-    info = switch.psu_info()
+def test_psu_model_and_manufacturer(switch, inventory, checks):
+    info = {n: v for n, v in switch.psu_info().items() if not _identity_exempt(inventory, n)}
     assert info, f"{switch.name}: STATE_DB has no PSU_INFO"
     mfr_fields = ("manufacturer", "mfr_id", "vendor")
     if not any(f in v for v in info.values() for f in mfr_fields):
@@ -325,6 +335,8 @@ def test_psu_total_power_vs_capacity(switch, inventory, record_property):
 
 @pytest.mark.tc("TC-SWH-010")
 def test_psu_load_distribution(switch, inventory, checks):
+    if not inventory.th("switch.psu_load_balance", True):
+        pytest.skip(f"{switch.name}: supplies don't load-share on this platform (switch.psu_load_balance: false)")
     max_dev = inventory.th("switch.psu_load_balance_max_dev_pct", 30)
     loads = {n: to_float(v.get("power")) for n, v in _ok_psus(switch).items()}
     loads = {n: w for n, w in loads.items() if w is not None}
@@ -480,13 +492,33 @@ def test_multi_asic_namespaces(switch, inventory, checks):
 
 # ------------------------------------------------------------- interfaces
 
+def _expected_up(inventory, switch):
+    """``switch.expected_up_ports``: list of port names, or a regex string, for the ports that
+    are actually cabled (a mini rack leaves most fabric ports admin-up but unconnected).
+    Per-switch override: ``expected_up_ports`` on the switch's inventory entry."""
+    spec = switch.host.extra.get("expected_up_ports", inventory.th("switch.expected_up_ports"))
+    if spec is None:
+        return None
+    if isinstance(spec, str):
+        rx = re.compile(spec)
+        return lambda port: bool(rx.fullmatch(port))
+    names = set(spec)
+    return lambda port: port in names
+
+
 @pytest.mark.tc("TC-SWH-030")
 def test_interfaces_admin_oper_state(switch, inventory, checks):
     all_up = inventory.th("switch.expect_all_admin_up", False)
+    expected = _expected_up(inventory, switch)
     for ns, rows in switch.all_interfaces_status().items():
         checks.check(rows, f"{switch.name}/{ns}: no fabric interfaces listed")
         for r in rows:
             admin, oper = r.get("Admin", "").lower(), r.get("Oper", "").lower()
+            if expected is not None:
+                if expected(r["Interface"]):
+                    checks.check(admin == "up" and oper == "up",
+                                 f"{switch.name}/{ns}: {r['Interface']} expected up, admin {admin} oper {oper}")
+                continue
             if all_up:
                 checks.check(admin == "up", f"{switch.name}/{ns}: {r['Interface']} admin {admin}")
             if admin == "up":

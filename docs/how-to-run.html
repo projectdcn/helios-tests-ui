@@ -134,32 +134,78 @@ python3 -m venv .venv
 
 <section id="rack">
   <h2><span class="num">2</span>On a real rack</h2>
+
+  <h3>Before you start</h3>
+  <ul>
+    <li><strong>SSH:</strong> the machine you run from must reach every switch and compute on port 22. To check without logging in:
+      <div class="cmd"><pre>nc -z -G 3 &lt;host&gt; 22 &amp;&amp; echo open</pre></div></li>
+    <li><strong>Passwordless sudo:</strong> tests use <code>sudo -n</code>, so the SSH user on switches and computes needs sudo without a password. Otherwise those checks fail with "a password is required".</li>
+    <li><strong>ipmitool on the runner</strong> is needed only for the DC power-cycle case (TC-RAS-reset-008):
+      <div class="cmd"><pre>brew install ipmitool</pre></div></li>
+  </ul>
+
   <ol class="steps">
     <li>
-      <strong>Make your inventory.</strong> Files named <code>*.local.yaml</code> are git-ignored.
+      <strong>Make your inventory.</strong> Files named <code>*.local.yaml</code> are git-ignored, so hosts and usernames stay out of the repo.
       <div class="cmd"><pre>cp inventory/example-fullrack.yaml inventory/rack1.local.yaml</pre></div>
     </li>
     <li>
       <strong>Edit <code>inventory/rack1.local.yaml</code>.</strong>
       <ul>
         <li>Under <code>switches:</code> and <code>computes:</code>, set each <code>host:</code> to the real hostname or IP.</li>
-        <li>Under <code>defaults:</code>, set the SSH user, and either <code>key_file</code> or <code>password_env</code> for each node type.</li>
+        <li>Under <code>defaults:</code>, set the SSH user, and either <code>key_file</code> or <code>password_env</code> for each node type. Never put a password itself in the file.</li>
         <li>Fill in the <code>VERIFY</code> items: <code>commands.l2ping.cmd</code>, <code>commands.transferbench.in_domain</code> / <code>cross_domain</code>, <code>commands.rccl.cross_domain</code>, <code>commands.perftest.*</code>, <code>commands.ras.*</code>, <code>commands.ifoe.*</code> and <code>commands.metrics_exporter.run</code>.</li>
         <li>For the scale-out RDMA cases, add <code>rdma:</code> ports to the two computes named in <code>commands.perftest.nodes</code>. For DC/AC power cycles, add <code>bmc:</code> / <code>pdu_outlet:</code>.</li>
         <li>Set your pass limits under <code>thresholds:</code>, such as <code>expected_fans</code>, <code>expected_psus</code>, <code>psu_capacity_w</code> and the bandwidth floors.</li>
       </ul>
       <div class="note">Until a <code>VERIFY</code> command is set, the tests that need it skip and name the missing setting. They never guess a command.</div>
+      <p>A minimal inventory for a mini rack (1 switch tray, 2 compute trays) looks like this:</p>
+      <div class="cmd"><pre>rack: mini1
+transport: {kind: ssh}
+defaults:
+  switch:  {user: admin,     password_env: HELIOS_SWITCH_PASSWORD}
+  compute: {user: labadmin,  password_env: HELIOS_COMPUTE_PASSWORD, gpus: 4}
+switches:
+  - {name: st1, host: 10.0.0.83}
+computes:
+  - {name: c1, host: 10.0.0.81, bmc: 10.0.0.82}
+  - {name: c2, host: 10.0.0.86, bmc: 10.0.0.87}
+commands:
+  ras:
+    # -E makes ipmitool read $IPMI_PASSWORD, so the password never appears on a command line
+    dc_cycle: 'IPMI_PASSWORD="$HELIOS_BMC_PASSWORD" ipmitool -I lanplus -H {bmc} -U bmcuser -E chassis power cycle'
+thresholds:
+  switch: {expect_all_admin_up: false}</pre></div>
     </li>
     <li>
-      <strong>Export secrets,</strong> if you used <code>password_env</code>:
-      <div class="cmd"><pre>export HELIOS_SWITCH_PASSWORD='yourpassword'</pre></div>
+      <strong>Enter the passwords in your own terminal.</strong> <code>read -s</code> (zsh) shows nothing as you type and keeps the password out of shell history. Set only the ones your inventory names.
+      <div class="cmd"><pre>read -s "HELIOS_SWITCH_PASSWORD?Switch password: " &amp;&amp; export HELIOS_SWITCH_PASSWORD &amp;&amp; echo</pre></div>
+      <div class="cmd"><pre>read -s "HELIOS_COMPUTE_PASSWORD?Compute password: " &amp;&amp; export HELIOS_COMPUTE_PASSWORD &amp;&amp; echo</pre></div>
+      <div class="cmd"><pre>read -s "HELIOS_BMC_PASSWORD?BMC password: " &amp;&amp; export HELIOS_BMC_PASSWORD &amp;&amp; echo</pre></div>
+      <p class="muted">In bash, use <code>read -s -p "Switch password: " HELIOS_SWITCH_PASSWORD</code> instead.</p>
     </li>
     <li>
-      <strong>Run.</strong> Start small with one switch and two computes:
-      <div class="cmd"><pre>.venv/bin/pytest tests --inventory inventory/rack1.local.yaml --switches sw1 --computes c01,c02 -v</pre></div>
-      Then run the full L1 suite:
+      <strong>First run: read-only.</strong> Disruptive tests skip by default, and <code>-m "not stress"</code> also leaves out the CPU-load test. Nothing on the rack changes.
+      <div class="cmd"><pre>.venv/bin/pytest tests --inventory inventory/rack1.local.yaml -m "not stress" -v --log-file=results/first-run.log</pre></div>
+      <p class="muted"><code>--log-file</code> records every SSH command, its output, exit code and duration. Passwords are never logged.</p>
+      <div class="note">
+        <strong>What to expect on a first run:</strong>
+        <ul>
+          <li><strong>Real results:</strong> switch hardware, switch agent, HW-002, NTP/DNS/log checks, and the metrics exporter if it's already running.</li>
+          <li><strong>Skips with a reason:</strong> anything whose <code>VERIFY</code> command isn't set yet (datapath, RDMA, IFoE, RAS).</li>
+          <li><strong>Calibration failures:</strong> expected counts (fans, PSUs, LLDP neighbours, ASIC namespaces) and output formats that differ on this rack. Fix them in the inventory, not in the tests.</li>
+        </ul>
+      </div>
+    </li>
+    <li>
+      <strong>Then widen the run.</strong> Start small with one switch and two computes, then the full L1 suite:
+      <div class="cmd"><pre>.venv/bin/pytest tests --inventory inventory/rack1.local.yaml --switches st1 --computes c1,c2 -v</pre></div>
       <div class="cmd"><pre>.venv/bin/pytest tests -m l1 --inventory inventory/rack1.local.yaml --log-file=results/run.log</pre></div>
-      <p class="muted"><code>--log-file</code> records every SSH command, its exit code and how long it took.</p>
+    </li>
+    <li>
+      <strong>Disruptive tests last,</strong> once the read-only run is clean. These restart services, reset devices, reload drivers, reboot nodes or power-cycle them:
+      <div class="cmd"><pre>.venv/bin/pytest tests --inventory inventory/rack1.local.yaml --allow-disruptive --tc TC-SWA-140 -v</pre></div>
+      <p class="muted">Pick one case at a time with <code>--tc</code> at first; a power cycle takes a node away for several minutes.</p>
     </li>
   </ol>
   <h3>Skip passing <code>--inventory</code> every time</h3>

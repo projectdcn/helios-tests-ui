@@ -71,6 +71,20 @@ def build_command(cmd: str, sudo: bool = False, env: dict[str, Any] | None = Non
     return " ".join(prefix) + " bash -c " + shlex.quote(cmd)
 
 
+LOG_OUTPUT_LIMIT = 6000
+
+
+def _output_for_log(res: "CmdResult") -> str:
+    """Command output for the --log-file trace (head of stdout + stderr), so failures are diagnosable."""
+    parts = []
+    for label, text in (("stdout", res.stdout), ("stderr", res.stderr)):
+        text = text.rstrip()
+        if text:
+            cut = f"\n    ... [{len(text) - LOG_OUTPUT_LIMIT} more chars]" if len(text) > LOG_OUTPUT_LIMIT else ""
+            parts.append(f"\n  --- {label} ---\n" + "\n".join("    " + ln for ln in text[:LOG_OUTPUT_LIMIT].splitlines()) + cut)
+    return "".join(parts)
+
+
 class SshTransport:
     """One persistent paramiko connection per host; channels are opened per command
     so a single transport is safe to share across threads."""
@@ -136,7 +150,7 @@ class SshTransport:
             chan.close()
         res = CmdResult(self.host.name, cmd, rc, out.decode(errors="replace"),
                         err.decode(errors="replace"), time.monotonic() - start)
-        log.debug("[%s] rc=%s %.2fs", self.host.name, rc, res.duration)
+        log.debug("[%s] rc=%s %.2fs%s", self.host.name, rc, res.duration, _output_for_log(res))
         return res
 
     def close(self) -> None:

@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import csv
 import json
+import logging
 import os
 import time
 from collections import defaultdict
@@ -39,6 +40,8 @@ def pytest_addoption(parser):
 
 
 def pytest_configure(config):
+    # paramiko's DEBUG handshake chatter drowns the command trace in --log-file
+    logging.getLogger("paramiko").setLevel(logging.WARNING)
     for m in MARKERS:
         config.addinivalue_line("markers", m)
     path = config.getoption("--inventory")

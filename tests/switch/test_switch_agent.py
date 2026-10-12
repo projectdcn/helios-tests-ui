@@ -121,7 +121,9 @@ def test_lldp_discovers_links(switch, inventory, checks):
             continue
         st = switch.supervisor_status(ctr)
         checks.check(st.get("lldpd") == "RUNNING", f"{switch.name}: lldpd in {ctr} is {st.get('lldpd')}")
-        if inventory.th("switch.lldp_required_on_all_up_ports", True):
+        checks.check(switch.lldp_ports(ns), f"{switch.name}/{ns}: lldpd running but no neighbours discovered")
+        # GPU-facing scale-up ports don't speak LLDP, so this is opt-in (e.g. for switch-to-switch links).
+        if inventory.th("switch.lldp_required_on_all_up_ports", False):
             up = {r["Interface"] for r in switch.interfaces_status(ns) if r.get("Oper", "").lower() == "up"}
             missing = sorted(up - set(switch.lldp_ports(ns)))
             checks.check(not missing, f"{switch.name}/{ns}: oper-up ports without an LLDP neighbour: {missing[:20]}")

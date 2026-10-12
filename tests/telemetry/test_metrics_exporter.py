@@ -70,6 +70,18 @@ def _scrape(c, inventory):
     return status, headers, parse_prometheus(body), r
 
 
+CURL_ERRORS = {6: "cannot resolve host", 7: "connection refused - exporter not running / not listening on that port",
+               28: "timed out", 52: "empty reply", 56: "connection reset"}
+
+
+def _scrape_problem(status, r) -> str:
+    if status is not None:
+        return f"metrics endpoint returned HTTP {status}"
+    if r.rc in CURL_ERRORS:
+        return f"curl exit {r.rc}: {CURL_ERRORS[r.rc]}"
+    return f"scrape failed rc={r.rc} {r.tail(200)!r}"
+
+
 def _per_compute(computes, inventory, checks, fn):
     """Scrape every compute in parallel and hand (compute, samples) to ``fn``."""
     for c, res, exc in fan_out(lambda c: _scrape(c, inventory), computes):
@@ -77,7 +89,7 @@ def _per_compute(computes, inventory, checks, fn):
             checks.fail(f"{c.name}: scrape failed: {exc}")
             continue
         status, _, samples, r = res
-        if not checks.check(status == 200, f"{c.name}: metrics endpoint status {status} rc={r.rc} {r.tail(200)!r}"):
+        if not checks.check(status == 200, f"{c.name}: {_scrape_problem(status, r)}"):
             continue
         fn(c, samples)
 
@@ -137,7 +149,8 @@ def test_metrics_http_200_prometheus_format(computes, inventory, checks):
             checks.fail(f"{c.name}: {exc}")
             continue
         status, headers, samples, r = res
-        checks.check(status == 200, f"{c.name}: HTTP {status}")
+        if not checks.check(status == 200, f"{c.name}: {_scrape_problem(status, r)}"):
+            continue
         ctype = headers.get("content-type", "")
         checks.check(ctype.startswith("text/plain") or "openmetrics" in ctype,
                      f"{c.name}: Content-Type {ctype!r} is not Prometheus text")
