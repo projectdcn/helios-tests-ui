@@ -13,7 +13,7 @@ helios/                 framework
   sonic.py              SONiC switch driver (multi-ASIC: -n asicN, sonic-db-cli)
   compute.py            compute-tray driver + command-template rendering
   afm.py                AFM REST client (endpoint map comes from inventory)
-  parsers.py            SONiC tables, sonic-db-cli, rccl-tests, TransferBench, perftest
+  parsers.py            SONiC tables, sonic-db-cli, rccl-tests, TransferBench, perftest, Prometheus
   datapath.py           shared workloads: L2 ping, TransferBench, RCCL
   perftest.py           ib_*_bw server/client pairs for scale-out RDMA
   wait.py               polling helpers (recovery, reboot / SSH return)
@@ -25,6 +25,9 @@ tests/                  rack tests, each tagged @pytest.mark.tc("TC-...")
   hw/                   hardware (TC-HW)
   scaleout/             mortaro RDMA perftest (TC-IBS)
   ras/                  RAS datapath reset / reboot / power cycle (TC-RAS-reset)
+  telemetry/            AMD device-metrics-exporter (TC-CTL-139..150)
+  platform/             NTP, DNS, log rotation, topo logs, OOB names across reboot
+  ifoe/                 IFoE driver unload/reload (TC-AFM-LU-001, TC-HW-017)
 unit/                   offline tests + fault-injection self-test (no rack needed)
 selftest/               replay inventory + canned outputs (make_replay.py)
 inventory/              example-fullrack.yaml (copy to *.local.yaml)
@@ -49,9 +52,9 @@ These use recorded SONiC and GPU outputs from `selftest/replay`, so no hardware
 is needed.
 
 ```bash
-.venv/bin/pytest unit                                                       # unit tests + 28 injected-fault checks
-.venv/bin/pytest tests --inventory selftest/inventory.yaml                  # 102 pass, 13 skip (disruptive skipped)
-.venv/bin/pytest tests --inventory selftest/inventory.yaml --allow-disruptive   # 111 pass, 4 skip
+.venv/bin/pytest unit                                                       # unit tests + 48 injected-fault checks
+.venv/bin/pytest tests --inventory selftest/inventory.yaml                  # 116 pass, 18 skip (disruptive skipped)
+.venv/bin/pytest tests --inventory selftest/inventory.yaml --allow-disruptive   # 129 pass, 5 skip
 ```
 
 ### 2. On a real rack
@@ -103,8 +106,9 @@ export HELIOS_INVENTORY=inventory/rack1.local.yaml
 | Switch hardware tests only | `tests/l1/test_switch_hw.py` |
 | Datapath tests only (ping, TransferBench, RCCL) | `tests/l1/test_afm_datapath.py` |
 | Switch agent / hardware / RDMA / RAS only | `tests/switch` / `tests/hw` / `tests/scaleout` / `tests/ras` |
+| Metrics exporter / platform / IFoE driver only | `tests/telemetry` / `tests/platform` / `tests/ifoe` |
 | By level or marker | `-m l1` / `-m "l1 and not stress"` |
-| Tests that restart services, reset devices or reboot (TC-SWA-140/141, all RAS) | `--allow-disruptive` |
+| Tests that restart services, reset devices, reload drivers or reboot | `--allow-disruptive` |
 | Manual tests (e.g. the TC-SWH-009 heat test) | `--run-manual` |
 
 For example, to run only the PSU checks on `sw1` and `sw2`:
@@ -135,7 +139,7 @@ The table has one row per category:
 `--missing` also lists every case that has **no test yet**, with its ID, level
 and title.
 
-## Coverage (64 of 542 cases)
+## Coverage (83 of 542 cases)
 
 * **TC-SWH-001…036, switch hardware.** Firmware, fans, PSUs, platform/EEPROM,
   multi-ASIC namespaces, interface state/speed/MTU, error-counter deltas,
@@ -163,6 +167,21 @@ and title.
   TransferBench + RCCL; OS reboot, DC cycle (BMC) and AC cycle (PDU) of one
   node, then a datapath reset of the rest and cross-domain traffic.
   Not yet covered: 005/006 and 010…017, which need AFM's vPOD and reconfigure API.
+* **TC-CTL-139…150, GPU metrics exporter.** Container up and port 5000
+  bound (started with your `docker run` template if absent), HTTP 200 in
+  Prometheus format, per-GPU power, temperature, utilization and VRAM
+  (used + free = total), ECC (uncorrectable must be 0), PCIe, XGMI, NIC, RDMA
+  families, label sanity (sequential GPU IDs, hostname, one model), and a
+  disruptive restart and upgrade. Scraped with curl on each compute; metric
+  names are matched by regex families you can override.
+* **TC-CTL-035, 059, TC-BUG-022, TC-E2E-118, TC-BUG-021, node platform.** NTP
+  synchronized and clocks within 2 s of the runner on every node; DNS from the
+  controller nodes; syslog rotation scheduled and /var/log not filling up;
+  fresh topology logs under /var/log/pensando; OOB interface names and MACs
+  unchanged across a switch reboot (disruptive).
+* **TC-AFM-LU-001, TC-HW-017, IFoE driver.** Five unload/load cycles with GPU
+  health after each and a TransferBench before/after regression check; one
+  remove/re-add followed by L2 ping and TransferBench (both disruptive).
 
 Some cases can't be fully checked on generic SONiC:
 * TC-SWH-004 is passive: thermalctld must be running, and fans must ramp when
@@ -187,6 +206,9 @@ is unset skips with the key name; it never guesses:
   your perftest build
 * `commands.ras.datapath_reset` (defaults to the plan's `afmctl reset device --datapath`),
   `ready_check`, `partial_stations_down` / `_up`, `dc_cycle`, `ac_cycle`
+* `commands.ifoe.unload` / `load` / `loaded_check`: the IFoE kernel module name
+* `commands.metrics_exporter.run` (and `upgrade` / `upgrade_image`), plus
+  `thresholds.metrics.families` if your exporter's metric names differ
 * `thresholds.switch.expected_fans`, `expected_psus`, `psu_capacity_w`, and the
   bandwidth floors (`datapath.*`, including `perftest.min_gbps`)
 

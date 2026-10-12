@@ -419,3 +419,117 @@
 - cmd: '(^|/)\w+_perf |mpirun '
   rc: 0
   file: rccl.txt
+- cmd: ^timedatectl\ show\ \-p\ NTPSynchronized\ \-\-value$
+  rc: 0
+  stdout: 'yes
+
+    '
+- cmd: ^date\ \+%s\.%N$
+  rc: 0
+  stdout: '@@NOW@@
+
+    '
+- cmd: ^cat\ /etc/resolv\.conf$
+  rc: 0
+  stdout: 'search lab.example
+
+    nameserver 10.0.0.53
+
+    '
+- cmd: '^getent hosts '
+  rc: 0
+  stdout: '10.0.0.10       helios-afm.lab.example
+
+    '
+- cmd: ^cat\ /etc/logrotate\.conf\ /etc/logrotate\.d/\*\ 2>/dev/null$
+  rc: 0
+  host: ^sw
+  stdout: "weekly\nrotate 4\n/var/log/syslog\n{\n    size 100M\n    rotate 5\n    compress\n}\n"
+- cmd: ^systemctl\ is\-active\ logrotate\.timer$
+  rc: 0
+  host: ^sw
+  stdout: 'active
+
+    '
+- cmd: ^ls\ /etc/cron\.d\ /etc/cron\.daily\ /etc/cron\.hourly\ 2>/dev/null$
+  rc: 0
+  host: ^sw
+  stdout: '/etc/cron.d:
+
+    '
+- cmd: ^df\ \-\-output=pcent\ /var/log\ \|\ tail\ \-1$
+  rc: 0
+  host: ^sw
+  stdout: ' 23%
+
+    '
+- cmd: '^find /var/log/pensando '
+  rc: 0
+  host: ^sw
+  file: topo_find.txt
+- cmd: ^ip\ \-o\ link\ show$
+  rc: 0
+  host: ^sw
+  file: ip_link.txt
+- cmd: '^curl -s -m 15 -D - '
+  rc: 0
+  host: ^c1$
+  file: metrics_c1.txt
+- cmd: ^hostname$
+  rc: 0
+  host: ^c1$
+  stdout: 'c1.lab.example
+
+    '
+- cmd: ^hostname\ \-s$
+  rc: 0
+  host: ^c1$
+  stdout: 'c1
+
+    '
+- cmd: '^curl -s -m 15 -D - '
+  rc: 0
+  host: ^c2$
+  file: metrics_c2.txt
+- cmd: ^hostname$
+  rc: 0
+  host: ^c2$
+  stdout: 'c2.lab.example
+
+    '
+- cmd: ^hostname\ \-s$
+  rc: 0
+  host: ^c2$
+  stdout: 'c2
+
+    '
+- cmd: ^docker\ ps\ \-\-filter\ name=\^device\-metrics\-exporter\$\ \-\-format\ '\{\{\.Names\}\}'$
+  rc: 0
+  stdout: 'device-metrics-exporter
+
+    '
+- cmd: ^ss\ \-ltnH\ 'sport\ =\ :5000'$
+  rc: 0
+  stdout: 'LISTEN 0      4096               *:5000            *:*
+
+    '
+- cmd: ^docker\ restart\ device\-metrics\-exporter$
+  rc: 0
+  stdout: 'device-metrics-exporter
+
+    '
+- cmd: ^docker logs --since \d+s device-metrics-exporter
+  rc: 0
+  file: exporter_logs.txt
+- cmd: ^amd\-smi\ list$
+  rc: 0
+  file: amd_smi_list.txt
+- cmd: ^modprobe (-r )?ifoe$
+  rc: 0
+  stdout: ''
+- cmd: ^lsmod\ \|\ grep\ \-q\ '\^ifoe\ '$
+  rc: 0
+  rcs:
+  - 1
+  - 0
+  stdout: ''

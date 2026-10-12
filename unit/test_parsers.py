@@ -112,3 +112,20 @@ def test_parse_perftest():
     assert r.bw_avg == 390.12 and not r.errors
     bad = parse_perftest(" Completion with error at client\n Failed status 12: wr_id 0 syndrom 0x81\n")
     assert len(bad.errors) == 2 and bad.bw_avg is None
+
+
+def test_parse_prometheus_and_http():
+    from helios.parsers import parse_prometheus, split_http_response
+
+    raw = ("HTTP/1.1 200 OK\r\nContent-Type: text/plain; version=0.0.4\r\n\r\n"
+           "# HELP gpu_power_usage W\n# TYPE gpu_power_usage gauge\n"
+           'gpu_power_usage{gpu_id="0",card_model="MI455X"} 812.5\n'
+           'odd{msg="say \\"hi\\""} NaN\nup 1 1760000000000\n')
+    status, headers, body = split_http_response(raw)
+    assert status == 200 and headers["content-type"].startswith("text/plain")
+    s = parse_prometheus(body)
+    assert [x.name for x in s] == ["gpu_power_usage", "odd", "up"]
+    assert s[0].labels == {"gpu_id": "0", "card_model": "MI455X"} and s[0].value == 812.5
+    assert s[1].labels["msg"] == 'say "hi"' and s[1].value != s[1].value  # NaN kept
+    assert s[2].value == 1.0  # trailing timestamp ignored
+    assert split_http_response("curl: (7) Failed to connect")[0] is None

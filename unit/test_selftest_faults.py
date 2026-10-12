@@ -50,6 +50,13 @@ def _edit_all(replay: Path, glob: str, pattern: str, repl: str):
         _edit(f, pattern, repl)
 
 
+def _rename_after_first_read(replay: Path):
+    """ip -o link: first read eth0/eth1, second read (after reboot) eth0 renamed to eth2."""
+    original = (replay / "ip_link.txt").read_text()
+    (replay / "ip_link_after.txt").write_text(original.replace("2: eth0:", "2: eth2:"))
+    _edit_rule(replay, "ip\\ \\-o\\ link", files=["ip_link.txt", "ip_link_after.txt"])
+
+
 def _edit_rule(replay: Path, cmd_fragment: str, **changes):
     spec_path = replay / "responses.yaml"
     rules = yaml.safe_load(spec_path.read_text())
@@ -93,10 +100,10 @@ FAULTS = {
     "vlan_no_members": (lambda d: _edit_rule(d, "-n\\ asic1\\ CONFIG_DB\\ keys\\ 'VLAN_MEMBER", stdout=""),
                         {"TC-SWH-036", "TC-SWA-079"}),  # also breaks member symmetry
     "ping_loss": (lambda d: _edit_rule(d, "^ping-gpu ", stdout="4 packets transmitted, 0 received, 100% packet loss\n", rc=1),
-                  {"TC-AFM-001"}),
+                  {"TC-AFM-001", "TC-HW-017"}),  # HW-017 re-validates with L2 ping
     # RAS cases and TC-HW-008 re-validate with the same TransferBench / RCCL workloads
     "tb_slow": (lambda d: _edit(d / "transferbench.txt", r"612\.48", "212.48"),
-                {"TC-AFM-002", "TC-AFM-003", "TC-HW-008", *RAS_TRAFFIC}),
+                {"TC-AFM-002", "TC-AFM-003", "TC-HW-008", "TC-HW-017", "TC-AFM-LU-001", *RAS_TRAFFIC}),
     "rccl_wrong": (lambda d: _edit(d / "rccl.txt", r"^(\s+2048 .*?)0$", r"\g<1>7"), {"TC-AFM-004", "TC-AFM-005A", *RAS_TRAFFIC}),
     "rccl_truncated": (lambda d: _edit(d / "rccl.txt", r"^\s+1073741824 .*\n", ""),
                        {"TC-AFM-004", "TC-AFM-005A", *RAS_TRAFFIC}),
@@ -129,7 +136,38 @@ FAULTS = {
                              {"TC-RAS-reset-001", "TC-RAS-reset-002", "TC-RAS-reset-003", "TC-RAS-reset-004",
                               "TC-RAS-reset-007", "TC-RAS-reset-008", "TC-RAS-reset-009"}),
     "node_never_returns": (lambda d: _edit_rule(d, "^true$", rc=255),
-                           {"TC-RAS-reset-007", "TC-RAS-reset-008", "TC-RAS-reset-009"}),
+                           {"TC-RAS-reset-007", "TC-RAS-reset-008", "TC-RAS-reset-009", "TC-BUG-021"}),  # same SSH-return probe
+    # ---- metrics exporter
+    "exporter_not_listening": (lambda d: _edit_rule(d, "sport\\ =\\ :5000", stdout=""), {"TC-CTL-139"}),
+    "metrics_http_500": (lambda d: _edit(d / "metrics_c1.txt", r"^HTTP/1\.1 200 OK", "HTTP/1.1 500 Internal Server Error"),
+                         {"TC-CTL-140", "TC-CTL-141", "TC-CTL-142", "TC-CTL-143", "TC-CTL-144", "TC-CTL-145",
+                          "TC-CTL-146", "TC-CTL-147", "TC-CTL-148", "TC-CTL-149"}),
+    "gpu3_no_power": (lambda d: _edit(d / "metrics_c1.txt", r'^gpu_power_usage\{gpu_id="3".*\n', ""), {"TC-CTL-141"}),
+    "gpu_too_hot": (lambda d: _edit(d / "metrics_c2.txt", r'^(gpu_junction_temperature\{gpu_id="1"[^}]*\}) \S+', r"\1 125.0"),
+                    {"TC-CTL-141"}),
+    "vram_inconsistent": (lambda d: _edit(d / "metrics_c1.txt", r'^(gpu_free_vram\{gpu_id="0"[^}]*\}) \S+', r"\1 1000"),
+                          {"TC-CTL-142"}),
+    "ecc_uncorrectable": (lambda d: _edit(d / "metrics_c2.txt", r'^(gpu_ecc_uncorrect_total\{gpu_id="2"[^}]*\}) \S+', r"\1 3"),
+                          {"TC-CTL-143"}),
+    "no_xgmi": (lambda d: [_edit(d / "metrics_c1.txt", r"^xgmi_.*\n", "") for _ in range(8)], {"TC-CTL-145"}),
+    "no_rdma_cnp": (lambda d: [_edit(d / "metrics_c2.txt", r"^rdma_cnp_sent.*\n", "") for _ in range(4)], {"TC-CTL-147"}),
+    # gpu 3 reported as gpu 4 -> per-GPU coverage gaps + non-sequential ids
+    "gpu_id_gap": (lambda d: [_edit(d / "metrics_c2.txt", r'gpu_id="3"', 'gpu_id="4"') for _ in range(17)],
+                   {"TC-CTL-141", "TC-CTL-142", "TC-CTL-143", "TC-CTL-148"}),
+    "wrong_hostname_label": (lambda d: _edit_rule(d, "^hostname", stdout="some-other-host\n"), {"TC-CTL-148"}),
+    "exporter_log_errors": (lambda d: _edit(d / "exporter_logs.txt", r"level=info", "level=error"), {"TC-CTL-149"}),
+    # ---- platform
+    "ntp_unsynced": (lambda d: _edit_rule(d, "NTPSynchronized", stdout="no\n"), {"TC-CTL-035"}),
+    "clock_skew": (lambda d: _edit_rule(d, "date\\ \\+%s\\.%N", stdout="1000000000.0\n"), {"TC-CTL-035"}),
+    "dns_fails": (lambda d: _edit_rule(d, "^getent hosts ", stdout="", rc=2), {"TC-CTL-059"}),
+    "logrotate_unscheduled": (lambda d: _edit_rule(d, "logrotate\\.timer", stdout="inactive\n"), {"TC-BUG-022"}),
+    "var_log_full": (lambda d: _edit_rule(d, "df\\ \\-\\-output", stdout=" 96%\n"), {"TC-BUG-022"}),
+    "topo_logs_stale": (lambda d: _edit(d / "topo_find.txt", r"^1760003600$", "1760900000"), {"TC-E2E-118"}),
+    "oob_renamed_after_reboot": (lambda d: _rename_after_first_read(d), {"TC-BUG-021"}),
+    # ---- IFoE driver
+    "ifoe_unload_stuck": (lambda d: _edit_rule(d, "lsmod", rcs=[0]), {"TC-AFM-LU-001", "TC-HW-017"}),
+    "gpu_lost_after_reload": (lambda d: _edit(d / "amd_smi_list.txt", r"GPU: 3\n(.*\n){2}", ""),
+                              {"TC-AFM-LU-001", "TC-HW-017"}),
     "thermalctld_down": (lambda d: _edit_rule(d, "thermalctld", stdout="thermalctld   EXITED\n"), {"TC-SWH-004"}),
 }
 

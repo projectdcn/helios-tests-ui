@@ -122,14 +122,14 @@ python3 -m venv .venv
 <section id="selftest">
   <h2><span class="num">1</span>Without a rack: check the framework</h2>
   <p>These use recorded SONiC and GPU outputs from <code>selftest/replay</code>, so no hardware is needed.</p>
-  <h3>Unit tests and the 28 injected-fault checks</h3>
+  <h3>Unit tests and the 48 injected-fault checks</h3>
   <div class="cmd"><pre>.venv/bin/pytest unit</pre></div>
   <h3>The whole suite against the recorded outputs</h3>
   <div class="cmd"><pre>.venv/bin/pytest tests --inventory selftest/inventory.yaml</pre></div>
-  <p class="muted">Expected: <span class="pill ok">102 passed</span> <span class="pill">13 skipped</span>. Disruptive tests skip unless you allow them; every skip prints its reason.</p>
+  <p class="muted">Expected: <span class="pill ok">116 passed</span> <span class="pill">18 skipped</span>. Disruptive tests skip unless you allow them; every skip prints its reason.</p>
   <h3>Including the disruptive tests (restarts, resets, reboots)</h3>
   <div class="cmd"><pre>.venv/bin/pytest tests --inventory selftest/inventory.yaml --allow-disruptive</pre></div>
-  <p class="muted">Expected: <span class="pill ok">111 passed</span> <span class="pill">4 skipped</span>.</p>
+  <p class="muted">Expected: <span class="pill ok">129 passed</span> <span class="pill">5 skipped</span>.</p>
 </section>
 
 <section id="rack">
@@ -144,7 +144,7 @@ python3 -m venv .venv
       <ul>
         <li>Under <code>switches:</code> and <code>computes:</code>, set each <code>host:</code> to the real hostname or IP.</li>
         <li>Under <code>defaults:</code>, set the SSH user, and either <code>key_file</code> or <code>password_env</code> for each node type.</li>
-        <li>Fill in the <code>VERIFY</code> items: <code>commands.l2ping.cmd</code>, <code>commands.transferbench.in_domain</code> / <code>cross_domain</code>, <code>commands.rccl.cross_domain</code>, <code>commands.perftest.*</code> and <code>commands.ras.*</code>.</li>
+        <li>Fill in the <code>VERIFY</code> items: <code>commands.l2ping.cmd</code>, <code>commands.transferbench.in_domain</code> / <code>cross_domain</code>, <code>commands.rccl.cross_domain</code>, <code>commands.perftest.*</code>, <code>commands.ras.*</code>, <code>commands.ifoe.*</code> and <code>commands.metrics_exporter.run</code>.</li>
         <li>For the scale-out RDMA cases, add <code>rdma:</code> ports to the two computes named in <code>commands.perftest.nodes</code>. For DC/AC power cycles, add <code>bmc:</code> / <code>pdu_outlet:</code>.</li>
         <li>Set your pass limits under <code>thresholds:</code>, such as <code>expected_fans</code>, <code>expected_psus</code>, <code>psu_capacity_w</code> and the bandwidth floors.</li>
       </ul>
@@ -176,9 +176,10 @@ python3 -m venv .venv
       <tr><td>Part of the rack</td><td><code>--switches sw1,sw2</code> / <code>--computes c01,c02</code></td></tr>
       <tr><td>Switch hardware tests only</td><td><code>tests/l1/test_switch_hw.py</code></td></tr>
       <tr><td>Datapath tests only (ping, TransferBench, RCCL)</td><td><code>tests/l1/test_afm_datapath.py</code></td></tr>
+      <tr><td>Metrics exporter / platform / IFoE driver only</td><td><code>tests/telemetry</code> / <code>tests/platform</code> / <code>tests/ifoe</code></td></tr>
       <tr><td>Switch agent / hardware / RDMA / RAS only</td><td><code>tests/switch</code> / <code>tests/hw</code> / <code>tests/scaleout</code> / <code>tests/ras</code></td></tr>
       <tr><td>By level or marker</td><td><code>-m l1</code> / <code>-m "l1 and not stress"</code></td></tr>
-      <tr><td>Tests that restart services, reset devices or reboot (TC-SWA-140/141, all RAS)</td><td><code>--allow-disruptive</code></td></tr>
+      <tr><td>Tests that restart services, reset devices, reload drivers or reboot</td><td><code>--allow-disruptive</code></td></tr>
       <tr><td>Manual tests (e.g. the TC-SWH-009 heat test)</td><td><code>--run-manual</code></td></tr>
     </tbody>
   </table>

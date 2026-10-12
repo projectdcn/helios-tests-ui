@@ -234,3 +234,50 @@ def parse_perftest(text: str) -> PerftestResult:
         elif s.startswith("-"):
             in_table = False
     return res
+
+
+# ------------------------------------------------------------ Prometheus
+
+@dataclass
+class Sample:
+    name: str
+    labels: dict[str, str]
+    value: float
+
+
+_PROM_RE = re.compile(r"^([a-zA-Z_:][a-zA-Z0-9_:]*)(?:\{(.*)\})?\s+(\S+)(?:\s+\d+)?$")
+_LABEL_RE = re.compile(r'([a-zA-Z_][a-zA-Z0-9_]*)="((?:[^"\\]|\\.)*)"')
+
+
+def parse_prometheus(text: str) -> list[Sample]:
+    """Prometheus text exposition format -> samples (comments/HELP/TYPE skipped, NaN kept as nan)."""
+    out = []
+    for line in text.splitlines():
+        s = line.strip()
+        if not s or s.startswith("#"):
+            continue
+        m = _PROM_RE.match(s)
+        if not m:
+            continue
+        try:
+            value = float(m.group(3))
+        except ValueError:
+            continue
+        labels = {k: v.replace('\\"', '"').replace("\\\\", "\\") for k, v in _LABEL_RE.findall(m.group(2) or "")}
+        out.append(Sample(m.group(1), labels, value))
+    return out
+
+
+def split_http_response(text: str) -> tuple[int | None, dict[str, str], str]:
+    """``curl -s -D - URL`` output -> (status, lower-cased headers, body)."""
+    text = text.replace("\r\n", "\n")
+    head, sep, body = text.partition("\n\n")
+    if not sep or not head.startswith("HTTP/"):
+        return None, {}, text
+    lines = head.splitlines()
+    m = re.match(r"HTTP/\S+\s+(\d{3})", lines[0])
+    headers = {}
+    for ln in lines[1:]:
+        k, _, v = ln.partition(":")
+        headers[k.strip().lower()] = v.strip()
+    return (int(m.group(1)) if m else None), headers, body

@@ -1,0 +1,1 @@
+time="2026-10-12T10:00:01Z" level=info msg="serving metrics on :5000"

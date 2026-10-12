@@ -25,7 +25,14 @@ computes:
       - {dev: ionic_2, ip4: 192.168.12.2, ip6: "fd00:12::2", gpu: 2}
       - {dev: ionic_3, ip4: 192.168.13.2, ip6: "fd00:13::2", gpu: 3}
 
+afm:
+  url: https://helios-afm.lab.example
+
 commands:
+  ifoe:
+    unload: "modprobe -r ifoe"
+    load: "modprobe ifoe"
+    loaded_check: "lsmod | grep -q '^ifoe '"
   l2ping:
     cmd: "ping-gpu --src {src_gpu} --dst {dst_name}:{dst_gpu}"
     success_regex: " 0% packet loss"
@@ -62,6 +69,9 @@ thresholds:
     recover_timeout_s: 1
     poll_interval_s: 0
   ras: {settle_s: 0, down_wait_s: 0, boot_timeout_s: 1, poll_interval_s: 0}
+  platform: {down_wait_s: 0, boot_timeout_s: 1, poll_interval_s: 0, topo_log_max_age_h: 24}
+  metrics: {start_timeout_s: 1, poll_interval_s: 0}
+  ifoe: {cycles: 5, settle_s: 0}
   datapath:
     transferbench: {in_domain_min_gbps: 500, cross_domain_min_gbps: 500}
     rccl: {all_reduce_min_busbw_gbps: 100}

@@ -179,7 +179,7 @@ class _Rule:
     host: re.Pattern | None
     stdouts: list[str]  # >1 entry: successive calls cycle through them (e.g. counters that advance)
     stderr: str
-    rc: int
+    rcs: list[int]      # likewise for exit codes (e.g. "driver loaded?" false after unload, true after load)
 
 
 _RULE_CACHE: dict[str, list[_Rule]] = {}
@@ -200,14 +200,16 @@ def _load_rules(directory: Path) -> list[_Rule]:
             rules.append(_Rule(
                 cmd=re.compile(r["cmd"]),
                 host=re.compile(r["host"]) if r.get("host") else None,
-                stdouts=stdouts, stderr=r.get("stderr", ""), rc=int(r.get("rc", 0)),
+                stdouts=stdouts, stderr=r.get("stderr", ""),
+                rcs=[int(x) for x in r["rcs"]] if r.get("rcs") else [int(r.get("rc", 0))],
             ))
         _RULE_CACHE[key] = rules
     return _RULE_CACHE[key]
 
 
 class ReplayTransport:
-    """Serves canned outputs from ``<dir>/responses.yaml`` (first matching rule wins).
+    """Serves canned outputs from ``<dir>/responses.yaml`` (first matching rule wins;
+    ``files``/``rcs`` lists cycle per call; ``@@NOW@@`` becomes the current epoch time).
     Lets the full suite run without a rack — for framework self-tests and demos."""
 
     def __init__(self, host: Host, directory: str | Path):
@@ -225,7 +227,8 @@ class ReplayTransport:
             if rule.cmd.search(cmd):
                 n = self._hits.get(i, 0)
                 self._hits[i] = n + 1
-                return CmdResult(self.host.name, cmd, rule.rc, rule.stdouts[n % len(rule.stdouts)], rule.stderr)
+                out = rule.stdouts[n % len(rule.stdouts)].replace("@@NOW@@", f"{time.time():.6f}")
+                return CmdResult(self.host.name, cmd, rule.rcs[n % len(rule.rcs)], out, rule.stderr)
         return CmdResult(self.host.name, cmd, 127, "", f"replay: no rule matches {cmd!r}")
 
     def close(self) -> None:

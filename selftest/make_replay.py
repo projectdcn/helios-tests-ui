@@ -34,9 +34,11 @@ files: dict[str, str] = {}
 
 
 def add(cmd: str, text: str = "", *, name: str | None = None, rc: int = 0, host: str | None = None,
-        regex: bool = False, seq: list[tuple[str, str]] | None = None):
-    """seq=[(filename, text), ...]: successive calls return successive files (cycling)."""
+        regex: bool = False, seq: list[tuple[str, str]] | None = None, rcs: list[int] | None = None):
+    """seq=[(filename, text), ...] / rcs=[...]: successive calls cycle through them."""
     rule = {"cmd": cmd if regex else f"^{re.escape(cmd)}$", "rc": rc}
+    if rcs:
+        rule["rcs"] = rcs
     if host:
         rule["host"] = host
     if seq:
@@ -208,6 +210,73 @@ add(r"(^|/)\w+_perf |mpirun ", """# nThread 1 nGpus 4 minBytes 1024 maxBytes 107
 # Avg bus bandwidth    : 152.37
 #
 """, name="rccl.txt", regex=True)
+
+# ------------------------------------------------- platform (all nodes)
+add("timedatectl show -p NTPSynchronized --value", "yes\n")
+add("date +%s.%N", "@@NOW@@\n")
+add("cat /etc/resolv.conf", "search lab.example\nnameserver 10.0.0.53\n")
+add(r"^getent hosts ", "10.0.0.10       helios-afm.lab.example\n", regex=True)
+add("cat /etc/logrotate.conf /etc/logrotate.d/* 2>/dev/null",
+    "weekly\nrotate 4\n/var/log/syslog\n{\n    size 100M\n    rotate 5\n    compress\n}\n", host=SW)
+add("systemctl is-active logrotate.timer", "active\n", host=SW)
+add("ls /etc/cron.d /etc/cron.daily /etc/cron.hourly 2>/dev/null", "/etc/cron.d:\n", host=SW)
+add("df --output=pcent /var/log | tail -1", " 23%\n", host=SW)
+add(r"^find /var/log/pensando ", "1760000000.5 20480 /var/log/pensando/toposvc.log\n"
+    "1759990000.1 1048576 /var/log/pensando/toposvc.log.1\n1760003600\n", name="topo_find.txt", host=SW, regex=True)
+add("ip -o link show", """1: lo: <LOOPBACK,UP,LOWER_UP> mtu 65536 qdisc noqueue state UNKNOWN mode DEFAULT group default qlen 1000\\    link/loopback 00:00:00:00:00:00 brd 00:00:00:00:00:00
+2: eth0: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc mq state UP mode DEFAULT group default qlen 1000\\    link/ether aa:bb:cc:00:11:22 brd ff:ff:ff:ff:ff:ff
+3: eth1: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc mq state UP mode DEFAULT group default qlen 1000\\    link/ether aa:bb:cc:00:11:23 brd ff:ff:ff:ff:ff:ff
+4: Ethernet0: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 9100 qdisc pfifo_fast state UP mode DEFAULT group default qlen 1000\\    link/ether aa:bb:cc:00:11:30 brd ff:ff:ff:ff:ff:ff
+""", name="ip_link.txt", host=SW)
+
+# ------------------------------------------------- metrics exporter (computes)
+def metrics(host: str) -> str:
+    lines = ["# HELP gpu_power_usage GPU power in watts", "# TYPE gpu_power_usage gauge"]
+    def g(name, gpu, val):
+        lines.append(f'{name}{{gpu_id="{gpu}",hostname="{host}",card_model="AMD Instinct MI455X",serial_number="SN{host}{gpu}"}} {val}')
+    for gpu in range(4):
+        g("gpu_power_usage", gpu, 812.5 + gpu)
+        g("gpu_edge_temperature", gpu, 41.0 + gpu)
+        g("gpu_junction_temperature", gpu, 55.0 + gpu)
+        g("gpu_gfx_activity", gpu, 12)
+        g("gpu_total_vram", gpu, 442368)
+        g("gpu_used_vram", gpu, 1024)
+        g("gpu_free_vram", gpu, 441344)
+        g("gpu_ecc_correct_total", gpu, 0)
+        g("gpu_ecc_uncorrect_total", gpu, 0)
+        g("gpu_ecc_correct_umc", gpu, 0)
+        g("gpu_ecc_uncorrect_umc", gpu, 0)
+        g("pcie_bandwidth", gpu, 31.5)
+        g("pcie_speed", gpu, 32)
+        g("pcie_link_width", gpu, 16)
+        g("pcie_replay_count", gpu, 0)
+        g("xgmi_neighbor_0_tx_throughput", gpu, 0)
+        g("xgmi_link_rx_beats", gpu, 0)
+    for port in range(4):
+        lab = f'{{hostname="{host}",port="eth{port}",lif="lif{port}"}}'
+        lines += [f"nic_port_stats_frames_rx_ok{lab} 120034", f"nic_port_stats_octets_rx_bytes{lab} 9932001",
+                  f"nic_lif_stats_rx_unicast_packets{lab} 99871",
+                  f"rdma_req_rx_pkts{lab} 5021", f"rdma_resp_tx_pkts{lab} 5021", f"rdma_cnp_sent{lab} 0",
+                  f"rdma_ecn_marked_packets{lab} 0", f"rdma_qp_count{lab} 8"]
+    return ("HTTP/1.1 200 OK\r\nContent-Type: text/plain; version=0.0.4; charset=utf-8\r\n"
+            "Date: Mon, 12 Oct 2026 10:00:00 GMT\r\n\r\n" + "\n".join(lines) + "\n")
+
+for cname in ("c1", "c2"):
+    host = f"^{cname}$"
+    add(r"^curl -s -m 15 -D - ", metrics(cname), name=f"metrics_{cname}.txt", host=host, regex=True)
+    add("hostname", f"{cname}.lab.example\n", host=host)
+    add("hostname -s", f"{cname}\n", host=host)
+add("docker ps --filter name=^device-metrics-exporter$ --format '{{.Names}}'", "device-metrics-exporter\n")
+add("ss -ltnH 'sport = :5000'", "LISTEN 0      4096               *:5000            *:*\n")
+add("docker restart device-metrics-exporter", "device-metrics-exporter\n")
+add(r"^docker logs --since \d+s device-metrics-exporter", 'time="2026-10-12T10:00:01Z" level=info msg="serving metrics on :5000"\n',
+    name="exporter_logs.txt", regex=True)
+
+# ------------------------------------------------- IFoE driver / GPU health (computes)
+add("amd-smi list", "".join(f"GPU: {i}\n    BDF: 0000:{0x11 + i:02x}:00.0\n    UUID: 1234-{i}\n" for i in range(4)),
+    name="amd_smi_list.txt")
+add(r"^modprobe (-r )?ifoe$", "", regex=True)
+add("lsmod | grep -q '^ifoe '", "", rcs=[1, 0])   # unloaded after unload, loaded after load
 
 OUT.mkdir(exist_ok=True)
 for name, text in files.items():

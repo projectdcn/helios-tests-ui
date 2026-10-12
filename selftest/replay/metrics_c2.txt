@@ -1,0 +1,106 @@
+HTTP/1.1 200 OK
+Content-Type: text/plain; version=0.0.4; charset=utf-8
+Date: Mon, 12 Oct 2026 10:00:00 GMT
+
+# HELP gpu_power_usage GPU power in watts
+# TYPE gpu_power_usage gauge
+gpu_power_usage{gpu_id="0",hostname="c2",card_model="AMD Instinct MI455X",serial_number="SNc20"} 812.5
+gpu_edge_temperature{gpu_id="0",hostname="c2",card_model="AMD Instinct MI455X",serial_number="SNc20"} 41.0
+gpu_junction_temperature{gpu_id="0",hostname="c2",card_model="AMD Instinct MI455X",serial_number="SNc20"} 55.0
+gpu_gfx_activity{gpu_id="0",hostname="c2",card_model="AMD Instinct MI455X",serial_number="SNc20"} 12
+gpu_total_vram{gpu_id="0",hostname="c2",card_model="AMD Instinct MI455X",serial_number="SNc20"} 442368
+gpu_used_vram{gpu_id="0",hostname="c2",card_model="AMD Instinct MI455X",serial_number="SNc20"} 1024
+gpu_free_vram{gpu_id="0",hostname="c2",card_model="AMD Instinct MI455X",serial_number="SNc20"} 441344
+gpu_ecc_correct_total{gpu_id="0",hostname="c2",card_model="AMD Instinct MI455X",serial_number="SNc20"} 0
+gpu_ecc_uncorrect_total{gpu_id="0",hostname="c2",card_model="AMD Instinct MI455X",serial_number="SNc20"} 0
+gpu_ecc_correct_umc{gpu_id="0",hostname="c2",card_model="AMD Instinct MI455X",serial_number="SNc20"} 0
+gpu_ecc_uncorrect_umc{gpu_id="0",hostname="c2",card_model="AMD Instinct MI455X",serial_number="SNc20"} 0
+pcie_bandwidth{gpu_id="0",hostname="c2",card_model="AMD Instinct MI455X",serial_number="SNc20"} 31.5
+pcie_speed{gpu_id="0",hostname="c2",card_model="AMD Instinct MI455X",serial_number="SNc20"} 32
+pcie_link_width{gpu_id="0",hostname="c2",card_model="AMD Instinct MI455X",serial_number="SNc20"} 16
+pcie_replay_count{gpu_id="0",hostname="c2",card_model="AMD Instinct MI455X",serial_number="SNc20"} 0
+xgmi_neighbor_0_tx_throughput{gpu_id="0",hostname="c2",card_model="AMD Instinct MI455X",serial_number="SNc20"} 0
+xgmi_link_rx_beats{gpu_id="0",hostname="c2",card_model="AMD Instinct MI455X",serial_number="SNc20"} 0
+gpu_power_usage{gpu_id="1",hostname="c2",card_model="AMD Instinct MI455X",serial_number="SNc21"} 813.5
+gpu_edge_temperature{gpu_id="1",hostname="c2",card_model="AMD Instinct MI455X",serial_number="SNc21"} 42.0
+gpu_junction_temperature{gpu_id="1",hostname="c2",card_model="AMD Instinct MI455X",serial_number="SNc21"} 56.0
+gpu_gfx_activity{gpu_id="1",hostname="c2",card_model="AMD Instinct MI455X",serial_number="SNc21"} 12
+gpu_total_vram{gpu_id="1",hostname="c2",card_model="AMD Instinct MI455X",serial_number="SNc21"} 442368
+gpu_used_vram{gpu_id="1",hostname="c2",card_model="AMD Instinct MI455X",serial_number="SNc21"} 1024
+gpu_free_vram{gpu_id="1",hostname="c2",card_model="AMD Instinct MI455X",serial_number="SNc21"} 441344
+gpu_ecc_correct_total{gpu_id="1",hostname="c2",card_model="AMD Instinct MI455X",serial_number="SNc21"} 0
+gpu_ecc_uncorrect_total{gpu_id="1",hostname="c2",card_model="AMD Instinct MI455X",serial_number="SNc21"} 0
+gpu_ecc_correct_umc{gpu_id="1",hostname="c2",card_model="AMD Instinct MI455X",serial_number="SNc21"} 0
+gpu_ecc_uncorrect_umc{gpu_id="1",hostname="c2",card_model="AMD Instinct MI455X",serial_number="SNc21"} 0
+pcie_bandwidth{gpu_id="1",hostname="c2",card_model="AMD Instinct MI455X",serial_number="SNc21"} 31.5
+pcie_speed{gpu_id="1",hostname="c2",card_model="AMD Instinct MI455X",serial_number="SNc21"} 32
+pcie_link_width{gpu_id="1",hostname="c2",card_model="AMD Instinct MI455X",serial_number="SNc21"} 16
+pcie_replay_count{gpu_id="1",hostname="c2",card_model="AMD Instinct MI455X",serial_number="SNc21"} 0
+xgmi_neighbor_0_tx_throughput{gpu_id="1",hostname="c2",card_model="AMD Instinct MI455X",serial_number="SNc21"} 0
+xgmi_link_rx_beats{gpu_id="1",hostname="c2",card_model="AMD Instinct MI455X",serial_number="SNc21"} 0
+gpu_power_usage{gpu_id="2",hostname="c2",card_model="AMD Instinct MI455X",serial_number="SNc22"} 814.5
+gpu_edge_temperature{gpu_id="2",hostname="c2",card_model="AMD Instinct MI455X",serial_number="SNc22"} 43.0
+gpu_junction_temperature{gpu_id="2",hostname="c2",card_model="AMD Instinct MI455X",serial_number="SNc22"} 57.0
+gpu_gfx_activity{gpu_id="2",hostname="c2",card_model="AMD Instinct MI455X",serial_number="SNc22"} 12
+gpu_total_vram{gpu_id="2",hostname="c2",card_model="AMD Instinct MI455X",serial_number="SNc22"} 442368
+gpu_used_vram{gpu_id="2",hostname="c2",card_model="AMD Instinct MI455X",serial_number="SNc22"} 1024
+gpu_free_vram{gpu_id="2",hostname="c2",card_model="AMD Instinct MI455X",serial_number="SNc22"} 441344
+gpu_ecc_correct_total{gpu_id="2",hostname="c2",card_model="AMD Instinct MI455X",serial_number="SNc22"} 0
+gpu_ecc_uncorrect_total{gpu_id="2",hostname="c2",card_model="AMD Instinct MI455X",serial_number="SNc22"} 0
+gpu_ecc_correct_umc{gpu_id="2",hostname="c2",card_model="AMD Instinct MI455X",serial_number="SNc22"} 0
+gpu_ecc_uncorrect_umc{gpu_id="2",hostname="c2",card_model="AMD Instinct MI455X",serial_number="SNc22"} 0
+pcie_bandwidth{gpu_id="2",hostname="c2",card_model="AMD Instinct MI455X",serial_number="SNc22"} 31.5
+pcie_speed{gpu_id="2",hostname="c2",card_model="AMD Instinct MI455X",serial_number="SNc22"} 32
+pcie_link_width{gpu_id="2",hostname="c2",card_model="AMD Instinct MI455X",serial_number="SNc22"} 16
+pcie_replay_count{gpu_id="2",hostname="c2",card_model="AMD Instinct MI455X",serial_number="SNc22"} 0
+xgmi_neighbor_0_tx_throughput{gpu_id="2",hostname="c2",card_model="AMD Instinct MI455X",serial_number="SNc22"} 0
+xgmi_link_rx_beats{gpu_id="2",hostname="c2",card_model="AMD Instinct MI455X",serial_number="SNc22"} 0
+gpu_power_usage{gpu_id="3",hostname="c2",card_model="AMD Instinct MI455X",serial_number="SNc23"} 815.5
+gpu_edge_temperature{gpu_id="3",hostname="c2",card_model="AMD Instinct MI455X",serial_number="SNc23"} 44.0
+gpu_junction_temperature{gpu_id="3",hostname="c2",card_model="AMD Instinct MI455X",serial_number="SNc23"} 58.0
+gpu_gfx_activity{gpu_id="3",hostname="c2",card_model="AMD Instinct MI455X",serial_number="SNc23"} 12
+gpu_total_vram{gpu_id="3",hostname="c2",card_model="AMD Instinct MI455X",serial_number="SNc23"} 442368
+gpu_used_vram{gpu_id="3",hostname="c2",card_model="AMD Instinct MI455X",serial_number="SNc23"} 1024
+gpu_free_vram{gpu_id="3",hostname="c2",card_model="AMD Instinct MI455X",serial_number="SNc23"} 441344
+gpu_ecc_correct_total{gpu_id="3",hostname="c2",card_model="AMD Instinct MI455X",serial_number="SNc23"} 0
+gpu_ecc_uncorrect_total{gpu_id="3",hostname="c2",card_model="AMD Instinct MI455X",serial_number="SNc23"} 0
+gpu_ecc_correct_umc{gpu_id="3",hostname="c2",card_model="AMD Instinct MI455X",serial_number="SNc23"} 0
+gpu_ecc_uncorrect_umc{gpu_id="3",hostname="c2",card_model="AMD Instinct MI455X",serial_number="SNc23"} 0
+pcie_bandwidth{gpu_id="3",hostname="c2",card_model="AMD Instinct MI455X",serial_number="SNc23"} 31.5
+pcie_speed{gpu_id="3",hostname="c2",card_model="AMD Instinct MI455X",serial_number="SNc23"} 32
+pcie_link_width{gpu_id="3",hostname="c2",card_model="AMD Instinct MI455X",serial_number="SNc23"} 16
+pcie_replay_count{gpu_id="3",hostname="c2",card_model="AMD Instinct MI455X",serial_number="SNc23"} 0
+xgmi_neighbor_0_tx_throughput{gpu_id="3",hostname="c2",card_model="AMD Instinct MI455X",serial_number="SNc23"} 0
+xgmi_link_rx_beats{gpu_id="3",hostname="c2",card_model="AMD Instinct MI455X",serial_number="SNc23"} 0
+nic_port_stats_frames_rx_ok{hostname="c2",port="eth0",lif="lif0"} 120034
+nic_port_stats_octets_rx_bytes{hostname="c2",port="eth0",lif="lif0"} 9932001
+nic_lif_stats_rx_unicast_packets{hostname="c2",port="eth0",lif="lif0"} 99871
+rdma_req_rx_pkts{hostname="c2",port="eth0",lif="lif0"} 5021
+rdma_resp_tx_pkts{hostname="c2",port="eth0",lif="lif0"} 5021
+rdma_cnp_sent{hostname="c2",port="eth0",lif="lif0"} 0
+rdma_ecn_marked_packets{hostname="c2",port="eth0",lif="lif0"} 0
+rdma_qp_count{hostname="c2",port="eth0",lif="lif0"} 8
+nic_port_stats_frames_rx_ok{hostname="c2",port="eth1",lif="lif1"} 120034
+nic_port_stats_octets_rx_bytes{hostname="c2",port="eth1",lif="lif1"} 9932001
+nic_lif_stats_rx_unicast_packets{hostname="c2",port="eth1",lif="lif1"} 99871
+rdma_req_rx_pkts{hostname="c2",port="eth1",lif="lif1"} 5021
+rdma_resp_tx_pkts{hostname="c2",port="eth1",lif="lif1"} 5021
+rdma_cnp_sent{hostname="c2",port="eth1",lif="lif1"} 0
+rdma_ecn_marked_packets{hostname="c2",port="eth1",lif="lif1"} 0
+rdma_qp_count{hostname="c2",port="eth1",lif="lif1"} 8
+nic_port_stats_frames_rx_ok{hostname="c2",port="eth2",lif="lif2"} 120034
+nic_port_stats_octets_rx_bytes{hostname="c2",port="eth2",lif="lif2"} 9932001
+nic_lif_stats_rx_unicast_packets{hostname="c2",port="eth2",lif="lif2"} 99871
+rdma_req_rx_pkts{hostname="c2",port="eth2",lif="lif2"} 5021
+rdma_resp_tx_pkts{hostname="c2",port="eth2",lif="lif2"} 5021
+rdma_cnp_sent{hostname="c2",port="eth2",lif="lif2"} 0
+rdma_ecn_marked_packets{hostname="c2",port="eth2",lif="lif2"} 0
+rdma_qp_count{hostname="c2",port="eth2",lif="lif2"} 8
+nic_port_stats_frames_rx_ok{hostname="c2",port="eth3",lif="lif3"} 120034
+nic_port_stats_octets_rx_bytes{hostname="c2",port="eth3",lif="lif3"} 9932001
+nic_lif_stats_rx_unicast_packets{hostname="c2",port="eth3",lif="lif3"} 99871
+rdma_req_rx_pkts{hostname="c2",port="eth3",lif="lif3"} 5021
+rdma_resp_tx_pkts{hostname="c2",port="eth3",lif="lif3"} 5021
+rdma_cnp_sent{hostname="c2",port="eth3",lif="lif3"} 0
+rdma_ecn_marked_packets{hostname="c2",port="eth3",lif="lif3"} 0
+rdma_qp_count{hostname="c2",port="eth3",lif="lif3"} 8

@@ -53,6 +53,7 @@ computes:
 
 afm:                    # used by L2+ tranches; L1 does not need it
   url: https://helios-afm:443
+  controller_nodes: null  # switches running the AFM controller (TC-CTL-059, TC-E2E-118); null = all switches
   verify_tls: false
   auth:
     kind: session       # session | bearer | none
@@ -106,6 +107,19 @@ commands:
     default_dir: bidir
     extra: ""
     custom: null         # TC-IBS-006: {verbs: [...], qps: [...], mem: [cpu|gpu], af: [...], dir: [...], pairs: [1,2], iterations: N}
+  metrics_exporter:      # TC-CTL-139..150 (scraped with curl on each compute)
+    container: device-metrics-exporter
+    port: 5000
+    run: null            # VERIFY: started only where not running, e.g.
+                         # "docker run -d --name device-metrics-exporter --device=/dev/dri --device=/dev/kfd -p 5000:5000 rocm/device-metrics-exporter:<tag>"
+    upgrade: null        # TC-CTL-150, placeholders {image} {container}
+    upgrade_image: null
+  ifoe:                  # TC-AFM-LU-001, TC-HW-017
+    unload: null         # VERIFY, e.g. "modprobe -r ifoe"
+    load: null           # VERIFY, e.g. "modprobe ifoe"
+    loaded_check: null   # VERIFY, e.g. "lsmod | grep -q '^ifoe '"
+    ready_check: null    # optional: exits 0 once IFoE ports/stations are back
+  gpu_health: "amd-smi list"   # must print one "GPU: N" line per GPU
   ras:                   # TC-RAS-reset-*
     datapath_reset: "afmctl reset device --datapath"    # VERIFY
     ready_check: null    # command that exits 0 once GPUs/IFoE are ready again; null = sleep thresholds.ras.settle_s
@@ -156,6 +170,34 @@ thresholds:
     restart_container: lldp                 # TC-SWA-140
     swss_restart_namespaces: null           # TC-SWA-141 (default: first ASIC only)
     recover_timeout_s: 300
+    poll_interval_s: 10
+  platform:
+    max_clock_skew_s: 2                     # TC-CTL-035
+    dns_names: []                           # TC-CTL-059 (default: the afm.url hostname)
+    var_log_max_used_pct: 80                # TC-BUG-022
+    topo_log_dir: /var/log/pensando         # TC-E2E-118
+    topo_log_glob: "*topo*"
+    topo_log_max_age_h: 24
+    reboot_switch: null                     # TC-BUG-021 (default: first switch)
+    oob_iface_re: "^(eth\\d+|mgmt\\d*|Management\\d+)$"
+    boot_timeout_s: 900
+    down_wait_s: 60
+    poll_interval_s: 10
+  metrics:
+    families: {}                            # override any metric-family regex, e.g. {power: "^gpu_package_power$"}
+    gpu_label: gpu_id
+    hostname_label: hostname
+    model_labels: [card_model, card_series, gpu_model]
+    max_temperature_c: 110
+    vram_sum_tolerance_pct: 5
+    max_ecc_uncorrectable: 0
+    start_timeout_s: 60
+    poll_interval_s: 5
+  ifoe:
+    cycles: 5
+    max_bw_drop_pct: 10
+    settle_s: 30                            # used when commands.ifoe.ready_check is unset
+    ready_timeout_s: 300
     poll_interval_s: 10
   ras:
     settle_s: 30
