@@ -117,5 +117,64 @@ class SonicSwitch:
     def all_interfaces_status(self) -> dict[str | None, list[dict]]:
         return {ns: self.interfaces_status(ns) for ns in self.namespaces()}
 
+    def port_speeds(self, ns: str | None) -> dict[str, tuple[str, str]]:
+        """{port: (configured speed, oper speed)} from CONFIG_DB PORT / STATE_DB PORT_TABLE, in one round trip."""
+        flag = _ns_flag(ns)
+        script = (f"for k in $(sonic-db-cli{flag} CONFIG_DB keys 'PORT|Ethernet*'); do p=${{k#PORT|}}; "
+                  f"echo \"$p $(sonic-db-cli{flag} CONFIG_DB hget \"$k\" speed) "
+                  f"$(sonic-db-cli{flag} STATE_DB hget \"PORT_TABLE|$p\" speed)\"; done")
+        out = {}
+        for line in self.sh(script, timeout=120).splitlines():
+            toks = line.split()
+            if toks and self.is_fabric_port(toks[0]):
+                out[toks[0]] = (toks[1] if len(toks) > 1 else "", toks[2] if len(toks) > 2 else "")
+        return out
+
+    # -- services / containers ------------------------------------------------
+    @staticmethod
+    def per_asic(base: str, ns: str | None, sep: str = "") -> str:
+        """swss + asic1 -> 'swss1' (container) or 'swss@1' (service, sep='@')."""
+        return f"{base}{sep}{ns.removeprefix('asic')}" if ns else base
+
+    def restart_service(self, base: str, ns: str | None, timeout: float = 600) -> CmdResult:
+        return self.run(f"systemctl restart {self.per_asic(base, ns, '@')}", sudo=True, timeout=timeout)
+
+    def critical_processes(self, container: str) -> list[str]:
+        out = self.run(f"docker exec {container} cat /etc/supervisor/critical_processes", sudo=True)
+        names = []
+        for line in out.stdout.splitlines():
+            kind, _, name = line.strip().partition(":")
+            if kind == "program" and name:
+                names.append(name)
+        return names
+
+    def supervisor_status(self, container: str) -> dict[str, str]:
+        # supervisorctl exits non-zero when anything isn't RUNNING; the table is still what we want.
+        out = self.run(f"docker exec {container} supervisorctl status", sudo=True).stdout
+        status = {}
+        for line in out.splitlines():
+            toks = line.split()
+            if len(toks) >= 2:
+                status[toks[0].split(":")[-1]] = toks[1]
+        return status
+
+    # -- images ---------------------------------------------------------------
+    def images(self) -> dict:
+        """sonic-installer list -> {'current': str, 'next': str, 'available': [..]}"""
+        out = self.sh("sonic-installer list", sudo=True)
+        info: dict = {"current": "", "next": "", "available": []}
+        section = None
+        for line in out.splitlines():
+            s = line.strip()
+            if s.startswith("Current:"):
+                info["current"] = s.split(":", 1)[1].strip()
+            elif s.startswith("Next:"):
+                info["next"] = s.split(":", 1)[1].strip()
+            elif s.startswith("Available:"):
+                section = "available"
+            elif section == "available" and s:
+                info["available"].append(s)
+        return info
+
     def close(self) -> None:
         self.t.close()

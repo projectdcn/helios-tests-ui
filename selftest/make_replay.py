@@ -33,11 +33,17 @@ rules: list[dict] = []
 files: dict[str, str] = {}
 
 
-def add(cmd: str, text: str = "", *, name: str | None = None, rc: int = 0, host: str | None = None, regex: bool = False):
+def add(cmd: str, text: str = "", *, name: str | None = None, rc: int = 0, host: str | None = None,
+        regex: bool = False, seq: list[tuple[str, str]] | None = None):
+    """seq=[(filename, text), ...]: successive calls return successive files (cycling)."""
     rule = {"cmd": cmd if regex else f"^{re.escape(cmd)}$", "rc": rc}
     if host:
         rule["host"] = host
-    if name:
+    if seq:
+        for fname, t in seq:
+            files[fname] = t
+        rule["files"] = [f for f, _ in seq]
+    elif name:
         files[name] = text
         rule["file"] = name
     else:
@@ -111,21 +117,73 @@ for ns in NS:
     add(f"show interfaces status -n {ns} -d all", table(
         ["Interface", "Lanes", "Speed", "MTU", "FEC", "Alias", "Vlan", "Oper", "Admin", "Type", "Asym PFC"],
         st_rows, right={0, 2, 3, 4}), name=f"intf_status_{ns}.txt", host=SW)
-    ctr_rows = [[p, "U", "1,204,331", "12.30 MB/s", "0.02%", "0", "3", "0", "1,198,002", "11.90 MB/s", "0.02%", "0", "0", "0"]
+    def counters(step: int) -> str:
+        rx, tx = 1_204_331 + step * 1_000, 1_198_002 + step * 1_000
+        rows = [[p, "U", f"{rx:,}", "12.30 MB/s", "0.02%", "0", "3", "0", f"{tx:,}", "11.90 MB/s", "0.02%", "0", "0", "0"]
                 for p in ports]
-    add(f"show interfaces counters -n {ns} -d all", table(
-        ["IFACE", "STATE", "RX_OK", "RX_BPS", "RX_UTIL", "RX_ERR", "RX_DRP", "RX_OVR",
-         "TX_OK", "TX_BPS", "TX_UTIL", "TX_ERR", "TX_DRP", "TX_OVR"], ctr_rows, right=set(range(14))),
-        name=f"intf_counters_{ns}.txt", host=SW)
+        return table(["IFACE", "STATE", "RX_OK", "RX_BPS", "RX_UTIL", "RX_ERR", "RX_DRP", "RX_OVR",
+                      "TX_OK", "TX_BPS", "TX_UTIL", "TX_ERR", "TX_DRP", "TX_OVR"], rows, right=set(range(14)))
+
+    # counters only ever go up within a session (8 reads per namespace before wrapping)
+    add(f"show interfaces counters -n {ns} -d all", host=SW,
+        seq=[(f"intf_counters_{ns}_{i}.txt", counters(i)) for i in range(8)])
+    add(rf"^for k in \$\(sonic-db-cli -n {ns} CONFIG_DB keys 'PORT\|Ethernet\*'\)",
+        "".join(f"{p} 400000 400000\n" for p in ports + [INTERNAL[ns]]), host=SW, regex=True)
+    idx = ns.removeprefix("asic")
+    add(f"systemctl restart lldp@{idx}", host=SW)
+    add(f"systemctl restart swss@{idx}", host=SW)
+    for ctr, procs in ((f"swss{idx}", ["orchagent", "portsyncd", "neighsyncd"]), (f"syncd{idx}", ["syncd"]),
+                       (f"lldp{idx}", ["lldpd", "lldp-syncd", "lldpmgrd"])):
+        add(f"docker exec {ctr} cat /etc/supervisor/critical_processes",
+            "".join(f"program:{p}\n" for p in procs), host=SW)
+        add(f"docker exec {ctr} supervisorctl status",
+            "".join(f"{p:<32} RUNNING   pid {40 + i}, uptime 3 days, 1:02:03\n" for i, p in enumerate(procs)),
+            name=f"supervisor_{ctr}.txt", host=SW)
     add(db(ns, "APPL_DB", "keys", "LLDP_ENTRY_TABLE:*"), "".join(f"LLDP_ENTRY_TABLE:{p}\n" for p in ports), host=SW)
     add(db(ns, "CONFIG_DB", "keys", "VLAN|*"), "VLAN|Vlan100\nVLAN|Vlan101\n", host=SW)
     add(db(ns, "CONFIG_DB", "keys", "VLAN_MEMBER|*"),
         "".join(f"VLAN_MEMBER|Vlan{100 + i % 2}|{p}\n" for i, p in enumerate(ports)), host=SW)
 
 add(r"^for i in \$\(seq \$\(nproc\)\)", "", host=SW, regex=True)
+IMG_CUR, IMG_OLD = "SONiC-OS-helios.202505.1", "SONiC-OS-helios.202411.3"
+add("sonic-installer list", f"Current: {IMG_CUR}\nNext: {IMG_CUR}\nAvailable:\n{IMG_CUR}\n{IMG_OLD}\n",
+    name="sonic_installer_list.txt", host=SW)
+add("sonic-installer --help", """Usage: sonic-installer [OPTIONS] COMMAND [ARGS]...
+
+Commands:
+  binary-version   Get version from local binary image file
+  cleanup          Remove installed images which are not current and next
+  install          Install image from local binary or URL
+  list             Print installed images
+  remove           Uninstall SONiC image
+  set-default      Choose image to boot from by default
+  set-next-boot    Choose image for next reboot (one time action)
+  verify-next-image  Verify the next image for reboot
+""", host=SW)
+add(rf"^sonic-installer set-next-boot ", "", host=SW, regex=True)
 add("cat /proc/loadavg", "7.92 3.10 1.20 9/412 31337\n", host=SW)
 
 # --------------------------------------------------------------- computes
+PERF = """---------------------------------------------------------------------------------------
+                    RDMA_Write BW Test
+ Dual-port       : OFF\t\tDevice         : ionic_0
+ Number of qps   : 1\t\tTransport type : IB
+ Using SRQ      : OFF
+ TX depth        : 128
+ CQ Moderation   : 1
+ Mtu             : 4096[B]
+ Link type       : Ethernet
+ GID index       : 1
+---------------------------------------------------------------------------------------
+ #bytes     #iterations    BW peak[Gb/sec]    BW average[Gb/sec]   MsgRate[Mpps]
+ 65536      7442117          0.00               390.12\t\t   0.744097
+---------------------------------------------------------------------------------------
+"""
+add(r"^ib_(write|send|read)_bw ", PERF, name="perftest.txt", regex=True)
+add(r"^afmctl reset device --datapath", "datapath reset: ok\n", regex=True)
+add(r"^nohup sh -c 'sleep 2; systemctl reboot'", "", regex=True)
+add("true", "")
+add(r"^(ras-partial-stations|pdu-ctl|ipmitool) ", "", regex=True)
 add(r"^ping-gpu ", "4 packets transmitted, 4 received, 0% packet loss\n", regex=True)
 add(r"^TransferBench ", """TransferBench v1.50
 Test 1: a2a  1073741824 bytes

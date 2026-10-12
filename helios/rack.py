@@ -8,7 +8,7 @@ import pytest
 
 from .afm import AfmClient
 from .compute import ComputeTray
-from .inventory import Inventory
+from .inventory import Host, Inventory
 from .sonic import DEFAULT_FABRIC_PORT_RE, SonicSwitch
 from .transport import make_transport
 
@@ -26,6 +26,10 @@ class Rack:
             for h in inv.switches
         }
         self.computes = {h.name: ComputeTray(h, make_transport(h, inv.transport)) for h in inv.computes}
+        # Commands that run on the test runner itself (BMC/PDU power control). Replayed in replay mode.
+        runner = Host(name="runner", host="localhost", role="runner")
+        local_cfg = inv.transport if inv.transport.get("kind") == "replay" else {"kind": "local"}
+        self.runner = make_transport(runner, local_cfg)
         self._afm: AfmClient | None = None
 
     @property

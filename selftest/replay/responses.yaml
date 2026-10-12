@@ -158,7 +158,75 @@
 - cmd: ^show\ interfaces\ counters\ \-n\ asic0\ \-d\ all$
   rc: 0
   host: ^sw
-  file: intf_counters_asic0.txt
+  files:
+  - intf_counters_asic0_0.txt
+  - intf_counters_asic0_1.txt
+  - intf_counters_asic0_2.txt
+  - intf_counters_asic0_3.txt
+  - intf_counters_asic0_4.txt
+  - intf_counters_asic0_5.txt
+  - intf_counters_asic0_6.txt
+  - intf_counters_asic0_7.txt
+- cmd: ^for k in \$\(sonic-db-cli -n asic0 CONFIG_DB keys 'PORT\|Ethernet\*'\)
+  rc: 0
+  host: ^sw
+  stdout: 'Ethernet0 400000 400000
+
+    Ethernet8 400000 400000
+
+    Ethernet16 400000 400000
+
+    Ethernet24 400000 400000
+
+    Ethernet-BP0 400000 400000
+
+    '
+- cmd: ^systemctl\ restart\ lldp@0$
+  rc: 0
+  host: ^sw
+  stdout: ''
+- cmd: ^systemctl\ restart\ swss@0$
+  rc: 0
+  host: ^sw
+  stdout: ''
+- cmd: ^docker\ exec\ swss0\ cat\ /etc/supervisor/critical_processes$
+  rc: 0
+  host: ^sw
+  stdout: 'program:orchagent
+
+    program:portsyncd
+
+    program:neighsyncd
+
+    '
+- cmd: ^docker\ exec\ swss0\ supervisorctl\ status$
+  rc: 0
+  host: ^sw
+  file: supervisor_swss0.txt
+- cmd: ^docker\ exec\ syncd0\ cat\ /etc/supervisor/critical_processes$
+  rc: 0
+  host: ^sw
+  stdout: 'program:syncd
+
+    '
+- cmd: ^docker\ exec\ syncd0\ supervisorctl\ status$
+  rc: 0
+  host: ^sw
+  file: supervisor_syncd0.txt
+- cmd: ^docker\ exec\ lldp0\ cat\ /etc/supervisor/critical_processes$
+  rc: 0
+  host: ^sw
+  stdout: 'program:lldpd
+
+    program:lldp-syncd
+
+    program:lldpmgrd
+
+    '
+- cmd: ^docker\ exec\ lldp0\ supervisorctl\ status$
+  rc: 0
+  host: ^sw
+  file: supervisor_lldp0.txt
 - cmd: ^sonic\-db\-cli\ \-n\ asic0\ APPL_DB\ keys\ 'LLDP_ENTRY_TABLE:\*'$
   rc: 0
   host: ^sw
@@ -198,7 +266,75 @@
 - cmd: ^show\ interfaces\ counters\ \-n\ asic1\ \-d\ all$
   rc: 0
   host: ^sw
-  file: intf_counters_asic1.txt
+  files:
+  - intf_counters_asic1_0.txt
+  - intf_counters_asic1_1.txt
+  - intf_counters_asic1_2.txt
+  - intf_counters_asic1_3.txt
+  - intf_counters_asic1_4.txt
+  - intf_counters_asic1_5.txt
+  - intf_counters_asic1_6.txt
+  - intf_counters_asic1_7.txt
+- cmd: ^for k in \$\(sonic-db-cli -n asic1 CONFIG_DB keys 'PORT\|Ethernet\*'\)
+  rc: 0
+  host: ^sw
+  stdout: 'Ethernet256 400000 400000
+
+    Ethernet264 400000 400000
+
+    Ethernet272 400000 400000
+
+    Ethernet280 400000 400000
+
+    Ethernet-BP256 400000 400000
+
+    '
+- cmd: ^systemctl\ restart\ lldp@1$
+  rc: 0
+  host: ^sw
+  stdout: ''
+- cmd: ^systemctl\ restart\ swss@1$
+  rc: 0
+  host: ^sw
+  stdout: ''
+- cmd: ^docker\ exec\ swss1\ cat\ /etc/supervisor/critical_processes$
+  rc: 0
+  host: ^sw
+  stdout: 'program:orchagent
+
+    program:portsyncd
+
+    program:neighsyncd
+
+    '
+- cmd: ^docker\ exec\ swss1\ supervisorctl\ status$
+  rc: 0
+  host: ^sw
+  file: supervisor_swss1.txt
+- cmd: ^docker\ exec\ syncd1\ cat\ /etc/supervisor/critical_processes$
+  rc: 0
+  host: ^sw
+  stdout: 'program:syncd
+
+    '
+- cmd: ^docker\ exec\ syncd1\ supervisorctl\ status$
+  rc: 0
+  host: ^sw
+  file: supervisor_syncd1.txt
+- cmd: ^docker\ exec\ lldp1\ cat\ /etc/supervisor/critical_processes$
+  rc: 0
+  host: ^sw
+  stdout: 'program:lldpd
+
+    program:lldp-syncd
+
+    program:lldpmgrd
+
+    '
+- cmd: ^docker\ exec\ lldp1\ supervisorctl\ status$
+  rc: 0
+  host: ^sw
+  file: supervisor_lldp1.txt
 - cmd: ^sonic\-db\-cli\ \-n\ asic1\ APPL_DB\ keys\ 'LLDP_ENTRY_TABLE:\*'$
   rc: 0
   host: ^sw
@@ -235,12 +371,43 @@
   rc: 0
   host: ^sw
   stdout: ''
+- cmd: ^sonic\-installer\ list$
+  rc: 0
+  host: ^sw
+  file: sonic_installer_list.txt
+- cmd: ^sonic\-installer\ \-\-help$
+  rc: 0
+  host: ^sw
+  stdout: "Usage: sonic-installer [OPTIONS] COMMAND [ARGS]...\n\nCommands:\n  binary-version   Get version from local binary image file\n  cleanup          Remove installed images which are not current\
+    \ and next\n  install          Install image from local binary or URL\n  list             Print installed images\n  remove           Uninstall SONiC image\n  set-default      Choose image to boot from\
+    \ by default\n  set-next-boot    Choose image for next reboot (one time action)\n  verify-next-image  Verify the next image for reboot\n"
+- cmd: '^sonic-installer set-next-boot '
+  rc: 0
+  host: ^sw
+  stdout: ''
 - cmd: ^cat\ /proc/loadavg$
   rc: 0
   host: ^sw
   stdout: '7.92 3.10 1.20 9/412 31337
 
     '
+- cmd: '^ib_(write|send|read)_bw '
+  rc: 0
+  file: perftest.txt
+- cmd: ^afmctl reset device --datapath
+  rc: 0
+  stdout: 'datapath reset: ok
+
+    '
+- cmd: ^nohup sh -c 'sleep 2; systemctl reboot'
+  rc: 0
+  stdout: ''
+- cmd: ^true$
+  rc: 0
+  stdout: ''
+- cmd: '^(ras-partial-stations|pdu-ctl|ipmitool) '
+  rc: 0
+  stdout: ''
 - cmd: '^ping-gpu '
   rc: 0
   stdout: '4 packets transmitted, 4 received, 0% packet loss

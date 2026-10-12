@@ -20,6 +20,10 @@ class ComputeTray:
         addrs = self.host.extra.get("gpu_addrs") or []
         return str(addrs[idx]) if idx < len(addrs) else ""
 
+    def rdma_ports(self) -> list[dict]:
+        """Scale-out NIC ports from inventory ``rdma: [{dev, ip4, ip6, gpu}, ...]`` (P1..Pn order)."""
+        return list(self.host.extra.get("rdma") or [])
+
     def run(self, cmd: str, **kw) -> CmdResult:
         return self.t.run(cmd, **kw)
 

@@ -19,7 +19,7 @@ ROOT = Path(__file__).resolve().parents[1]
 SELFTEST = ROOT / "selftest"
 
 
-def _run(tmp_path: Path, mutate=None, extra_args=()) -> dict[str, str]:
+def _run(tmp_path: Path, mutate=None, extra_args=("--allow-disruptive",)) -> dict[str, str]:
     work = tmp_path / "selftest"
     shutil.copytree(SELFTEST, work)
     if mutate:
@@ -43,6 +43,13 @@ def _edit(path: Path, pattern: str, repl: str):
     path.write_text(text)
 
 
+def _edit_all(replay: Path, glob: str, pattern: str, repl: str):
+    hits = sorted(replay.glob(glob))
+    assert hits, f"no files match {glob}"
+    for f in hits:
+        _edit(f, pattern, repl)
+
+
 def _edit_rule(replay: Path, cmd_fragment: str, **changes):
     spec_path = replay / "responses.yaml"
     rules = yaml.safe_load(spec_path.read_text())
@@ -61,6 +68,8 @@ def test_healthy_rack_passes(tmp_path):
     assert verdicts["TC-AFM-004"] == "PASS"
     assert verdicts["TC-SWH-009"] == "SKIP"  # manual
 
+
+RAS_TRAFFIC = {"TC-RAS-reset-001", "TC-RAS-reset-002", "TC-RAS-reset-003", "TC-RAS-reset-004", "TC-RAS-reset-007", "TC-RAS-reset-008", "TC-RAS-reset-009"}
 
 FAULTS = {
     "slow_fan": (lambda d: _edit(d / "platform_fan.txt", r"(FanTray2_Fan1\s+)44%", r"\g<1> 4%"),
@@ -82,13 +91,45 @@ FAULTS = {
     "asic1_missing": (lambda d: _edit_rule(d, "ip\\ netns\\ list", stdout="asic0 (id: 0)\n"),
                       {"TC-SWH-016", "TC-SWH-031"}),
     "vlan_no_members": (lambda d: _edit_rule(d, "-n\\ asic1\\ CONFIG_DB\\ keys\\ 'VLAN_MEMBER", stdout=""),
-                        {"TC-SWH-036"}),
+                        {"TC-SWH-036", "TC-SWA-079"}),  # also breaks member symmetry
     "ping_loss": (lambda d: _edit_rule(d, "^ping-gpu ", stdout="4 packets transmitted, 0 received, 100% packet loss\n", rc=1),
                   {"TC-AFM-001"}),
-    "tb_slow": (lambda d: _edit(d / "transferbench.txt", r"612\.48", "212.48"), {"TC-AFM-002", "TC-AFM-003"}),
-    "rccl_wrong": (lambda d: _edit(d / "rccl.txt", r"^(\s+2048 .*?)0$", r"\g<1>7"), {"TC-AFM-004", "TC-AFM-005A"}),
+    # RAS cases and TC-HW-008 re-validate with the same TransferBench / RCCL workloads
+    "tb_slow": (lambda d: _edit(d / "transferbench.txt", r"612\.48", "212.48"),
+                {"TC-AFM-002", "TC-AFM-003", "TC-HW-008", *RAS_TRAFFIC}),
+    "rccl_wrong": (lambda d: _edit(d / "rccl.txt", r"^(\s+2048 .*?)0$", r"\g<1>7"), {"TC-AFM-004", "TC-AFM-005A", *RAS_TRAFFIC}),
     "rccl_truncated": (lambda d: _edit(d / "rccl.txt", r"^\s+1073741824 .*\n", ""),
-                       {"TC-AFM-004", "TC-AFM-005A"}),
+                       {"TC-AFM-004", "TC-AFM-005A", *RAS_TRAFFIC}),
+    # ---- switch agent / hw
+    "traffic_stalled": (lambda d: _edit_rule(d, "counters\\ \\-n\\ asic0", files=["intf_counters_asic0_0.txt"]),
+                        {"TC-SWA-075"}),
+    "lifetime_rx_errors": (lambda d: _edit_all(d, "intf_counters_asic1_*.txt", r"(Ethernet264(?:\s+\S+){5}\s+)0(?=\s)", r"\g<1>5"),
+                           {"TC-SWA-074"}),
+    # asic1 loses Vlan101, but its Vlan101 members remain -> asymmetric + orphan members
+    "vlan_asymmetry": (lambda d: _edit_rule(d, "-n\\ asic1\\ CONFIG_DB\\ keys\\ 'VLAN\\|", stdout="VLAN|Vlan100\n"),
+                       {"TC-SWA-079", "TC-SWH-036"}),
+    "installer_missing_cmd": (lambda d: _edit_rule(d, "sonic\\-installer\\ \\-\\-help",
+                                                   stdout="Commands:\n  install\n  list\n  remove\n"), {"TC-SWA-138"}),
+    "set_next_boot_fails": (lambda d: _edit_rule(d, "set-next-boot ", rc=1, stderr="Error: image not found"),
+                            {"TC-SWA-129"}),
+    "lldpd_down": (lambda d: _edit(d / "supervisor_lldp0.txt", r"^lldpd(\s+)RUNNING", r"lldpd\1EXITED "),
+                   {"TC-SWA-223", "TC-SWA-140"}),
+    "syncd_not_recovering": (lambda d: _edit(d / "supervisor_syncd0.txt", r"^syncd(\s+)RUNNING", r"syncd\1FATAL  "),
+                             {"TC-SWA-141"}),
+    "port_speed_mismatch": (lambda d: _edit_rule(d, "sonic-db-cli -n asic0 CONFIG_DB keys 'PORT",
+                                                 stdout="Ethernet0 400000 400000\nEthernet8 400000 200000\n"),
+                            {"TC-HW-002"}),
+    # ---- scale-out RDMA
+    "rdma_cqe_error": (lambda d: _edit(d / "perftest.txt", r"^ #bytes", " Completion with error at client\n #bytes"),
+                       {"TC-IBS-001", "TC-IBS-002", "TC-IBS-003", "TC-IBS-004", "TC-IBS-005", "TC-IBS-006"}),
+    "rdma_low_bw": (lambda d: _edit(d / "perftest.txt", r"390\.12", "100.12"),
+                    {"TC-IBS-001", "TC-IBS-002", "TC-IBS-003", "TC-IBS-004", "TC-IBS-005", "TC-IBS-006"}),
+    # ---- RAS
+    "datapath_reset_fails": (lambda d: _edit_rule(d, "afmctl reset", rc=1, stderr="reset failed"),
+                             {"TC-RAS-reset-001", "TC-RAS-reset-002", "TC-RAS-reset-003", "TC-RAS-reset-004",
+                              "TC-RAS-reset-007", "TC-RAS-reset-008", "TC-RAS-reset-009"}),
+    "node_never_returns": (lambda d: _edit_rule(d, "^true$", rc=255),
+                           {"TC-RAS-reset-007", "TC-RAS-reset-008", "TC-RAS-reset-009"}),
     "thermalctld_down": (lambda d: _edit_rule(d, "thermalctld", stdout="thermalctld   EXITED\n"), {"TC-SWH-004"}),
 }
 

@@ -187,3 +187,50 @@ def parse_bandwidth(text: str, regexes: list[str] | None = None) -> float | None
             last = hits[-1]
             return float(last[0] if isinstance(last, tuple) else last)
     return None
+
+
+# -------------------------------------------------------------- perftest
+
+@dataclass
+class PerftestRow:
+    size: int
+    iterations: int
+    bw_peak: float | None
+    bw_avg: float | None
+    msg_rate: float | None
+
+
+@dataclass
+class PerftestResult:
+    rows: list[PerftestRow] = field(default_factory=list)
+    errors: list[str] = field(default_factory=list)
+
+    @property
+    def bw_avg(self) -> float | None:
+        """Average BW of the last (largest) message size row, in the units perftest printed."""
+        return self.rows[-1].bw_avg if self.rows else None
+
+
+_PERF_ERR_RE = re.compile(r"(?i)(completion with error|cqe error|failed status|couldn't|failed to|unable to|error:|timeout)")
+
+
+def parse_perftest(text: str) -> PerftestResult:
+    """Parse ib_write_bw / ib_send_bw / ib_read_bw output (``#bytes #iterations BW peak BW average MsgRate``)."""
+    res = PerftestResult()
+    in_table = False
+    for line in text.splitlines():
+        s = line.strip()
+        if _PERF_ERR_RE.search(s):
+            res.errors.append(s)
+        if s.startswith("#bytes"):
+            in_table = True
+            continue
+        if not in_table:
+            continue
+        toks = s.split()
+        if len(toks) >= 4 and toks[0].isdigit():
+            res.rows.append(PerftestRow(int(toks[0]), int(toks[1]), to_float(toks[2]), to_float(toks[3]),
+                                        to_float(toks[4]) if len(toks) > 4 else None))
+        elif s.startswith("-"):
+            in_table = False
+    return res

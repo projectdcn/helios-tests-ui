@@ -13,10 +13,18 @@ helios/                 framework
   sonic.py              SONiC switch driver (multi-ASIC: -n asicN, sonic-db-cli)
   compute.py            compute-tray driver + command-template rendering
   afm.py                AFM REST client (endpoint map comes from inventory)
-  parsers.py            SONiC tables, sonic-db-cli, rccl-tests, TransferBench
+  parsers.py            SONiC tables, sonic-db-cli, rccl-tests, TransferBench, perftest
+  datapath.py           shared workloads: L2 ping, TransferBench, RCCL
+  perftest.py           ib_*_bw server/client pairs for scale-out RDMA
+  wait.py               polling helpers (recovery, reboot / SSH return)
   rack.py               Rack, fan_out(), Checks (soft asserts)
   pytest_plugin.py      --inventory/--tc/..., per-switch params, results CSV
-tests/l1/               rack tests, tagged @pytest.mark.tc("TC-...")
+tests/                  rack tests, each tagged @pytest.mark.tc("TC-...")
+  l1/                   switch hardware (TC-SWH) + scale-up datapath (TC-AFM-001..005A)
+  switch/               SONiC switch agent (TC-SWA)
+  hw/                   hardware (TC-HW)
+  scaleout/             mortaro RDMA perftest (TC-IBS)
+  ras/                  RAS datapath reset / reboot / power cycle (TC-RAS-reset)
 unit/                   offline tests + fault-injection self-test (no rack needed)
 selftest/               replay inventory + canned outputs (make_replay.py)
 inventory/              example-fullrack.yaml (copy to *.local.yaml)
@@ -41,8 +49,9 @@ These use recorded SONiC and GPU outputs from `selftest/replay`, so no hardware
 is needed.
 
 ```bash
-.venv/bin/pytest unit                                         # unit tests + 16 injected-fault checks
-.venv/bin/pytest tests --inventory selftest/inventory.yaml    # whole L1 suite (45 pass, 4 skip)
+.venv/bin/pytest unit                                                       # unit tests + 28 injected-fault checks
+.venv/bin/pytest tests --inventory selftest/inventory.yaml                  # 102 pass, 13 skip (disruptive skipped)
+.venv/bin/pytest tests --inventory selftest/inventory.yaml --allow-disruptive   # 111 pass, 4 skip
 ```
 
 ### 2. On a real rack
@@ -57,10 +66,10 @@ cp inventory/example-fullrack.yaml inventory/rack1.local.yaml
 - Under `switches:` and `computes:`, set each `host:` to the real hostname or IP.
 - Under `defaults:`, set the SSH user, and either `key_file` or `password_env`
   for each node type.
-- Fill in the `VERIFY` items: `commands.l2ping.cmd`,
-  `commands.transferbench.in_domain` / `cross_domain` and
-  `commands.rccl.cross_domain`. Until these are set, those tests skip and name
-  the missing setting.
+- Fill in the `VERIFY` items (see [Calibrate on the first rack run](#calibrate-on-the-first-rack-run)).
+  Until these are set, those tests skip and name the missing setting.
+- For the scale-out RDMA cases, add `rdma:` ports to the two computes named in
+  `commands.perftest.nodes`. For DC/AC power cycles, add `bmc:` / `pdu_outlet:`.
 - Set your pass limits under `thresholds:`, such as `expected_fans`,
   `expected_psus`, `psu_capacity_w` and the bandwidth floors.
 
@@ -93,8 +102,9 @@ export HELIOS_INVENTORY=inventory/rack1.local.yaml
 | Part of the rack | `--switches sw1,sw2` / `--computes c01,c02` |
 | Switch hardware tests only | `tests/l1/test_switch_hw.py` |
 | Datapath tests only (ping, TransferBench, RCCL) | `tests/l1/test_afm_datapath.py` |
+| Switch agent / hardware / RDMA / RAS only | `tests/switch` / `tests/hw` / `tests/scaleout` / `tests/ras` |
 | By level or marker | `-m l1` / `-m "l1 and not stress"` |
-| Tests that flap links or restart agents (L2+) | `--allow-disruptive` |
+| Tests that restart services, reset devices or reboot (TC-SWA-140/141, all RAS) | `--allow-disruptive` |
 | Manual tests (e.g. the TC-SWH-009 heat test) | `--run-manual` |
 
 For example, to run only the PSU checks on `sw1` and `sw2`:
@@ -125,7 +135,7 @@ The table has one row per category:
 `--missing` also lists every case that has **no test yet**, with its ID, level
 and title.
 
-## L1 coverage (41 cases)
+## Coverage (64 of 542 cases)
 
 * **TC-SWH-001…036, switch hardware.** Firmware, fans, PSUs, platform/EEPROM,
   multi-ASIC namespaces, interface state/speed/MTU, error-counter deltas,
@@ -136,6 +146,23 @@ and title.
   and the five RCCL collectives in-domain and cross-domain. RCCL results are
   checked for the `#wrong` column, out-of-bounds values, the max message size
   reached, and an optional per-collective bus-bandwidth floor.
+
+* **TC-SWA-074, 075, 079, 129, 138, 140, 141, 223, switch agent.** Lifetime
+  error counters, traffic flowing (RX/TX deltas), VLAN symmetry across ASICs,
+  `sonic-installer` commands and set-next-boot (restores the original), LLDP
+  discovery, plus disruptive restarts of a per-ASIC container and of SWSS
+  (waits for critical processes and previously-up ports to recover).
+* **TC-HW-002, 008, hardware.** Oper speed vs. configured speed per port;
+  TransferBench smoke a2a in-domain.
+* **TC-IBS-001…006, mortaro scale-out RDMA.** `ib_*_bw` server/client per NIC
+  port pair, all pairs in parallel: cross-node, multi-verb, loopback, QP
+  scaling (8 to 256, against the 8-QP baseline), the full 320-run matrix, and
+  a configurable run.
+* **TC-RAS-reset-001…004, 007…009, RAS.** `afmctl reset device --datapath`
+  (all ports or partial stations), then in-domain or cross-domain
+  TransferBench + RCCL; OS reboot, DC cycle (BMC) and AC cycle (PDU) of one
+  node, then a datapath reset of the rest and cross-domain traffic.
+  Not yet covered: 005/006 and 010…017, which need AFM's vPOD and reconfigure API.
 
 Some cases can't be fully checked on generic SONiC:
 * TC-SWH-004 is passive: thermalctld must be running, and fans must ramp when
@@ -156,8 +183,12 @@ is unset skips with the key name; it never guesses:
 * `commands.transferbench.bw_regex`: only needed if the summary line doesn't
   match the built-in patterns
 * `commands.rccl.cross_domain`: the mpirun/RCCL environment for IFoE
+* `commands.perftest.*`: `*_imm` verb flags, GID indexes and the IPv6 flag for
+  your perftest build
+* `commands.ras.datapath_reset` (defaults to the plan's `afmctl reset device --datapath`),
+  `ready_check`, `partial_stations_down` / `_up`, `dc_cycle`, `ac_cycle`
 * `thresholds.switch.expected_fans`, `expected_psus`, `psu_capacity_w`, and the
-  bandwidth floors
+  bandwidth floors (`datapath.*`, including `perftest.min_gbps`)
 
 ## Plan ID fixes
 

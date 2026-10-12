@@ -43,8 +43,13 @@ computes:
   - {name: c16, host: helios-c16}
   - {name: c17, host: helios-c17}
   - {name: c18, host: helios-c18}
-  # per-GPU accelerator addresses for {src_addr}/{dst_addr} in commands.l2ping, e.g.
-  #   gpu_addrs: ["02:00:00:01:00:00", "02:00:00:01:00:01", ...]
+  # Optional per-compute keys:
+  #   gpu_addrs: ["02:00:00:01:00:00", ...]   per-GPU accelerator address for commands.l2ping {src_addr}/{dst_addr}
+  #   bmc: 10.0.0.101                          for commands.ras.dc_cycle {bmc}
+  #   pdu_outlet: A1                           for commands.ras.ac_cycle {pdu_outlet}
+  #   rdma:                                    scale-out NIC ports P1..P4 for the TC-IBS (mortaro) cases
+  #     - {dev: ionic_0, ip4: 192.168.10.1, ip6: "fd00:10::1", gpu: 0}
+  #     - {dev: ionic_1, ip4: 192.168.11.1, ip6: "fd00:11::1", gpu: 1}
 
 afm:                    # used by L2+ tranches; L1 does not need it
   url: https://helios-afm:443
@@ -85,6 +90,31 @@ commands:
     timeout_s: 900
   switch:
     fan_power: null      # platform-specific; prints "<fan> <watts>" per line
+  perftest:              # TC-IBS-* scale-out RDMA
+    nodes: [c01, c02]    # server, client (both need 'rdma:' ports)
+    # VERIFY: verb flags for *_imm, GID indexes and the IPv6 flag on your perftest build
+    verbs: {write: ib_write_bw, write_imm: "ib_write_bw --write_with_imm", send: ib_send_bw,
+            send_imm: "ib_send_bw --send_with_imm", read: ib_read_bw}
+    gid_index: {ipv4: 3, ipv6: 1}     # per-port override: gid_index_ipv4 / gid_index_ipv6 in rdma entries
+    af_flag: {ipv4: "", ipv6: "--ipv6"}
+    gpu_mem_flag: "--use_rocm={gpu}"
+    qps: 1
+    qp_sweep: [8, 16, 32, 64, 128, 256]
+    duration_s: 10
+    base_port: 18515
+    default_af: ipv6
+    default_dir: bidir
+    extra: ""
+    custom: null         # TC-IBS-006: {verbs: [...], qps: [...], mem: [cpu|gpu], af: [...], dir: [...], pairs: [1,2], iterations: N}
+  ras:                   # TC-RAS-reset-*
+    datapath_reset: "afmctl reset device --datapath"    # VERIFY
+    ready_check: null    # command that exits 0 once GPUs/IFoE are ready again; null = sleep thresholds.ras.settle_s
+    collectives: [all_reduce]
+    partial_stations_down: null     # VERIFY: take some IFoE stations down on {name} (002/004)
+    partial_stations_up: null
+    power_target: null   # compute to reboot/power-cycle (default: first selected)
+    dc_cycle: null       # runs on the test runner, e.g. "ipmitool -I lanplus -H {bmc} -U $BMC_USER -P $BMC_PASS chassis power cycle"
+    ac_cycle: null       # runs on the test runner, e.g. your PDU CLI with {pdu_outlet}
 
 thresholds:
   switch:
@@ -118,9 +148,25 @@ thresholds:
     max_err_absolute: null
     min_vlans: 1
     exclude_ports: []
+    error_columns: [RX_ERR, TX_ERR]         # TC-SWA-074 lifetime error check (max_err_absolute, default 0)
+    traffic_window_s: 35                    # TC-SWA-075: long enough to include an LLDP interval
+    min_pkts_delta: 1
+    vlan_member_symmetry: true              # TC-SWA-079
+    lldp_required_on_all_up_ports: true     # TC-SWA-223
+    restart_container: lldp                 # TC-SWA-140
+    swss_restart_namespaces: null           # TC-SWA-141 (default: first ASIC only)
+    recover_timeout_s: 300
+    poll_interval_s: 10
+  ras:
+    settle_s: 30
+    ready_timeout_s: 300
+    down_wait_s: 60
+    boot_timeout_s: 900
+    poll_interval_s: 10
   datapath:
     parallel_computes: true                 # in-domain jobs on all trays at once
     parallel_pairs: false                   # cross-domain pairs one at a time
     transferbench: {in_domain_min_gbps: null, cross_domain_min_gbps: null}
     rccl: {}                                # e.g. {all_reduce_min_busbw_gbps: 150}
     rccl_cross: {}
+    perftest: {min_gbps: null, qp_max_drop_pct: 10}   # per-verb override: write_min_gbps, read_min_gbps, ...

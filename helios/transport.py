@@ -57,6 +57,8 @@ class Transport(Protocol):
 
     def close(self) -> None: ...
 
+    def reset(self) -> None: ...
+
 
 def build_command(cmd: str, sudo: bool = False, env: dict[str, Any] | None = None) -> str:
     prefix = []
@@ -143,12 +145,39 @@ class SshTransport:
                 self._client.close()
                 self._client = None
 
+    reset = close  # drop a (possibly dead) connection; the next run() reconnects
+
+
+class LocalTransport:
+    """Runs commands on the test runner itself (BMC/PDU power control, ipmitool)."""
+
+    def __init__(self, host: Host):
+        self.host = host
+
+    def run(self, cmd: str, *, timeout: float = 120, sudo: bool = False,
+            env: dict[str, Any] | None = None) -> CmdResult:
+        import subprocess
+
+        full = build_command(cmd, sudo, env)
+        start = time.monotonic()
+        log.debug("[local] $ %s", full)
+        try:
+            p = subprocess.run(["bash", "-c", full], capture_output=True, text=True, timeout=timeout)
+        except subprocess.TimeoutExpired as e:
+            raise CommandTimeout(f"[local] timed out after {timeout}s: {cmd}") from e
+        return CmdResult(self.host.name, cmd, p.returncode, p.stdout, p.stderr, time.monotonic() - start)
+
+    def close(self) -> None:
+        pass
+
+    reset = close
+
 
 @dataclass
 class _Rule:
     cmd: re.Pattern
     host: re.Pattern | None
-    stdout: str
+    stdouts: list[str]  # >1 entry: successive calls cycle through them (e.g. counters that advance)
     stderr: str
     rc: int
 
@@ -162,11 +191,16 @@ def _load_rules(directory: Path) -> list[_Rule]:
         spec = yaml.safe_load((directory / "responses.yaml").read_text()) or []
         rules = []
         for r in spec:
-            stdout = (directory / r["file"]).read_text() if r.get("file") else r.get("stdout", "")
+            if r.get("files"):
+                stdouts = [(directory / f).read_text() for f in r["files"]]
+            elif r.get("file"):
+                stdouts = [(directory / r["file"]).read_text()]
+            else:
+                stdouts = [r.get("stdout", "")]
             rules.append(_Rule(
                 cmd=re.compile(r["cmd"]),
                 host=re.compile(r["host"]) if r.get("host") else None,
-                stdout=stdout, stderr=r.get("stderr", ""), rc=int(r.get("rc", 0)),
+                stdouts=stdouts, stderr=r.get("stderr", ""), rc=int(r.get("rc", 0)),
             ))
         _RULE_CACHE[key] = rules
     return _RULE_CACHE[key]
@@ -180,19 +214,24 @@ class ReplayTransport:
         self.host = host
         self.rules = _load_rules(Path(directory))
         self.calls: list[str] = []
+        self._hits: dict[int, int] = {}
 
     def run(self, cmd: str, *, timeout: float = 120, sudo: bool = False,
             env: dict[str, Any] | None = None) -> CmdResult:
         self.calls.append(cmd)
-        for rule in self.rules:
+        for i, rule in enumerate(self.rules):
             if rule.host and not rule.host.search(self.host.name):
                 continue
             if rule.cmd.search(cmd):
-                return CmdResult(self.host.name, cmd, rule.rc, rule.stdout, rule.stderr)
+                n = self._hits.get(i, 0)
+                self._hits[i] = n + 1
+                return CmdResult(self.host.name, cmd, rule.rc, rule.stdouts[n % len(rule.stdouts)], rule.stderr)
         return CmdResult(self.host.name, cmd, 127, "", f"replay: no rule matches {cmd!r}")
 
     def close(self) -> None:
         pass
+
+    reset = close
 
 
 def make_transport(host: Host, cfg: dict[str, Any]) -> Transport:
@@ -201,4 +240,6 @@ def make_transport(host: Host, cfg: dict[str, Any]) -> Transport:
         return SshTransport(host, connect_timeout=float(cfg.get("connect_timeout", 15)))
     if kind == "replay":
         return ReplayTransport(host, cfg["dir"])
+    if kind == "local":
+        return LocalTransport(host)
     raise ValueError(f"unknown transport kind {kind!r}")

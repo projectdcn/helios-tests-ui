@@ -1,0 +1,3 @@
+orchagent                        RUNNING   pid 40, uptime 3 days, 1:02:03
+portsyncd                        RUNNING   pid 41, uptime 3 days, 1:02:03
+neighsyncd                       RUNNING   pid 42, uptime 3 days, 1:02:03

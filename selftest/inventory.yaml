@@ -1,5 +1,5 @@
 # Self-test inventory: replays canned outputs (selftest/replay) instead of SSH.
-#   pytest tests --inventory selftest/inventory.yaml
+#   pytest tests --inventory selftest/inventory.yaml --allow-disruptive
 rack: selftest
 transport:
   kind: replay
@@ -10,8 +10,20 @@ switches:
 computes:
   - name: c1
     gpus: 4
+    bmc: 10.0.0.101
+    pdu_outlet: A1
+    rdma:
+      - {dev: ionic_0, ip4: 192.168.10.1, ip6: "fd00:10::1", gpu: 0}
+      - {dev: ionic_1, ip4: 192.168.11.1, ip6: "fd00:11::1", gpu: 1}
+      - {dev: ionic_2, ip4: 192.168.12.1, ip6: "fd00:12::1", gpu: 2}
+      - {dev: ionic_3, ip4: 192.168.13.1, ip6: "fd00:13::1", gpu: 3}
   - name: c2
     gpus: 4
+    rdma:
+      - {dev: ionic_0, ip4: 192.168.10.2, ip6: "fd00:10::2", gpu: 0}
+      - {dev: ionic_1, ip4: 192.168.11.2, ip6: "fd00:11::2", gpu: 1}
+      - {dev: ionic_2, ip4: 192.168.12.2, ip6: "fd00:12::2", gpu: 2}
+      - {dev: ionic_3, ip4: 192.168.13.2, ip6: "fd00:13::2", gpu: 3}
 
 commands:
   l2ping:
@@ -23,6 +35,18 @@ commands:
   rccl:
     in_domain: "{rccl_tests_dir}/build/{collective}_perf -b {min_bytes} -e {max_bytes} -f 2 -g {gpus} -n {iters}"
     cross_domain: "mpirun -np {np} -H {hostlist} {rccl_tests_dir}/build/{collective}_perf -b {min_bytes} -e {max_bytes} -f 2 -g 1"
+  perftest:
+    nodes: [c1, c2]
+    duration_s: 1
+    server_start_s: 0
+    timeout_margin_s: 10
+    qp_sweep: [8, 64, 256]
+    custom: {verbs: [write, read], qps: [4], pairs: [1, 2], iterations: 2}
+  ras:
+    partial_stations_down: "ras-partial-stations down {name}"
+    partial_stations_up: "ras-partial-stations up {name}"
+    dc_cycle: "ipmitool -I lanplus -H {bmc} chassis power cycle"
+    ac_cycle: "pdu-ctl cycle {pdu_outlet}"
 
 thresholds:
   switch:
@@ -32,8 +56,13 @@ thresholds:
     psu_current_max_a: 250
     stability: {samples: 2, interval_s: 0}
     err_window_s: 0
+    traffic_window_s: 0
     cpu_stress_s: 0
     expected_lldp_neighbors: 8
+    recover_timeout_s: 1
+    poll_interval_s: 0
+  ras: {settle_s: 0, down_wait_s: 0, boot_timeout_s: 1, poll_interval_s: 0}
   datapath:
     transferbench: {in_domain_min_gbps: 500, cross_domain_min_gbps: 500}
     rccl: {all_reduce_min_busbw_gbps: 100}
+    perftest: {min_gbps: 300}

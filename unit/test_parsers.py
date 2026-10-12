@@ -94,3 +94,21 @@ def test_build_command_wraps_compound_commands():
     assert build_command("show x") == "show x"
     assert build_command("a | b", sudo=True) == "sudo -n bash -c 'a | b'"
     assert build_command("run", env={"HIP_VISIBLE_DEVICES": "0,1"}) == "env HIP_VISIBLE_DEVICES=0,1 bash -c run"
+
+
+PERF = """\
+ #bytes     #iterations    BW peak[Gb/sec]    BW average[Gb/sec]   MsgRate[Mpps]
+ 4096       1000000          0.00               98.50		   3.006
+ 65536      7442117          0.00               390.12		   0.744097
+---------------------------------------------------------------------------------------
+"""
+
+
+def test_parse_perftest():
+    from helios.parsers import parse_perftest
+
+    r = parse_perftest(PERF)
+    assert [row.size for row in r.rows] == [4096, 65536]
+    assert r.bw_avg == 390.12 and not r.errors
+    bad = parse_perftest(" Completion with error at client\n Failed status 12: wr_id 0 syndrom 0x81\n")
+    assert len(bad.errors) == 2 and bad.bw_avg is None
