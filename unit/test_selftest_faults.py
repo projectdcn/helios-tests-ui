@@ -115,7 +115,7 @@ FAULTS = {
                      {"TC-SWH-001", "TC-SWH-015"}),
     # losing an ASIC namespace also loses its LLDP neighbours (expected_lldp_neighbors: 8)
     "asic1_missing": (lambda d: _edit_rule(d, "ip\\ netns\\ list", stdout="asic0 (id: 0)\n"),
-                      {"TC-SWH-016", "TC-SWH-031"}),
+                      {"TC-SWH-016", "TC-SWH-031", "TC-HW-013"}),  # asic1 FDB unreadable -> MACs missing
     "vlan_no_members": (lambda d: _edit_rule(d, "-n\\ asic1\\ CONFIG_DB\\ keys\\ 'VLAN_MEMBER", stdout=""),
                         {"TC-SWH-036", "TC-SWA-079"}),  # also breaks member symmetry
     "ping_loss": (lambda d: _edit(d / "afmctl_ping.txt", r"IFoE Request    : 35/35 PASS, 0/35 fail",
@@ -197,12 +197,25 @@ FAULTS = {
                              {"TC-AFM-003", "TC-RAS-reset-003", "TC-RAS-reset-004", "TC-RAS-reset-007",
                               "TC-RAS-reset-008", "TC-RAS-reset-009"}),
     "gpu_not_active": (lambda d: _edit(d / "afmctl_device_c2.json", r'"config_phase": "ACTIVE"', '"config_phase": "PROVIDER"'),
-                       {"TC-AFM-001", "TC-HW-017"}),
+                       {"TC-AFM-001", "TC-HW-017", "TC-BU-011"}),
     "ping_no_summary": (lambda d: _edit(d / "afmctl_ping.txt", r"Summary:(.|\n)*", "ERR - Failed to start ping test\n"),
                         {"TC-AFM-001", "TC-HW-017"}),
     # MR3 failure mode: one plane silently drops a port's ingress while links/LLDP/VLAN look healthy
     "port_dropping_lifetime": (lambda d: _drops(d, "Ethernet264", live=False), {"TC-SWA-074"}),
     "port_still_dropping": (lambda d: _drops(d, "Ethernet272", live=True), {"TC-SWA-074"}),
+    # ---- sideband bring-up / destination MACs
+    "sb_slot_missing": (lambda d: _edit(d / "afm_agent_ps.txt", r"^/sb-node-agent -slot-id 0 .*\n", ""), {"TC-BU-009"}),
+    "agent_on_compute": (lambda d: _edit(d / "compute_ps.txt", r"\Z", "inb-node-agent  /usr/bin/inb-node-agent\n"),
+                         {"TC-BU-006"}),
+    "afm_agent_inactive": (lambda d: _edit_rule(d, "systemctl\\ is\\-active\\ afm\\-agent", stdout="inactive\n"),
+                           {"TC-BU-002"}),
+    "gpu_port_no_link": (lambda d: _edit(d / "afmctl_port_0003.json",
+                                         r'("id": "12", "spec": \{"admin_state": "enabled"\}, "status": \{"link_status": ")LINK_UP',
+                                         r"\1NONE"), {"TC-BU-011"}),
+    "dst_accel_missing": (lambda d: _edit(d / "afmctl_accel_addr_c2.json",
+                                          r'\{\s*"accelerator_id": "3",\s*"mac_addr": "[^"]+",\s*"ip_addr": "[^"]+"\s*\},?', ""),
+                          {"TC-HW-013"}),
+    "fdb_mac_on_wrong_port": (lambda d: _edit(d / "fdb_asic0.txt", r"Ethernet1000 ", "Ethernet1001 "), {"TC-HW-013"}),
     "thermalctld_down": (lambda d: _edit_rule(d, "thermalctld", stdout="thermalctld   EXITED\n"), {"TC-SWH-004"}),
 }
 

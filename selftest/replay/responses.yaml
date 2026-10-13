@@ -30,6 +30,10 @@
 
     bgp1
 
+    afm-agent
+
+    afm-controller
+
     '
 - cmd: ^show\ platform\ fan$
   rc: 0
@@ -167,7 +171,7 @@
   - intf_counters_asic0_5.txt
   - intf_counters_asic0_6.txt
   - intf_counters_asic0_7.txt
-- cmd: ^for k in \$\(sonic-db-cli -n asic0 CONFIG_DB keys 'PORT\|Ethernet\*'\)
+- cmd: ^for k in \$\(sonic-db-cli -n asic0 CONFIG_DB keys 'PORT\|Ethernet\*'\); do p=
   rc: 0
   host: ^sw
   stdout: 'Ethernet0 400000 400000
@@ -275,7 +279,7 @@
   - intf_counters_asic1_5.txt
   - intf_counters_asic1_6.txt
   - intf_counters_asic1_7.txt
-- cmd: ^for k in \$\(sonic-db-cli -n asic1 CONFIG_DB keys 'PORT\|Ethernet\*'\)
+- cmd: ^for k in \$\(sonic-db-cli -n asic1 CONFIG_DB keys 'PORT\|Ethernet\*'\); do p=
   rc: 0
   host: ^sw
   stdout: 'Ethernet256 400000 400000
@@ -429,76 +433,54 @@
   file: afmctl_device_c2.json
 - cmd: ^afmctl\ show\ port\ \-b\ 0001:01:00\.1\ \-\-json\ 2>/dev/null$
   rc: 0
-  stdout: '{"device": [{"bdf": "0001:01:00.1", "port": [{"id": "0", "spec": {"admin_state": "enabled"}, "status": {"link_status": "LINK_UP"}}, {"id": "1", "spec": {"admin_state": "enabled"}, "status": {"link_status":
-    "LINK_UP"}}, {"id": "2", "spec": {"admin_state": "enabled"}, "status": {"link_status": "LINK_UP"}}, {"id": "3", "spec": {"admin_state": "enabled"}, "status": {"link_status": "LINK_UP"}}, {"id": "4",
-    "spec": {"admin_state": "enabled"}, "status": {"link_status": "LINK_UP"}}, {"id": "5", "spec": {"admin_state": "enabled"}, "status": {"link_status": "LINK_UP"}}, {"id": "6", "spec": {"admin_state":
-    "enabled"}, "status": {"link_status": "LINK_UP"}}, {"id": "7", "spec": {"admin_state": "enabled"}, "status": {"link_status": "NO_PHY_LINK, PCS_NO_BLOCK_LOCK"}}, {"id": "8", "spec": {"admin_state": "enabled"},
-    "status": {"link_status": "LINK_UP"}}, {"id": "9", "spec": {"admin_state": "enabled"}, "status": {"link_status": "LINK_UP"}}, {"id": "10", "spec": {"admin_state": "enabled"}, "status": {"link_status":
-    "LINK_UP"}}, {"id": "11", "spec": {"admin_state": "enabled"}, "status": {"link_status": "LINK_UP"}}, {"id": "12", "spec": {"admin_state": "enabled"}, "status": {"link_status": "LINK_UP"}}, {"id": "13",
-    "spec": {"admin_state": "enabled"}, "status": {"link_status": "LINK_UP"}}, {"id": "14", "spec": {"admin_state": "enabled"}, "status": {"link_status": "LINK_UP"}}, {"id": "15", "spec": {"admin_state":
-    "enabled"}, "status": {"link_status": "LINK_UP"}}, {"id": "16", "spec": {"admin_state": "enabled"}, "status": {"link_status": "LINK_UP"}}, {"id": "17", "spec": {"admin_state": "enabled"}, "status":
-    {"link_status": "LINK_UP"}}, {"id": "18", "spec": {"admin_state": "enabled"}, "status": {"link_status": "LINK_UP"}}, {"id": "19", "spec": {"admin_state": "enabled"}, "status": {"link_status": "LINK_UP"}},
-    {"id": "20", "spec": {"admin_state": "enabled"}, "status": {"link_status": "LINK_UP"}}, {"id": "21", "spec": {"admin_state": "enabled"}, "status": {"link_status": "LINK_UP"}}, {"id": "22", "spec": {"admin_state":
-    "enabled"}, "status": {"link_status": "LINK_UP"}}, {"id": "23", "spec": {"admin_state": "enabled"}, "status": {"link_status": "LINK_UP"}}, {"id": "24", "spec": {"admin_state": "enabled"}, "status":
-    {"link_status": "LINK_UP"}}, {"id": "25", "spec": {"admin_state": "enabled"}, "status": {"link_status": "LINK_UP"}}, {"id": "26", "spec": {"admin_state": "enabled"}, "status": {"link_status": "LINK_UP"}},
-    {"id": "27", "spec": {"admin_state": "enabled"}, "status": {"link_status": "LINK_UP"}}, {"id": "28", "spec": {"admin_state": "enabled"}, "status": {"link_status": "LINK_UP"}}, {"id": "29", "spec": {"admin_state":
-    "enabled"}, "status": {"link_status": "LINK_UP"}}, {"id": "30", "spec": {"admin_state": "enabled"}, "status": {"link_status": "LINK_UP"}}, {"id": "31", "spec": {"admin_state": "enabled"}, "status":
-    {"link_status": "LINK_UP"}}, {"id": "32", "spec": {"admin_state": "enabled"}, "status": {"link_status": "LINK_UP"}}, {"id": "33", "spec": {"admin_state": "enabled"}, "status": {"link_status": "LINK_UP"}},
-    {"id": "34", "spec": {"admin_state": "enabled"}, "status": {"link_status": "LINK_UP"}}, {"id": "35", "spec": {"admin_state": "enabled"}, "status": {"link_status": "LINK_UP"}}]}]}'
+  file: afmctl_port_0001.json
 - cmd: ^afmctl\ show\ port\ \-b\ 0002:01:00\.1\ \-\-json\ 2>/dev/null$
   rc: 0
-  stdout: '{"device": [{"bdf": "0002:01:00.1", "port": [{"id": "0", "spec": {"admin_state": "enabled"}, "status": {"link_status": "LINK_UP"}}, {"id": "1", "spec": {"admin_state": "enabled"}, "status": {"link_status":
-    "LINK_UP"}}, {"id": "2", "spec": {"admin_state": "enabled"}, "status": {"link_status": "LINK_UP"}}, {"id": "3", "spec": {"admin_state": "enabled"}, "status": {"link_status": "LINK_UP"}}, {"id": "4",
-    "spec": {"admin_state": "enabled"}, "status": {"link_status": "LINK_UP"}}, {"id": "5", "spec": {"admin_state": "enabled"}, "status": {"link_status": "LINK_UP"}}, {"id": "6", "spec": {"admin_state":
-    "enabled"}, "status": {"link_status": "LINK_UP"}}, {"id": "7", "spec": {"admin_state": "enabled"}, "status": {"link_status": "NO_PHY_LINK, PCS_NO_BLOCK_LOCK"}}, {"id": "8", "spec": {"admin_state": "enabled"},
-    "status": {"link_status": "LINK_UP"}}, {"id": "9", "spec": {"admin_state": "enabled"}, "status": {"link_status": "LINK_UP"}}, {"id": "10", "spec": {"admin_state": "enabled"}, "status": {"link_status":
-    "LINK_UP"}}, {"id": "11", "spec": {"admin_state": "enabled"}, "status": {"link_status": "LINK_UP"}}, {"id": "12", "spec": {"admin_state": "enabled"}, "status": {"link_status": "LINK_UP"}}, {"id": "13",
-    "spec": {"admin_state": "enabled"}, "status": {"link_status": "LINK_UP"}}, {"id": "14", "spec": {"admin_state": "enabled"}, "status": {"link_status": "LINK_UP"}}, {"id": "15", "spec": {"admin_state":
-    "enabled"}, "status": {"link_status": "LINK_UP"}}, {"id": "16", "spec": {"admin_state": "enabled"}, "status": {"link_status": "LINK_UP"}}, {"id": "17", "spec": {"admin_state": "enabled"}, "status":
-    {"link_status": "LINK_UP"}}, {"id": "18", "spec": {"admin_state": "enabled"}, "status": {"link_status": "LINK_UP"}}, {"id": "19", "spec": {"admin_state": "enabled"}, "status": {"link_status": "LINK_UP"}},
-    {"id": "20", "spec": {"admin_state": "enabled"}, "status": {"link_status": "LINK_UP"}}, {"id": "21", "spec": {"admin_state": "enabled"}, "status": {"link_status": "LINK_UP"}}, {"id": "22", "spec": {"admin_state":
-    "enabled"}, "status": {"link_status": "LINK_UP"}}, {"id": "23", "spec": {"admin_state": "enabled"}, "status": {"link_status": "LINK_UP"}}, {"id": "24", "spec": {"admin_state": "enabled"}, "status":
-    {"link_status": "LINK_UP"}}, {"id": "25", "spec": {"admin_state": "enabled"}, "status": {"link_status": "LINK_UP"}}, {"id": "26", "spec": {"admin_state": "enabled"}, "status": {"link_status": "LINK_UP"}},
-    {"id": "27", "spec": {"admin_state": "enabled"}, "status": {"link_status": "LINK_UP"}}, {"id": "28", "spec": {"admin_state": "enabled"}, "status": {"link_status": "LINK_UP"}}, {"id": "29", "spec": {"admin_state":
-    "enabled"}, "status": {"link_status": "LINK_UP"}}, {"id": "30", "spec": {"admin_state": "enabled"}, "status": {"link_status": "LINK_UP"}}, {"id": "31", "spec": {"admin_state": "enabled"}, "status":
-    {"link_status": "LINK_UP"}}, {"id": "32", "spec": {"admin_state": "enabled"}, "status": {"link_status": "LINK_UP"}}, {"id": "33", "spec": {"admin_state": "enabled"}, "status": {"link_status": "LINK_UP"}},
-    {"id": "34", "spec": {"admin_state": "enabled"}, "status": {"link_status": "LINK_UP"}}, {"id": "35", "spec": {"admin_state": "enabled"}, "status": {"link_status": "LINK_UP"}}]}]}'
+  file: afmctl_port_0002.json
 - cmd: ^afmctl\ show\ port\ \-b\ 0003:01:00\.1\ \-\-json\ 2>/dev/null$
   rc: 0
-  stdout: '{"device": [{"bdf": "0003:01:00.1", "port": [{"id": "0", "spec": {"admin_state": "enabled"}, "status": {"link_status": "LINK_UP"}}, {"id": "1", "spec": {"admin_state": "enabled"}, "status": {"link_status":
-    "LINK_UP"}}, {"id": "2", "spec": {"admin_state": "enabled"}, "status": {"link_status": "LINK_UP"}}, {"id": "3", "spec": {"admin_state": "enabled"}, "status": {"link_status": "LINK_UP"}}, {"id": "4",
-    "spec": {"admin_state": "enabled"}, "status": {"link_status": "LINK_UP"}}, {"id": "5", "spec": {"admin_state": "enabled"}, "status": {"link_status": "LINK_UP"}}, {"id": "6", "spec": {"admin_state":
-    "enabled"}, "status": {"link_status": "LINK_UP"}}, {"id": "7", "spec": {"admin_state": "enabled"}, "status": {"link_status": "NO_PHY_LINK, PCS_NO_BLOCK_LOCK"}}, {"id": "8", "spec": {"admin_state": "enabled"},
-    "status": {"link_status": "LINK_UP"}}, {"id": "9", "spec": {"admin_state": "enabled"}, "status": {"link_status": "LINK_UP"}}, {"id": "10", "spec": {"admin_state": "enabled"}, "status": {"link_status":
-    "LINK_UP"}}, {"id": "11", "spec": {"admin_state": "enabled"}, "status": {"link_status": "LINK_UP"}}, {"id": "12", "spec": {"admin_state": "enabled"}, "status": {"link_status": "LINK_UP"}}, {"id": "13",
-    "spec": {"admin_state": "enabled"}, "status": {"link_status": "LINK_UP"}}, {"id": "14", "spec": {"admin_state": "enabled"}, "status": {"link_status": "LINK_UP"}}, {"id": "15", "spec": {"admin_state":
-    "enabled"}, "status": {"link_status": "LINK_UP"}}, {"id": "16", "spec": {"admin_state": "enabled"}, "status": {"link_status": "LINK_UP"}}, {"id": "17", "spec": {"admin_state": "enabled"}, "status":
-    {"link_status": "LINK_UP"}}, {"id": "18", "spec": {"admin_state": "enabled"}, "status": {"link_status": "LINK_UP"}}, {"id": "19", "spec": {"admin_state": "enabled"}, "status": {"link_status": "LINK_UP"}},
-    {"id": "20", "spec": {"admin_state": "enabled"}, "status": {"link_status": "LINK_UP"}}, {"id": "21", "spec": {"admin_state": "enabled"}, "status": {"link_status": "LINK_UP"}}, {"id": "22", "spec": {"admin_state":
-    "enabled"}, "status": {"link_status": "LINK_UP"}}, {"id": "23", "spec": {"admin_state": "enabled"}, "status": {"link_status": "LINK_UP"}}, {"id": "24", "spec": {"admin_state": "enabled"}, "status":
-    {"link_status": "LINK_UP"}}, {"id": "25", "spec": {"admin_state": "enabled"}, "status": {"link_status": "LINK_UP"}}, {"id": "26", "spec": {"admin_state": "enabled"}, "status": {"link_status": "LINK_UP"}},
-    {"id": "27", "spec": {"admin_state": "enabled"}, "status": {"link_status": "LINK_UP"}}, {"id": "28", "spec": {"admin_state": "enabled"}, "status": {"link_status": "LINK_UP"}}, {"id": "29", "spec": {"admin_state":
-    "enabled"}, "status": {"link_status": "LINK_UP"}}, {"id": "30", "spec": {"admin_state": "enabled"}, "status": {"link_status": "LINK_UP"}}, {"id": "31", "spec": {"admin_state": "enabled"}, "status":
-    {"link_status": "LINK_UP"}}, {"id": "32", "spec": {"admin_state": "enabled"}, "status": {"link_status": "LINK_UP"}}, {"id": "33", "spec": {"admin_state": "enabled"}, "status": {"link_status": "LINK_UP"}},
-    {"id": "34", "spec": {"admin_state": "enabled"}, "status": {"link_status": "LINK_UP"}}, {"id": "35", "spec": {"admin_state": "enabled"}, "status": {"link_status": "LINK_UP"}}]}]}'
+  file: afmctl_port_0003.json
 - cmd: ^afmctl\ show\ port\ \-b\ 0004:01:00\.1\ \-\-json\ 2>/dev/null$
   rc: 0
-  stdout: '{"device": [{"bdf": "0004:01:00.1", "port": [{"id": "0", "spec": {"admin_state": "enabled"}, "status": {"link_status": "LINK_UP"}}, {"id": "1", "spec": {"admin_state": "enabled"}, "status": {"link_status":
-    "LINK_UP"}}, {"id": "2", "spec": {"admin_state": "enabled"}, "status": {"link_status": "LINK_UP"}}, {"id": "3", "spec": {"admin_state": "enabled"}, "status": {"link_status": "LINK_UP"}}, {"id": "4",
-    "spec": {"admin_state": "enabled"}, "status": {"link_status": "LINK_UP"}}, {"id": "5", "spec": {"admin_state": "enabled"}, "status": {"link_status": "LINK_UP"}}, {"id": "6", "spec": {"admin_state":
-    "enabled"}, "status": {"link_status": "LINK_UP"}}, {"id": "7", "spec": {"admin_state": "enabled"}, "status": {"link_status": "NO_PHY_LINK, PCS_NO_BLOCK_LOCK"}}, {"id": "8", "spec": {"admin_state": "enabled"},
-    "status": {"link_status": "LINK_UP"}}, {"id": "9", "spec": {"admin_state": "enabled"}, "status": {"link_status": "LINK_UP"}}, {"id": "10", "spec": {"admin_state": "enabled"}, "status": {"link_status":
-    "LINK_UP"}}, {"id": "11", "spec": {"admin_state": "enabled"}, "status": {"link_status": "LINK_UP"}}, {"id": "12", "spec": {"admin_state": "enabled"}, "status": {"link_status": "LINK_UP"}}, {"id": "13",
-    "spec": {"admin_state": "enabled"}, "status": {"link_status": "LINK_UP"}}, {"id": "14", "spec": {"admin_state": "enabled"}, "status": {"link_status": "LINK_UP"}}, {"id": "15", "spec": {"admin_state":
-    "enabled"}, "status": {"link_status": "LINK_UP"}}, {"id": "16", "spec": {"admin_state": "enabled"}, "status": {"link_status": "LINK_UP"}}, {"id": "17", "spec": {"admin_state": "enabled"}, "status":
-    {"link_status": "LINK_UP"}}, {"id": "18", "spec": {"admin_state": "enabled"}, "status": {"link_status": "LINK_UP"}}, {"id": "19", "spec": {"admin_state": "enabled"}, "status": {"link_status": "LINK_UP"}},
-    {"id": "20", "spec": {"admin_state": "enabled"}, "status": {"link_status": "LINK_UP"}}, {"id": "21", "spec": {"admin_state": "enabled"}, "status": {"link_status": "LINK_UP"}}, {"id": "22", "spec": {"admin_state":
-    "enabled"}, "status": {"link_status": "LINK_UP"}}, {"id": "23", "spec": {"admin_state": "enabled"}, "status": {"link_status": "LINK_UP"}}, {"id": "24", "spec": {"admin_state": "enabled"}, "status":
-    {"link_status": "LINK_UP"}}, {"id": "25", "spec": {"admin_state": "enabled"}, "status": {"link_status": "LINK_UP"}}, {"id": "26", "spec": {"admin_state": "enabled"}, "status": {"link_status": "LINK_UP"}},
-    {"id": "27", "spec": {"admin_state": "enabled"}, "status": {"link_status": "LINK_UP"}}, {"id": "28", "spec": {"admin_state": "enabled"}, "status": {"link_status": "LINK_UP"}}, {"id": "29", "spec": {"admin_state":
-    "enabled"}, "status": {"link_status": "LINK_UP"}}, {"id": "30", "spec": {"admin_state": "enabled"}, "status": {"link_status": "LINK_UP"}}, {"id": "31", "spec": {"admin_state": "enabled"}, "status":
-    {"link_status": "LINK_UP"}}, {"id": "32", "spec": {"admin_state": "enabled"}, "status": {"link_status": "LINK_UP"}}, {"id": "33", "spec": {"admin_state": "enabled"}, "status": {"link_status": "LINK_UP"}},
-    {"id": "34", "spec": {"admin_state": "enabled"}, "status": {"link_status": "LINK_UP"}}, {"id": "35", "spec": {"admin_state": "enabled"}, "status": {"link_status": "LINK_UP"}}]}]}'
+  file: afmctl_port_0004.json
+- cmd: ^afmctl\ show\ port\ accelerator\-addr\ \-\-json\ 2>/dev/null$
+  rc: 0
+  host: ^c1$
+  file: afmctl_accel_addr_c1.json
+- cmd: ^afmctl\ show\ port\ accelerator\-addr\ \-\-json\ 2>/dev/null$
+  rc: 0
+  host: ^c2$
+  file: afmctl_accel_addr_c2.json
+- cmd: ^show\ mac\ \-n\ asic0$
+  rc: 0
+  host: ^sw
+  file: fdb_asic0.txt
+- cmd: '^for k in \$\(sonic-db-cli -n asic0 CONFIG_DB keys ''PORT\|Ethernet\*''\); do echo '
+  rc: 0
+  host: ^sw
+  file: port_desc_asic0.txt
+- cmd: ^show\ mac\ \-n\ asic1$
+  rc: 0
+  host: ^sw
+  file: fdb_asic1.txt
+- cmd: '^for k in \$\(sonic-db-cli -n asic1 CONFIG_DB keys ''PORT\|Ethernet\*''\); do echo '
+  rc: 0
+  host: ^sw
+  file: port_desc_asic1.txt
+- cmd: ^docker\ exec\ afm\-agent\ ps\ \-eo\ args$
+  rc: 0
+  host: ^sw
+  file: afm_agent_ps.txt
+- cmd: ^systemctl\ is\-active\ afm\-agent$
+  rc: 0
+  host: ^sw
+  stdout: 'active
+
+    '
+- cmd: ^ps\ \-eo\ comm,args$
+  rc: 0
+  host: ^c
+  file: compute_ps.txt
 - cmd: '^timeout \d+ afmctl test ping '
   rc: 0
   file: afmctl_ping.txt

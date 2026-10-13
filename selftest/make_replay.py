@@ -62,7 +62,8 @@ def db(ns, dbname, verb, arg):
 SW = "^sw"
 add("ip netns list", "asic0 (id: 0)\nasic1 (id: 1)\n", host=SW)
 add("docker ps --format '{{.Names}}'",
-    "\n".join(["database", "pmon", "lldp0", "lldp1", "swss0", "swss1", "syncd0", "syncd1", "bgp0", "bgp1"]) + "\n", host=SW)
+    "\n".join(["database", "pmon", "lldp0", "lldp1", "swss0", "swss1", "syncd0", "syncd1", "bgp0", "bgp1",
+               "afm-agent", "afm-controller"]) + "\n", host=SW)
 
 fans = [["FanTray1", "N/A", "FanTray1_Fan1", "42%", "intake", "Present", "OK", "20261009 10:00:00"],
         ["FanTray1", "N/A", "FanTray1_Fan2", "41%", "intake", "Present", "OK", "20261009 10:00:00"],
@@ -135,7 +136,7 @@ for ns in NS:
     # counters only ever go up within a session (8 reads per namespace before wrapping)
     add(f"show interfaces counters -n {ns} -d all", host=SW,
         seq=[(f"intf_counters_{ns}_{i}.txt", counters(i)) for i in range(8)])
-    add(rf"^for k in \$\(sonic-db-cli -n {ns} CONFIG_DB keys 'PORT\|Ethernet\*'\)",
+    add(rf"^for k in \$\(sonic-db-cli -n {ns} CONFIG_DB keys 'PORT\|Ethernet\*'\); do p=",
         "".join(f"{p} 400000 400000\n" for p in ports + [INTERNAL[ns]]), host=SW, regex=True)
     idx = ns.removeprefix("asic")
     add(f"systemctl restart lldp@{idx}", host=SW)
@@ -198,15 +199,58 @@ add(r"^ping-gpu ", "4 packets transmitted, 4 received, 0% packet loss\n", regex=
 # afmctl discovery (formats from the full-rack log). c2 deliberately uses acc 8-11, not 4-7: IDs must be discovered.
 import json as _json
 BDFS = [f"000{g + 1}:01:00.1" for g in range(4)]
+SLOTS = {"c1": (0, 0), "c2": (1, 8)}            # compute -> (slot, first accelerator id)
+ALL_ACCS = [base + g for _, base in SLOTS.values() for g in range(4)]
+
+
+def acc_mac(acc: int, port: int) -> str:
+    slot, base = next(v for v in SLOTS.values() if v[1] <= acc < v[1] + 4)
+    return f"02:00:00:{slot:02x}:{acc - base:02x}:{port:02x}"
+
+
+def fabric_port(acc: int, port: int) -> tuple[str, str]:
+    """(namespace, switch port) cabled to accelerator `acc` port `port` - planes 0-17 on asic0, 18-35 on asic1."""
+    return ("asic0" if port < 18 else "asic1"), f"Ethernet{1000 + acc * 36 + port}"
 for cname, base in (("c1", 0), ("c2", 8)):
     add("afmctl show device --json 2>/dev/null", _json.dumps({"device": [
         {"bdf": b, "spec": {"accelerator_id": str(base + g), "config_phase": "ACTIVE",
-                            "local_accelerators": [str(base + i) for i in range(4)]}} for g, b in enumerate(BDFS)]}),
+                            "local_accelerators": [str(base + i) for i in range(4)],
+                            "vpod_accelerators": [str(a) for a in ALL_ACCS]}} for g, b in enumerate(BDFS)]}),
         name=f"afmctl_device_{cname}.json", host=f"^{cname}$")
 for b in BDFS:  # port 7 is physically down everywhere; the rest LINK_UP
     add(f"afmctl show port -b {b} --json 2>/dev/null", _json.dumps({"device": [{"bdf": b, "port": [
         {"id": str(p), "spec": {"admin_state": "enabled"},
-         "status": {"link_status": "NO_PHY_LINK, PCS_NO_BLOCK_LOCK" if p == 7 else "LINK_UP"}} for p in range(36)]}]}))
+         "status": {"link_status": "NO_PHY_LINK, PCS_NO_BLOCK_LOCK" if p == 7 else "LINK_UP"}} for p in range(36)]}]}),
+        name=f"afmctl_port_{b.split(':')[0]}.json")
+# accelerator destination tables (TC-HW-013): every port lists all other vPOD accelerators, MAC ...:<port>
+for cname, (slot, base) in SLOTS.items():
+    add("afmctl show port accelerator-addr --json 2>/dev/null", _json.dumps({"device": [
+        {"bdf": BDFS[g], "port": [{"port_id": str(p), "accelerator_addr": [
+            {"accelerator_id": str(a), "mac_addr": acc_mac(a, p), "ip_addr": "0.0.0.0"}
+            for a in ALL_ACCS if a != base + g]} for p in range(36)]} for g in range(4)]}, indent=1),
+        name=f"afmctl_accel_addr_{cname}.json", host=f"^{cname}$")
+# switch FDB + cabling descriptions for those MACs
+for ns in NS:
+    rows, descs = [], []
+    for a in ALL_ACCS:
+        slot, base = next(v for v in SLOTS.values() if v[1] <= a < v[1] + 4)
+        for p in range(36):
+            pns, sport = fabric_port(a, p)
+            if pns != ns:
+                continue
+            rows.append([str(len(rows) + 1), str(100 + p * 100), acc_mac(a, p), sport, "Static"])
+            descs.append(f"{sport}|To ComputeTray Slot{slot}/GPU{a - base}[{a}]/Port{p}")
+    add(f"show mac -n {ns}", table(["No.", "Vlan", "MacAddress", "Port", "Type"], rows, right={0, 1}) +
+        f"Total number of entries {len(rows)}\n", name=f"fdb_{ns}.txt", host=SW)
+    add(rf"^for k in \$\(sonic-db-cli -n {ns} CONFIG_DB keys 'PORT\|Ethernet\*'\); do echo ", "\n".join(descs) + "\n",
+        name=f"port_desc_{ns}.txt", host=SW, regex=True)
+# sideband agents: sb-node-agent per compute slot inside the switch's afm-agent container; nothing on computes
+add("docker exec afm-agent ps -eo args", "/usr/bin/afm_agent.sh\n/switch-agent\n" +
+    "".join(f"/sb-node-agent -slot-id {slot} -controllers 10.0.0.83\n" for slot, _ in SLOTS.values()),
+    name="afm_agent_ps.txt", host=SW)
+add("systemctl is-active afm-agent", "active\n", host=SW)
+add("ps -eo comm,args", "COMMAND         COMMAND\nsystemd         /sbin/init\nsshd            sshd: /usr/sbin/sshd -D\n"
+    "amd-smi         /opt/rocm/bin/amd-smi\n", name="compute_ps.txt", host="^c")
 add(r"^timeout \d+ afmctl test ping ", """PING test 0001:01:00.1 -> accelerator 1, count 1
 Summary:
   IFoE Request    : 35/35 PASS, 0/35 fail (0.00% loss)

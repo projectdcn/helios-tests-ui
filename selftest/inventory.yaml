@@ -81,6 +81,9 @@ thresholds:
   metrics: {start_timeout_s: 1, poll_interval_s: 0}
   ifoe: {cycles: 5, settle_s: 0}
   datapath:
+    known_down_ports:     # port 7 is physically down in the replay fixtures
+      c1: {"0001:01:00.1": [7], "0002:01:00.1": [7], "0003:01:00.1": [7], "0004:01:00.1": [7]}
+      c2: {"0001:01:00.1": [7], "0002:01:00.1": [7], "0003:01:00.1": [7], "0004:01:00.1": [7]}
     transferbench: {in_domain_min_gbps: 500, cross_domain_min_gbps: 500}
     rccl: {all_reduce_min_busbw_gbps: 100}
     perftest: {min_gbps: 300}

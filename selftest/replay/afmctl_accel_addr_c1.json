@@ -1,0 +1,5784 @@
+{
+ "device": [
+  {
+   "bdf": "0001:01:00.1",
+   "port": [
+    {
+     "port_id": "0",
+     "accelerator_addr": [
+      {
+       "accelerator_id": "1",
+       "mac_addr": "02:00:00:00:01:00",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "2",
+       "mac_addr": "02:00:00:00:02:00",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "3",
+       "mac_addr": "02:00:00:00:03:00",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "8",
+       "mac_addr": "02:00:00:01:00:00",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "9",
+       "mac_addr": "02:00:00:01:01:00",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "10",
+       "mac_addr": "02:00:00:01:02:00",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "11",
+       "mac_addr": "02:00:00:01:03:00",
+       "ip_addr": "0.0.0.0"
+      }
+     ]
+    },
+    {
+     "port_id": "1",
+     "accelerator_addr": [
+      {
+       "accelerator_id": "1",
+       "mac_addr": "02:00:00:00:01:01",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "2",
+       "mac_addr": "02:00:00:00:02:01",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "3",
+       "mac_addr": "02:00:00:00:03:01",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "8",
+       "mac_addr": "02:00:00:01:00:01",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "9",
+       "mac_addr": "02:00:00:01:01:01",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "10",
+       "mac_addr": "02:00:00:01:02:01",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "11",
+       "mac_addr": "02:00:00:01:03:01",
+       "ip_addr": "0.0.0.0"
+      }
+     ]
+    },
+    {
+     "port_id": "2",
+     "accelerator_addr": [
+      {
+       "accelerator_id": "1",
+       "mac_addr": "02:00:00:00:01:02",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "2",
+       "mac_addr": "02:00:00:00:02:02",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "3",
+       "mac_addr": "02:00:00:00:03:02",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "8",
+       "mac_addr": "02:00:00:01:00:02",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "9",
+       "mac_addr": "02:00:00:01:01:02",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "10",
+       "mac_addr": "02:00:00:01:02:02",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "11",
+       "mac_addr": "02:00:00:01:03:02",
+       "ip_addr": "0.0.0.0"
+      }
+     ]
+    },
+    {
+     "port_id": "3",
+     "accelerator_addr": [
+      {
+       "accelerator_id": "1",
+       "mac_addr": "02:00:00:00:01:03",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "2",
+       "mac_addr": "02:00:00:00:02:03",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "3",
+       "mac_addr": "02:00:00:00:03:03",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "8",
+       "mac_addr": "02:00:00:01:00:03",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "9",
+       "mac_addr": "02:00:00:01:01:03",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "10",
+       "mac_addr": "02:00:00:01:02:03",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "11",
+       "mac_addr": "02:00:00:01:03:03",
+       "ip_addr": "0.0.0.0"
+      }
+     ]
+    },
+    {
+     "port_id": "4",
+     "accelerator_addr": [
+      {
+       "accelerator_id": "1",
+       "mac_addr": "02:00:00:00:01:04",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "2",
+       "mac_addr": "02:00:00:00:02:04",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "3",
+       "mac_addr": "02:00:00:00:03:04",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "8",
+       "mac_addr": "02:00:00:01:00:04",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "9",
+       "mac_addr": "02:00:00:01:01:04",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "10",
+       "mac_addr": "02:00:00:01:02:04",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "11",
+       "mac_addr": "02:00:00:01:03:04",
+       "ip_addr": "0.0.0.0"
+      }
+     ]
+    },
+    {
+     "port_id": "5",
+     "accelerator_addr": [
+      {
+       "accelerator_id": "1",
+       "mac_addr": "02:00:00:00:01:05",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "2",
+       "mac_addr": "02:00:00:00:02:05",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "3",
+       "mac_addr": "02:00:00:00:03:05",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "8",
+       "mac_addr": "02:00:00:01:00:05",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "9",
+       "mac_addr": "02:00:00:01:01:05",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "10",
+       "mac_addr": "02:00:00:01:02:05",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "11",
+       "mac_addr": "02:00:00:01:03:05",
+       "ip_addr": "0.0.0.0"
+      }
+     ]
+    },
+    {
+     "port_id": "6",
+     "accelerator_addr": [
+      {
+       "accelerator_id": "1",
+       "mac_addr": "02:00:00:00:01:06",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "2",
+       "mac_addr": "02:00:00:00:02:06",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "3",
+       "mac_addr": "02:00:00:00:03:06",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "8",
+       "mac_addr": "02:00:00:01:00:06",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "9",
+       "mac_addr": "02:00:00:01:01:06",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "10",
+       "mac_addr": "02:00:00:01:02:06",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "11",
+       "mac_addr": "02:00:00:01:03:06",
+       "ip_addr": "0.0.0.0"
+      }
+     ]
+    },
+    {
+     "port_id": "7",
+     "accelerator_addr": [
+      {
+       "accelerator_id": "1",
+       "mac_addr": "02:00:00:00:01:07",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "2",
+       "mac_addr": "02:00:00:00:02:07",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "3",
+       "mac_addr": "02:00:00:00:03:07",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "8",
+       "mac_addr": "02:00:00:01:00:07",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "9",
+       "mac_addr": "02:00:00:01:01:07",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "10",
+       "mac_addr": "02:00:00:01:02:07",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "11",
+       "mac_addr": "02:00:00:01:03:07",
+       "ip_addr": "0.0.0.0"
+      }
+     ]
+    },
+    {
+     "port_id": "8",
+     "accelerator_addr": [
+      {
+       "accelerator_id": "1",
+       "mac_addr": "02:00:00:00:01:08",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "2",
+       "mac_addr": "02:00:00:00:02:08",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "3",
+       "mac_addr": "02:00:00:00:03:08",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "8",
+       "mac_addr": "02:00:00:01:00:08",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "9",
+       "mac_addr": "02:00:00:01:01:08",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "10",
+       "mac_addr": "02:00:00:01:02:08",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "11",
+       "mac_addr": "02:00:00:01:03:08",
+       "ip_addr": "0.0.0.0"
+      }
+     ]
+    },
+    {
+     "port_id": "9",
+     "accelerator_addr": [
+      {
+       "accelerator_id": "1",
+       "mac_addr": "02:00:00:00:01:09",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "2",
+       "mac_addr": "02:00:00:00:02:09",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "3",
+       "mac_addr": "02:00:00:00:03:09",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "8",
+       "mac_addr": "02:00:00:01:00:09",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "9",
+       "mac_addr": "02:00:00:01:01:09",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "10",
+       "mac_addr": "02:00:00:01:02:09",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "11",
+       "mac_addr": "02:00:00:01:03:09",
+       "ip_addr": "0.0.0.0"
+      }
+     ]
+    },
+    {
+     "port_id": "10",
+     "accelerator_addr": [
+      {
+       "accelerator_id": "1",
+       "mac_addr": "02:00:00:00:01:0a",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "2",
+       "mac_addr": "02:00:00:00:02:0a",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "3",
+       "mac_addr": "02:00:00:00:03:0a",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "8",
+       "mac_addr": "02:00:00:01:00:0a",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "9",
+       "mac_addr": "02:00:00:01:01:0a",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "10",
+       "mac_addr": "02:00:00:01:02:0a",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "11",
+       "mac_addr": "02:00:00:01:03:0a",
+       "ip_addr": "0.0.0.0"
+      }
+     ]
+    },
+    {
+     "port_id": "11",
+     "accelerator_addr": [
+      {
+       "accelerator_id": "1",
+       "mac_addr": "02:00:00:00:01:0b",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "2",
+       "mac_addr": "02:00:00:00:02:0b",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "3",
+       "mac_addr": "02:00:00:00:03:0b",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "8",
+       "mac_addr": "02:00:00:01:00:0b",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "9",
+       "mac_addr": "02:00:00:01:01:0b",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "10",
+       "mac_addr": "02:00:00:01:02:0b",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "11",
+       "mac_addr": "02:00:00:01:03:0b",
+       "ip_addr": "0.0.0.0"
+      }
+     ]
+    },
+    {
+     "port_id": "12",
+     "accelerator_addr": [
+      {
+       "accelerator_id": "1",
+       "mac_addr": "02:00:00:00:01:0c",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "2",
+       "mac_addr": "02:00:00:00:02:0c",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "3",
+       "mac_addr": "02:00:00:00:03:0c",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "8",
+       "mac_addr": "02:00:00:01:00:0c",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "9",
+       "mac_addr": "02:00:00:01:01:0c",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "10",
+       "mac_addr": "02:00:00:01:02:0c",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "11",
+       "mac_addr": "02:00:00:01:03:0c",
+       "ip_addr": "0.0.0.0"
+      }
+     ]
+    },
+    {
+     "port_id": "13",
+     "accelerator_addr": [
+      {
+       "accelerator_id": "1",
+       "mac_addr": "02:00:00:00:01:0d",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "2",
+       "mac_addr": "02:00:00:00:02:0d",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "3",
+       "mac_addr": "02:00:00:00:03:0d",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "8",
+       "mac_addr": "02:00:00:01:00:0d",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "9",
+       "mac_addr": "02:00:00:01:01:0d",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "10",
+       "mac_addr": "02:00:00:01:02:0d",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "11",
+       "mac_addr": "02:00:00:01:03:0d",
+       "ip_addr": "0.0.0.0"
+      }
+     ]
+    },
+    {
+     "port_id": "14",
+     "accelerator_addr": [
+      {
+       "accelerator_id": "1",
+       "mac_addr": "02:00:00:00:01:0e",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "2",
+       "mac_addr": "02:00:00:00:02:0e",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "3",
+       "mac_addr": "02:00:00:00:03:0e",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "8",
+       "mac_addr": "02:00:00:01:00:0e",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "9",
+       "mac_addr": "02:00:00:01:01:0e",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "10",
+       "mac_addr": "02:00:00:01:02:0e",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "11",
+       "mac_addr": "02:00:00:01:03:0e",
+       "ip_addr": "0.0.0.0"
+      }
+     ]
+    },
+    {
+     "port_id": "15",
+     "accelerator_addr": [
+      {
+       "accelerator_id": "1",
+       "mac_addr": "02:00:00:00:01:0f",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "2",
+       "mac_addr": "02:00:00:00:02:0f",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "3",
+       "mac_addr": "02:00:00:00:03:0f",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "8",
+       "mac_addr": "02:00:00:01:00:0f",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "9",
+       "mac_addr": "02:00:00:01:01:0f",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "10",
+       "mac_addr": "02:00:00:01:02:0f",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "11",
+       "mac_addr": "02:00:00:01:03:0f",
+       "ip_addr": "0.0.0.0"
+      }
+     ]
+    },
+    {
+     "port_id": "16",
+     "accelerator_addr": [
+      {
+       "accelerator_id": "1",
+       "mac_addr": "02:00:00:00:01:10",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "2",
+       "mac_addr": "02:00:00:00:02:10",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "3",
+       "mac_addr": "02:00:00:00:03:10",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "8",
+       "mac_addr": "02:00:00:01:00:10",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "9",
+       "mac_addr": "02:00:00:01:01:10",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "10",
+       "mac_addr": "02:00:00:01:02:10",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "11",
+       "mac_addr": "02:00:00:01:03:10",
+       "ip_addr": "0.0.0.0"
+      }
+     ]
+    },
+    {
+     "port_id": "17",
+     "accelerator_addr": [
+      {
+       "accelerator_id": "1",
+       "mac_addr": "02:00:00:00:01:11",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "2",
+       "mac_addr": "02:00:00:00:02:11",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "3",
+       "mac_addr": "02:00:00:00:03:11",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "8",
+       "mac_addr": "02:00:00:01:00:11",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "9",
+       "mac_addr": "02:00:00:01:01:11",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "10",
+       "mac_addr": "02:00:00:01:02:11",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "11",
+       "mac_addr": "02:00:00:01:03:11",
+       "ip_addr": "0.0.0.0"
+      }
+     ]
+    },
+    {
+     "port_id": "18",
+     "accelerator_addr": [
+      {
+       "accelerator_id": "1",
+       "mac_addr": "02:00:00:00:01:12",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "2",
+       "mac_addr": "02:00:00:00:02:12",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "3",
+       "mac_addr": "02:00:00:00:03:12",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "8",
+       "mac_addr": "02:00:00:01:00:12",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "9",
+       "mac_addr": "02:00:00:01:01:12",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "10",
+       "mac_addr": "02:00:00:01:02:12",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "11",
+       "mac_addr": "02:00:00:01:03:12",
+       "ip_addr": "0.0.0.0"
+      }
+     ]
+    },
+    {
+     "port_id": "19",
+     "accelerator_addr": [
+      {
+       "accelerator_id": "1",
+       "mac_addr": "02:00:00:00:01:13",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "2",
+       "mac_addr": "02:00:00:00:02:13",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "3",
+       "mac_addr": "02:00:00:00:03:13",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "8",
+       "mac_addr": "02:00:00:01:00:13",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "9",
+       "mac_addr": "02:00:00:01:01:13",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "10",
+       "mac_addr": "02:00:00:01:02:13",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "11",
+       "mac_addr": "02:00:00:01:03:13",
+       "ip_addr": "0.0.0.0"
+      }
+     ]
+    },
+    {
+     "port_id": "20",
+     "accelerator_addr": [
+      {
+       "accelerator_id": "1",
+       "mac_addr": "02:00:00:00:01:14",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "2",
+       "mac_addr": "02:00:00:00:02:14",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "3",
+       "mac_addr": "02:00:00:00:03:14",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "8",
+       "mac_addr": "02:00:00:01:00:14",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "9",
+       "mac_addr": "02:00:00:01:01:14",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "10",
+       "mac_addr": "02:00:00:01:02:14",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "11",
+       "mac_addr": "02:00:00:01:03:14",
+       "ip_addr": "0.0.0.0"
+      }
+     ]
+    },
+    {
+     "port_id": "21",
+     "accelerator_addr": [
+      {
+       "accelerator_id": "1",
+       "mac_addr": "02:00:00:00:01:15",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "2",
+       "mac_addr": "02:00:00:00:02:15",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "3",
+       "mac_addr": "02:00:00:00:03:15",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "8",
+       "mac_addr": "02:00:00:01:00:15",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "9",
+       "mac_addr": "02:00:00:01:01:15",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "10",
+       "mac_addr": "02:00:00:01:02:15",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "11",
+       "mac_addr": "02:00:00:01:03:15",
+       "ip_addr": "0.0.0.0"
+      }
+     ]
+    },
+    {
+     "port_id": "22",
+     "accelerator_addr": [
+      {
+       "accelerator_id": "1",
+       "mac_addr": "02:00:00:00:01:16",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "2",
+       "mac_addr": "02:00:00:00:02:16",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "3",
+       "mac_addr": "02:00:00:00:03:16",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "8",
+       "mac_addr": "02:00:00:01:00:16",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "9",
+       "mac_addr": "02:00:00:01:01:16",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "10",
+       "mac_addr": "02:00:00:01:02:16",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "11",
+       "mac_addr": "02:00:00:01:03:16",
+       "ip_addr": "0.0.0.0"
+      }
+     ]
+    },
+    {
+     "port_id": "23",
+     "accelerator_addr": [
+      {
+       "accelerator_id": "1",
+       "mac_addr": "02:00:00:00:01:17",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "2",
+       "mac_addr": "02:00:00:00:02:17",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "3",
+       "mac_addr": "02:00:00:00:03:17",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "8",
+       "mac_addr": "02:00:00:01:00:17",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "9",
+       "mac_addr": "02:00:00:01:01:17",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "10",
+       "mac_addr": "02:00:00:01:02:17",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "11",
+       "mac_addr": "02:00:00:01:03:17",
+       "ip_addr": "0.0.0.0"
+      }
+     ]
+    },
+    {
+     "port_id": "24",
+     "accelerator_addr": [
+      {
+       "accelerator_id": "1",
+       "mac_addr": "02:00:00:00:01:18",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "2",
+       "mac_addr": "02:00:00:00:02:18",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "3",
+       "mac_addr": "02:00:00:00:03:18",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "8",
+       "mac_addr": "02:00:00:01:00:18",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "9",
+       "mac_addr": "02:00:00:01:01:18",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "10",
+       "mac_addr": "02:00:00:01:02:18",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "11",
+       "mac_addr": "02:00:00:01:03:18",
+       "ip_addr": "0.0.0.0"
+      }
+     ]
+    },
+    {
+     "port_id": "25",
+     "accelerator_addr": [
+      {
+       "accelerator_id": "1",
+       "mac_addr": "02:00:00:00:01:19",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "2",
+       "mac_addr": "02:00:00:00:02:19",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "3",
+       "mac_addr": "02:00:00:00:03:19",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "8",
+       "mac_addr": "02:00:00:01:00:19",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "9",
+       "mac_addr": "02:00:00:01:01:19",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "10",
+       "mac_addr": "02:00:00:01:02:19",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "11",
+       "mac_addr": "02:00:00:01:03:19",
+       "ip_addr": "0.0.0.0"
+      }
+     ]
+    },
+    {
+     "port_id": "26",
+     "accelerator_addr": [
+      {
+       "accelerator_id": "1",
+       "mac_addr": "02:00:00:00:01:1a",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "2",
+       "mac_addr": "02:00:00:00:02:1a",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "3",
+       "mac_addr": "02:00:00:00:03:1a",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "8",
+       "mac_addr": "02:00:00:01:00:1a",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "9",
+       "mac_addr": "02:00:00:01:01:1a",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "10",
+       "mac_addr": "02:00:00:01:02:1a",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "11",
+       "mac_addr": "02:00:00:01:03:1a",
+       "ip_addr": "0.0.0.0"
+      }
+     ]
+    },
+    {
+     "port_id": "27",
+     "accelerator_addr": [
+      {
+       "accelerator_id": "1",
+       "mac_addr": "02:00:00:00:01:1b",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "2",
+       "mac_addr": "02:00:00:00:02:1b",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "3",
+       "mac_addr": "02:00:00:00:03:1b",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "8",
+       "mac_addr": "02:00:00:01:00:1b",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "9",
+       "mac_addr": "02:00:00:01:01:1b",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "10",
+       "mac_addr": "02:00:00:01:02:1b",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "11",
+       "mac_addr": "02:00:00:01:03:1b",
+       "ip_addr": "0.0.0.0"
+      }
+     ]
+    },
+    {
+     "port_id": "28",
+     "accelerator_addr": [
+      {
+       "accelerator_id": "1",
+       "mac_addr": "02:00:00:00:01:1c",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "2",
+       "mac_addr": "02:00:00:00:02:1c",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "3",
+       "mac_addr": "02:00:00:00:03:1c",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "8",
+       "mac_addr": "02:00:00:01:00:1c",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "9",
+       "mac_addr": "02:00:00:01:01:1c",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "10",
+       "mac_addr": "02:00:00:01:02:1c",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "11",
+       "mac_addr": "02:00:00:01:03:1c",
+       "ip_addr": "0.0.0.0"
+      }
+     ]
+    },
+    {
+     "port_id": "29",
+     "accelerator_addr": [
+      {
+       "accelerator_id": "1",
+       "mac_addr": "02:00:00:00:01:1d",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "2",
+       "mac_addr": "02:00:00:00:02:1d",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "3",
+       "mac_addr": "02:00:00:00:03:1d",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "8",
+       "mac_addr": "02:00:00:01:00:1d",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "9",
+       "mac_addr": "02:00:00:01:01:1d",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "10",
+       "mac_addr": "02:00:00:01:02:1d",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "11",
+       "mac_addr": "02:00:00:01:03:1d",
+       "ip_addr": "0.0.0.0"
+      }
+     ]
+    },
+    {
+     "port_id": "30",
+     "accelerator_addr": [
+      {
+       "accelerator_id": "1",
+       "mac_addr": "02:00:00:00:01:1e",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "2",
+       "mac_addr": "02:00:00:00:02:1e",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "3",
+       "mac_addr": "02:00:00:00:03:1e",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "8",
+       "mac_addr": "02:00:00:01:00:1e",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "9",
+       "mac_addr": "02:00:00:01:01:1e",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "10",
+       "mac_addr": "02:00:00:01:02:1e",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "11",
+       "mac_addr": "02:00:00:01:03:1e",
+       "ip_addr": "0.0.0.0"
+      }
+     ]
+    },
+    {
+     "port_id": "31",
+     "accelerator_addr": [
+      {
+       "accelerator_id": "1",
+       "mac_addr": "02:00:00:00:01:1f",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "2",
+       "mac_addr": "02:00:00:00:02:1f",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "3",
+       "mac_addr": "02:00:00:00:03:1f",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "8",
+       "mac_addr": "02:00:00:01:00:1f",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "9",
+       "mac_addr": "02:00:00:01:01:1f",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "10",
+       "mac_addr": "02:00:00:01:02:1f",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "11",
+       "mac_addr": "02:00:00:01:03:1f",
+       "ip_addr": "0.0.0.0"
+      }
+     ]
+    },
+    {
+     "port_id": "32",
+     "accelerator_addr": [
+      {
+       "accelerator_id": "1",
+       "mac_addr": "02:00:00:00:01:20",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "2",
+       "mac_addr": "02:00:00:00:02:20",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "3",
+       "mac_addr": "02:00:00:00:03:20",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "8",
+       "mac_addr": "02:00:00:01:00:20",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "9",
+       "mac_addr": "02:00:00:01:01:20",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "10",
+       "mac_addr": "02:00:00:01:02:20",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "11",
+       "mac_addr": "02:00:00:01:03:20",
+       "ip_addr": "0.0.0.0"
+      }
+     ]
+    },
+    {
+     "port_id": "33",
+     "accelerator_addr": [
+      {
+       "accelerator_id": "1",
+       "mac_addr": "02:00:00:00:01:21",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "2",
+       "mac_addr": "02:00:00:00:02:21",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "3",
+       "mac_addr": "02:00:00:00:03:21",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "8",
+       "mac_addr": "02:00:00:01:00:21",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "9",
+       "mac_addr": "02:00:00:01:01:21",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "10",
+       "mac_addr": "02:00:00:01:02:21",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "11",
+       "mac_addr": "02:00:00:01:03:21",
+       "ip_addr": "0.0.0.0"
+      }
+     ]
+    },
+    {
+     "port_id": "34",
+     "accelerator_addr": [
+      {
+       "accelerator_id": "1",
+       "mac_addr": "02:00:00:00:01:22",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "2",
+       "mac_addr": "02:00:00:00:02:22",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "3",
+       "mac_addr": "02:00:00:00:03:22",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "8",
+       "mac_addr": "02:00:00:01:00:22",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "9",
+       "mac_addr": "02:00:00:01:01:22",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "10",
+       "mac_addr": "02:00:00:01:02:22",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "11",
+       "mac_addr": "02:00:00:01:03:22",
+       "ip_addr": "0.0.0.0"
+      }
+     ]
+    },
+    {
+     "port_id": "35",
+     "accelerator_addr": [
+      {
+       "accelerator_id": "1",
+       "mac_addr": "02:00:00:00:01:23",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "2",
+       "mac_addr": "02:00:00:00:02:23",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "3",
+       "mac_addr": "02:00:00:00:03:23",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "8",
+       "mac_addr": "02:00:00:01:00:23",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "9",
+       "mac_addr": "02:00:00:01:01:23",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "10",
+       "mac_addr": "02:00:00:01:02:23",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "11",
+       "mac_addr": "02:00:00:01:03:23",
+       "ip_addr": "0.0.0.0"
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "bdf": "0002:01:00.1",
+   "port": [
+    {
+     "port_id": "0",
+     "accelerator_addr": [
+      {
+       "accelerator_id": "0",
+       "mac_addr": "02:00:00:00:00:00",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "2",
+       "mac_addr": "02:00:00:00:02:00",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "3",
+       "mac_addr": "02:00:00:00:03:00",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "8",
+       "mac_addr": "02:00:00:01:00:00",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "9",
+       "mac_addr": "02:00:00:01:01:00",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "10",
+       "mac_addr": "02:00:00:01:02:00",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "11",
+       "mac_addr": "02:00:00:01:03:00",
+       "ip_addr": "0.0.0.0"
+      }
+     ]
+    },
+    {
+     "port_id": "1",
+     "accelerator_addr": [
+      {
+       "accelerator_id": "0",
+       "mac_addr": "02:00:00:00:00:01",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "2",
+       "mac_addr": "02:00:00:00:02:01",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "3",
+       "mac_addr": "02:00:00:00:03:01",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "8",
+       "mac_addr": "02:00:00:01:00:01",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "9",
+       "mac_addr": "02:00:00:01:01:01",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "10",
+       "mac_addr": "02:00:00:01:02:01",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "11",
+       "mac_addr": "02:00:00:01:03:01",
+       "ip_addr": "0.0.0.0"
+      }
+     ]
+    },
+    {
+     "port_id": "2",
+     "accelerator_addr": [
+      {
+       "accelerator_id": "0",
+       "mac_addr": "02:00:00:00:00:02",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "2",
+       "mac_addr": "02:00:00:00:02:02",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "3",
+       "mac_addr": "02:00:00:00:03:02",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "8",
+       "mac_addr": "02:00:00:01:00:02",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "9",
+       "mac_addr": "02:00:00:01:01:02",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "10",
+       "mac_addr": "02:00:00:01:02:02",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "11",
+       "mac_addr": "02:00:00:01:03:02",
+       "ip_addr": "0.0.0.0"
+      }
+     ]
+    },
+    {
+     "port_id": "3",
+     "accelerator_addr": [
+      {
+       "accelerator_id": "0",
+       "mac_addr": "02:00:00:00:00:03",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "2",
+       "mac_addr": "02:00:00:00:02:03",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "3",
+       "mac_addr": "02:00:00:00:03:03",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "8",
+       "mac_addr": "02:00:00:01:00:03",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "9",
+       "mac_addr": "02:00:00:01:01:03",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "10",
+       "mac_addr": "02:00:00:01:02:03",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "11",
+       "mac_addr": "02:00:00:01:03:03",
+       "ip_addr": "0.0.0.0"
+      }
+     ]
+    },
+    {
+     "port_id": "4",
+     "accelerator_addr": [
+      {
+       "accelerator_id": "0",
+       "mac_addr": "02:00:00:00:00:04",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "2",
+       "mac_addr": "02:00:00:00:02:04",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "3",
+       "mac_addr": "02:00:00:00:03:04",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "8",
+       "mac_addr": "02:00:00:01:00:04",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "9",
+       "mac_addr": "02:00:00:01:01:04",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "10",
+       "mac_addr": "02:00:00:01:02:04",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "11",
+       "mac_addr": "02:00:00:01:03:04",
+       "ip_addr": "0.0.0.0"
+      }
+     ]
+    },
+    {
+     "port_id": "5",
+     "accelerator_addr": [
+      {
+       "accelerator_id": "0",
+       "mac_addr": "02:00:00:00:00:05",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "2",
+       "mac_addr": "02:00:00:00:02:05",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "3",
+       "mac_addr": "02:00:00:00:03:05",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "8",
+       "mac_addr": "02:00:00:01:00:05",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "9",
+       "mac_addr": "02:00:00:01:01:05",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "10",
+       "mac_addr": "02:00:00:01:02:05",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "11",
+       "mac_addr": "02:00:00:01:03:05",
+       "ip_addr": "0.0.0.0"
+      }
+     ]
+    },
+    {
+     "port_id": "6",
+     "accelerator_addr": [
+      {
+       "accelerator_id": "0",
+       "mac_addr": "02:00:00:00:00:06",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "2",
+       "mac_addr": "02:00:00:00:02:06",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "3",
+       "mac_addr": "02:00:00:00:03:06",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "8",
+       "mac_addr": "02:00:00:01:00:06",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "9",
+       "mac_addr": "02:00:00:01:01:06",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "10",
+       "mac_addr": "02:00:00:01:02:06",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "11",
+       "mac_addr": "02:00:00:01:03:06",
+       "ip_addr": "0.0.0.0"
+      }
+     ]
+    },
+    {
+     "port_id": "7",
+     "accelerator_addr": [
+      {
+       "accelerator_id": "0",
+       "mac_addr": "02:00:00:00:00:07",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "2",
+       "mac_addr": "02:00:00:00:02:07",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "3",
+       "mac_addr": "02:00:00:00:03:07",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "8",
+       "mac_addr": "02:00:00:01:00:07",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "9",
+       "mac_addr": "02:00:00:01:01:07",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "10",
+       "mac_addr": "02:00:00:01:02:07",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "11",
+       "mac_addr": "02:00:00:01:03:07",
+       "ip_addr": "0.0.0.0"
+      }
+     ]
+    },
+    {
+     "port_id": "8",
+     "accelerator_addr": [
+      {
+       "accelerator_id": "0",
+       "mac_addr": "02:00:00:00:00:08",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "2",
+       "mac_addr": "02:00:00:00:02:08",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "3",
+       "mac_addr": "02:00:00:00:03:08",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "8",
+       "mac_addr": "02:00:00:01:00:08",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "9",
+       "mac_addr": "02:00:00:01:01:08",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "10",
+       "mac_addr": "02:00:00:01:02:08",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "11",
+       "mac_addr": "02:00:00:01:03:08",
+       "ip_addr": "0.0.0.0"
+      }
+     ]
+    },
+    {
+     "port_id": "9",
+     "accelerator_addr": [
+      {
+       "accelerator_id": "0",
+       "mac_addr": "02:00:00:00:00:09",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "2",
+       "mac_addr": "02:00:00:00:02:09",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "3",
+       "mac_addr": "02:00:00:00:03:09",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "8",
+       "mac_addr": "02:00:00:01:00:09",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "9",
+       "mac_addr": "02:00:00:01:01:09",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "10",
+       "mac_addr": "02:00:00:01:02:09",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "11",
+       "mac_addr": "02:00:00:01:03:09",
+       "ip_addr": "0.0.0.0"
+      }
+     ]
+    },
+    {
+     "port_id": "10",
+     "accelerator_addr": [
+      {
+       "accelerator_id": "0",
+       "mac_addr": "02:00:00:00:00:0a",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "2",
+       "mac_addr": "02:00:00:00:02:0a",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "3",
+       "mac_addr": "02:00:00:00:03:0a",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "8",
+       "mac_addr": "02:00:00:01:00:0a",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "9",
+       "mac_addr": "02:00:00:01:01:0a",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "10",
+       "mac_addr": "02:00:00:01:02:0a",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "11",
+       "mac_addr": "02:00:00:01:03:0a",
+       "ip_addr": "0.0.0.0"
+      }
+     ]
+    },
+    {
+     "port_id": "11",
+     "accelerator_addr": [
+      {
+       "accelerator_id": "0",
+       "mac_addr": "02:00:00:00:00:0b",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "2",
+       "mac_addr": "02:00:00:00:02:0b",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "3",
+       "mac_addr": "02:00:00:00:03:0b",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "8",
+       "mac_addr": "02:00:00:01:00:0b",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "9",
+       "mac_addr": "02:00:00:01:01:0b",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "10",
+       "mac_addr": "02:00:00:01:02:0b",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "11",
+       "mac_addr": "02:00:00:01:03:0b",
+       "ip_addr": "0.0.0.0"
+      }
+     ]
+    },
+    {
+     "port_id": "12",
+     "accelerator_addr": [
+      {
+       "accelerator_id": "0",
+       "mac_addr": "02:00:00:00:00:0c",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "2",
+       "mac_addr": "02:00:00:00:02:0c",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "3",
+       "mac_addr": "02:00:00:00:03:0c",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "8",
+       "mac_addr": "02:00:00:01:00:0c",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "9",
+       "mac_addr": "02:00:00:01:01:0c",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "10",
+       "mac_addr": "02:00:00:01:02:0c",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "11",
+       "mac_addr": "02:00:00:01:03:0c",
+       "ip_addr": "0.0.0.0"
+      }
+     ]
+    },
+    {
+     "port_id": "13",
+     "accelerator_addr": [
+      {
+       "accelerator_id": "0",
+       "mac_addr": "02:00:00:00:00:0d",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "2",
+       "mac_addr": "02:00:00:00:02:0d",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "3",
+       "mac_addr": "02:00:00:00:03:0d",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "8",
+       "mac_addr": "02:00:00:01:00:0d",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "9",
+       "mac_addr": "02:00:00:01:01:0d",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "10",
+       "mac_addr": "02:00:00:01:02:0d",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "11",
+       "mac_addr": "02:00:00:01:03:0d",
+       "ip_addr": "0.0.0.0"
+      }
+     ]
+    },
+    {
+     "port_id": "14",
+     "accelerator_addr": [
+      {
+       "accelerator_id": "0",
+       "mac_addr": "02:00:00:00:00:0e",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "2",
+       "mac_addr": "02:00:00:00:02:0e",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "3",
+       "mac_addr": "02:00:00:00:03:0e",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "8",
+       "mac_addr": "02:00:00:01:00:0e",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "9",
+       "mac_addr": "02:00:00:01:01:0e",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "10",
+       "mac_addr": "02:00:00:01:02:0e",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "11",
+       "mac_addr": "02:00:00:01:03:0e",
+       "ip_addr": "0.0.0.0"
+      }
+     ]
+    },
+    {
+     "port_id": "15",
+     "accelerator_addr": [
+      {
+       "accelerator_id": "0",
+       "mac_addr": "02:00:00:00:00:0f",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "2",
+       "mac_addr": "02:00:00:00:02:0f",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "3",
+       "mac_addr": "02:00:00:00:03:0f",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "8",
+       "mac_addr": "02:00:00:01:00:0f",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "9",
+       "mac_addr": "02:00:00:01:01:0f",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "10",
+       "mac_addr": "02:00:00:01:02:0f",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "11",
+       "mac_addr": "02:00:00:01:03:0f",
+       "ip_addr": "0.0.0.0"
+      }
+     ]
+    },
+    {
+     "port_id": "16",
+     "accelerator_addr": [
+      {
+       "accelerator_id": "0",
+       "mac_addr": "02:00:00:00:00:10",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "2",
+       "mac_addr": "02:00:00:00:02:10",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "3",
+       "mac_addr": "02:00:00:00:03:10",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "8",
+       "mac_addr": "02:00:00:01:00:10",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "9",
+       "mac_addr": "02:00:00:01:01:10",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "10",
+       "mac_addr": "02:00:00:01:02:10",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "11",
+       "mac_addr": "02:00:00:01:03:10",
+       "ip_addr": "0.0.0.0"
+      }
+     ]
+    },
+    {
+     "port_id": "17",
+     "accelerator_addr": [
+      {
+       "accelerator_id": "0",
+       "mac_addr": "02:00:00:00:00:11",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "2",
+       "mac_addr": "02:00:00:00:02:11",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "3",
+       "mac_addr": "02:00:00:00:03:11",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "8",
+       "mac_addr": "02:00:00:01:00:11",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "9",
+       "mac_addr": "02:00:00:01:01:11",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "10",
+       "mac_addr": "02:00:00:01:02:11",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "11",
+       "mac_addr": "02:00:00:01:03:11",
+       "ip_addr": "0.0.0.0"
+      }
+     ]
+    },
+    {
+     "port_id": "18",
+     "accelerator_addr": [
+      {
+       "accelerator_id": "0",
+       "mac_addr": "02:00:00:00:00:12",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "2",
+       "mac_addr": "02:00:00:00:02:12",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "3",
+       "mac_addr": "02:00:00:00:03:12",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "8",
+       "mac_addr": "02:00:00:01:00:12",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "9",
+       "mac_addr": "02:00:00:01:01:12",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "10",
+       "mac_addr": "02:00:00:01:02:12",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "11",
+       "mac_addr": "02:00:00:01:03:12",
+       "ip_addr": "0.0.0.0"
+      }
+     ]
+    },
+    {
+     "port_id": "19",
+     "accelerator_addr": [
+      {
+       "accelerator_id": "0",
+       "mac_addr": "02:00:00:00:00:13",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "2",
+       "mac_addr": "02:00:00:00:02:13",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "3",
+       "mac_addr": "02:00:00:00:03:13",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "8",
+       "mac_addr": "02:00:00:01:00:13",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "9",
+       "mac_addr": "02:00:00:01:01:13",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "10",
+       "mac_addr": "02:00:00:01:02:13",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "11",
+       "mac_addr": "02:00:00:01:03:13",
+       "ip_addr": "0.0.0.0"
+      }
+     ]
+    },
+    {
+     "port_id": "20",
+     "accelerator_addr": [
+      {
+       "accelerator_id": "0",
+       "mac_addr": "02:00:00:00:00:14",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "2",
+       "mac_addr": "02:00:00:00:02:14",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "3",
+       "mac_addr": "02:00:00:00:03:14",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "8",
+       "mac_addr": "02:00:00:01:00:14",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "9",
+       "mac_addr": "02:00:00:01:01:14",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "10",
+       "mac_addr": "02:00:00:01:02:14",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "11",
+       "mac_addr": "02:00:00:01:03:14",
+       "ip_addr": "0.0.0.0"
+      }
+     ]
+    },
+    {
+     "port_id": "21",
+     "accelerator_addr": [
+      {
+       "accelerator_id": "0",
+       "mac_addr": "02:00:00:00:00:15",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "2",
+       "mac_addr": "02:00:00:00:02:15",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "3",
+       "mac_addr": "02:00:00:00:03:15",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "8",
+       "mac_addr": "02:00:00:01:00:15",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "9",
+       "mac_addr": "02:00:00:01:01:15",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "10",
+       "mac_addr": "02:00:00:01:02:15",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "11",
+       "mac_addr": "02:00:00:01:03:15",
+       "ip_addr": "0.0.0.0"
+      }
+     ]
+    },
+    {
+     "port_id": "22",
+     "accelerator_addr": [
+      {
+       "accelerator_id": "0",
+       "mac_addr": "02:00:00:00:00:16",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "2",
+       "mac_addr": "02:00:00:00:02:16",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "3",
+       "mac_addr": "02:00:00:00:03:16",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "8",
+       "mac_addr": "02:00:00:01:00:16",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "9",
+       "mac_addr": "02:00:00:01:01:16",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "10",
+       "mac_addr": "02:00:00:01:02:16",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "11",
+       "mac_addr": "02:00:00:01:03:16",
+       "ip_addr": "0.0.0.0"
+      }
+     ]
+    },
+    {
+     "port_id": "23",
+     "accelerator_addr": [
+      {
+       "accelerator_id": "0",
+       "mac_addr": "02:00:00:00:00:17",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "2",
+       "mac_addr": "02:00:00:00:02:17",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "3",
+       "mac_addr": "02:00:00:00:03:17",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "8",
+       "mac_addr": "02:00:00:01:00:17",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "9",
+       "mac_addr": "02:00:00:01:01:17",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "10",
+       "mac_addr": "02:00:00:01:02:17",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "11",
+       "mac_addr": "02:00:00:01:03:17",
+       "ip_addr": "0.0.0.0"
+      }
+     ]
+    },
+    {
+     "port_id": "24",
+     "accelerator_addr": [
+      {
+       "accelerator_id": "0",
+       "mac_addr": "02:00:00:00:00:18",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "2",
+       "mac_addr": "02:00:00:00:02:18",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "3",
+       "mac_addr": "02:00:00:00:03:18",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "8",
+       "mac_addr": "02:00:00:01:00:18",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "9",
+       "mac_addr": "02:00:00:01:01:18",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "10",
+       "mac_addr": "02:00:00:01:02:18",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "11",
+       "mac_addr": "02:00:00:01:03:18",
+       "ip_addr": "0.0.0.0"
+      }
+     ]
+    },
+    {
+     "port_id": "25",
+     "accelerator_addr": [
+      {
+       "accelerator_id": "0",
+       "mac_addr": "02:00:00:00:00:19",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "2",
+       "mac_addr": "02:00:00:00:02:19",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "3",
+       "mac_addr": "02:00:00:00:03:19",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "8",
+       "mac_addr": "02:00:00:01:00:19",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "9",
+       "mac_addr": "02:00:00:01:01:19",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "10",
+       "mac_addr": "02:00:00:01:02:19",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "11",
+       "mac_addr": "02:00:00:01:03:19",
+       "ip_addr": "0.0.0.0"
+      }
+     ]
+    },
+    {
+     "port_id": "26",
+     "accelerator_addr": [
+      {
+       "accelerator_id": "0",
+       "mac_addr": "02:00:00:00:00:1a",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "2",
+       "mac_addr": "02:00:00:00:02:1a",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "3",
+       "mac_addr": "02:00:00:00:03:1a",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "8",
+       "mac_addr": "02:00:00:01:00:1a",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "9",
+       "mac_addr": "02:00:00:01:01:1a",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "10",
+       "mac_addr": "02:00:00:01:02:1a",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "11",
+       "mac_addr": "02:00:00:01:03:1a",
+       "ip_addr": "0.0.0.0"
+      }
+     ]
+    },
+    {
+     "port_id": "27",
+     "accelerator_addr": [
+      {
+       "accelerator_id": "0",
+       "mac_addr": "02:00:00:00:00:1b",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "2",
+       "mac_addr": "02:00:00:00:02:1b",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "3",
+       "mac_addr": "02:00:00:00:03:1b",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "8",
+       "mac_addr": "02:00:00:01:00:1b",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "9",
+       "mac_addr": "02:00:00:01:01:1b",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "10",
+       "mac_addr": "02:00:00:01:02:1b",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "11",
+       "mac_addr": "02:00:00:01:03:1b",
+       "ip_addr": "0.0.0.0"
+      }
+     ]
+    },
+    {
+     "port_id": "28",
+     "accelerator_addr": [
+      {
+       "accelerator_id": "0",
+       "mac_addr": "02:00:00:00:00:1c",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "2",
+       "mac_addr": "02:00:00:00:02:1c",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "3",
+       "mac_addr": "02:00:00:00:03:1c",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "8",
+       "mac_addr": "02:00:00:01:00:1c",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "9",
+       "mac_addr": "02:00:00:01:01:1c",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "10",
+       "mac_addr": "02:00:00:01:02:1c",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "11",
+       "mac_addr": "02:00:00:01:03:1c",
+       "ip_addr": "0.0.0.0"
+      }
+     ]
+    },
+    {
+     "port_id": "29",
+     "accelerator_addr": [
+      {
+       "accelerator_id": "0",
+       "mac_addr": "02:00:00:00:00:1d",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "2",
+       "mac_addr": "02:00:00:00:02:1d",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "3",
+       "mac_addr": "02:00:00:00:03:1d",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "8",
+       "mac_addr": "02:00:00:01:00:1d",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "9",
+       "mac_addr": "02:00:00:01:01:1d",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "10",
+       "mac_addr": "02:00:00:01:02:1d",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "11",
+       "mac_addr": "02:00:00:01:03:1d",
+       "ip_addr": "0.0.0.0"
+      }
+     ]
+    },
+    {
+     "port_id": "30",
+     "accelerator_addr": [
+      {
+       "accelerator_id": "0",
+       "mac_addr": "02:00:00:00:00:1e",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "2",
+       "mac_addr": "02:00:00:00:02:1e",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "3",
+       "mac_addr": "02:00:00:00:03:1e",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "8",
+       "mac_addr": "02:00:00:01:00:1e",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "9",
+       "mac_addr": "02:00:00:01:01:1e",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "10",
+       "mac_addr": "02:00:00:01:02:1e",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "11",
+       "mac_addr": "02:00:00:01:03:1e",
+       "ip_addr": "0.0.0.0"
+      }
+     ]
+    },
+    {
+     "port_id": "31",
+     "accelerator_addr": [
+      {
+       "accelerator_id": "0",
+       "mac_addr": "02:00:00:00:00:1f",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "2",
+       "mac_addr": "02:00:00:00:02:1f",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "3",
+       "mac_addr": "02:00:00:00:03:1f",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "8",
+       "mac_addr": "02:00:00:01:00:1f",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "9",
+       "mac_addr": "02:00:00:01:01:1f",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "10",
+       "mac_addr": "02:00:00:01:02:1f",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "11",
+       "mac_addr": "02:00:00:01:03:1f",
+       "ip_addr": "0.0.0.0"
+      }
+     ]
+    },
+    {
+     "port_id": "32",
+     "accelerator_addr": [
+      {
+       "accelerator_id": "0",
+       "mac_addr": "02:00:00:00:00:20",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "2",
+       "mac_addr": "02:00:00:00:02:20",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "3",
+       "mac_addr": "02:00:00:00:03:20",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "8",
+       "mac_addr": "02:00:00:01:00:20",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "9",
+       "mac_addr": "02:00:00:01:01:20",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "10",
+       "mac_addr": "02:00:00:01:02:20",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "11",
+       "mac_addr": "02:00:00:01:03:20",
+       "ip_addr": "0.0.0.0"
+      }
+     ]
+    },
+    {
+     "port_id": "33",
+     "accelerator_addr": [
+      {
+       "accelerator_id": "0",
+       "mac_addr": "02:00:00:00:00:21",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "2",
+       "mac_addr": "02:00:00:00:02:21",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "3",
+       "mac_addr": "02:00:00:00:03:21",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "8",
+       "mac_addr": "02:00:00:01:00:21",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "9",
+       "mac_addr": "02:00:00:01:01:21",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "10",
+       "mac_addr": "02:00:00:01:02:21",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "11",
+       "mac_addr": "02:00:00:01:03:21",
+       "ip_addr": "0.0.0.0"
+      }
+     ]
+    },
+    {
+     "port_id": "34",
+     "accelerator_addr": [
+      {
+       "accelerator_id": "0",
+       "mac_addr": "02:00:00:00:00:22",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "2",
+       "mac_addr": "02:00:00:00:02:22",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "3",
+       "mac_addr": "02:00:00:00:03:22",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "8",
+       "mac_addr": "02:00:00:01:00:22",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "9",
+       "mac_addr": "02:00:00:01:01:22",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "10",
+       "mac_addr": "02:00:00:01:02:22",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "11",
+       "mac_addr": "02:00:00:01:03:22",
+       "ip_addr": "0.0.0.0"
+      }
+     ]
+    },
+    {
+     "port_id": "35",
+     "accelerator_addr": [
+      {
+       "accelerator_id": "0",
+       "mac_addr": "02:00:00:00:00:23",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "2",
+       "mac_addr": "02:00:00:00:02:23",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "3",
+       "mac_addr": "02:00:00:00:03:23",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "8",
+       "mac_addr": "02:00:00:01:00:23",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "9",
+       "mac_addr": "02:00:00:01:01:23",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "10",
+       "mac_addr": "02:00:00:01:02:23",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "11",
+       "mac_addr": "02:00:00:01:03:23",
+       "ip_addr": "0.0.0.0"
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "bdf": "0003:01:00.1",
+   "port": [
+    {
+     "port_id": "0",
+     "accelerator_addr": [
+      {
+       "accelerator_id": "0",
+       "mac_addr": "02:00:00:00:00:00",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "1",
+       "mac_addr": "02:00:00:00:01:00",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "3",
+       "mac_addr": "02:00:00:00:03:00",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "8",
+       "mac_addr": "02:00:00:01:00:00",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "9",
+       "mac_addr": "02:00:00:01:01:00",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "10",
+       "mac_addr": "02:00:00:01:02:00",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "11",
+       "mac_addr": "02:00:00:01:03:00",
+       "ip_addr": "0.0.0.0"
+      }
+     ]
+    },
+    {
+     "port_id": "1",
+     "accelerator_addr": [
+      {
+       "accelerator_id": "0",
+       "mac_addr": "02:00:00:00:00:01",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "1",
+       "mac_addr": "02:00:00:00:01:01",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "3",
+       "mac_addr": "02:00:00:00:03:01",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "8",
+       "mac_addr": "02:00:00:01:00:01",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "9",
+       "mac_addr": "02:00:00:01:01:01",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "10",
+       "mac_addr": "02:00:00:01:02:01",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "11",
+       "mac_addr": "02:00:00:01:03:01",
+       "ip_addr": "0.0.0.0"
+      }
+     ]
+    },
+    {
+     "port_id": "2",
+     "accelerator_addr": [
+      {
+       "accelerator_id": "0",
+       "mac_addr": "02:00:00:00:00:02",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "1",
+       "mac_addr": "02:00:00:00:01:02",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "3",
+       "mac_addr": "02:00:00:00:03:02",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "8",
+       "mac_addr": "02:00:00:01:00:02",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "9",
+       "mac_addr": "02:00:00:01:01:02",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "10",
+       "mac_addr": "02:00:00:01:02:02",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "11",
+       "mac_addr": "02:00:00:01:03:02",
+       "ip_addr": "0.0.0.0"
+      }
+     ]
+    },
+    {
+     "port_id": "3",
+     "accelerator_addr": [
+      {
+       "accelerator_id": "0",
+       "mac_addr": "02:00:00:00:00:03",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "1",
+       "mac_addr": "02:00:00:00:01:03",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "3",
+       "mac_addr": "02:00:00:00:03:03",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "8",
+       "mac_addr": "02:00:00:01:00:03",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "9",
+       "mac_addr": "02:00:00:01:01:03",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "10",
+       "mac_addr": "02:00:00:01:02:03",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "11",
+       "mac_addr": "02:00:00:01:03:03",
+       "ip_addr": "0.0.0.0"
+      }
+     ]
+    },
+    {
+     "port_id": "4",
+     "accelerator_addr": [
+      {
+       "accelerator_id": "0",
+       "mac_addr": "02:00:00:00:00:04",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "1",
+       "mac_addr": "02:00:00:00:01:04",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "3",
+       "mac_addr": "02:00:00:00:03:04",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "8",
+       "mac_addr": "02:00:00:01:00:04",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "9",
+       "mac_addr": "02:00:00:01:01:04",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "10",
+       "mac_addr": "02:00:00:01:02:04",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "11",
+       "mac_addr": "02:00:00:01:03:04",
+       "ip_addr": "0.0.0.0"
+      }
+     ]
+    },
+    {
+     "port_id": "5",
+     "accelerator_addr": [
+      {
+       "accelerator_id": "0",
+       "mac_addr": "02:00:00:00:00:05",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "1",
+       "mac_addr": "02:00:00:00:01:05",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "3",
+       "mac_addr": "02:00:00:00:03:05",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "8",
+       "mac_addr": "02:00:00:01:00:05",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "9",
+       "mac_addr": "02:00:00:01:01:05",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "10",
+       "mac_addr": "02:00:00:01:02:05",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "11",
+       "mac_addr": "02:00:00:01:03:05",
+       "ip_addr": "0.0.0.0"
+      }
+     ]
+    },
+    {
+     "port_id": "6",
+     "accelerator_addr": [
+      {
+       "accelerator_id": "0",
+       "mac_addr": "02:00:00:00:00:06",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "1",
+       "mac_addr": "02:00:00:00:01:06",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "3",
+       "mac_addr": "02:00:00:00:03:06",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "8",
+       "mac_addr": "02:00:00:01:00:06",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "9",
+       "mac_addr": "02:00:00:01:01:06",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "10",
+       "mac_addr": "02:00:00:01:02:06",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "11",
+       "mac_addr": "02:00:00:01:03:06",
+       "ip_addr": "0.0.0.0"
+      }
+     ]
+    },
+    {
+     "port_id": "7",
+     "accelerator_addr": [
+      {
+       "accelerator_id": "0",
+       "mac_addr": "02:00:00:00:00:07",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "1",
+       "mac_addr": "02:00:00:00:01:07",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "3",
+       "mac_addr": "02:00:00:00:03:07",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "8",
+       "mac_addr": "02:00:00:01:00:07",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "9",
+       "mac_addr": "02:00:00:01:01:07",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "10",
+       "mac_addr": "02:00:00:01:02:07",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "11",
+       "mac_addr": "02:00:00:01:03:07",
+       "ip_addr": "0.0.0.0"
+      }
+     ]
+    },
+    {
+     "port_id": "8",
+     "accelerator_addr": [
+      {
+       "accelerator_id": "0",
+       "mac_addr": "02:00:00:00:00:08",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "1",
+       "mac_addr": "02:00:00:00:01:08",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "3",
+       "mac_addr": "02:00:00:00:03:08",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "8",
+       "mac_addr": "02:00:00:01:00:08",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "9",
+       "mac_addr": "02:00:00:01:01:08",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "10",
+       "mac_addr": "02:00:00:01:02:08",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "11",
+       "mac_addr": "02:00:00:01:03:08",
+       "ip_addr": "0.0.0.0"
+      }
+     ]
+    },
+    {
+     "port_id": "9",
+     "accelerator_addr": [
+      {
+       "accelerator_id": "0",
+       "mac_addr": "02:00:00:00:00:09",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "1",
+       "mac_addr": "02:00:00:00:01:09",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "3",
+       "mac_addr": "02:00:00:00:03:09",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "8",
+       "mac_addr": "02:00:00:01:00:09",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "9",
+       "mac_addr": "02:00:00:01:01:09",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "10",
+       "mac_addr": "02:00:00:01:02:09",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "11",
+       "mac_addr": "02:00:00:01:03:09",
+       "ip_addr": "0.0.0.0"
+      }
+     ]
+    },
+    {
+     "port_id": "10",
+     "accelerator_addr": [
+      {
+       "accelerator_id": "0",
+       "mac_addr": "02:00:00:00:00:0a",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "1",
+       "mac_addr": "02:00:00:00:01:0a",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "3",
+       "mac_addr": "02:00:00:00:03:0a",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "8",
+       "mac_addr": "02:00:00:01:00:0a",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "9",
+       "mac_addr": "02:00:00:01:01:0a",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "10",
+       "mac_addr": "02:00:00:01:02:0a",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "11",
+       "mac_addr": "02:00:00:01:03:0a",
+       "ip_addr": "0.0.0.0"
+      }
+     ]
+    },
+    {
+     "port_id": "11",
+     "accelerator_addr": [
+      {
+       "accelerator_id": "0",
+       "mac_addr": "02:00:00:00:00:0b",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "1",
+       "mac_addr": "02:00:00:00:01:0b",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "3",
+       "mac_addr": "02:00:00:00:03:0b",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "8",
+       "mac_addr": "02:00:00:01:00:0b",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "9",
+       "mac_addr": "02:00:00:01:01:0b",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "10",
+       "mac_addr": "02:00:00:01:02:0b",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "11",
+       "mac_addr": "02:00:00:01:03:0b",
+       "ip_addr": "0.0.0.0"
+      }
+     ]
+    },
+    {
+     "port_id": "12",
+     "accelerator_addr": [
+      {
+       "accelerator_id": "0",
+       "mac_addr": "02:00:00:00:00:0c",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "1",
+       "mac_addr": "02:00:00:00:01:0c",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "3",
+       "mac_addr": "02:00:00:00:03:0c",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "8",
+       "mac_addr": "02:00:00:01:00:0c",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "9",
+       "mac_addr": "02:00:00:01:01:0c",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "10",
+       "mac_addr": "02:00:00:01:02:0c",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "11",
+       "mac_addr": "02:00:00:01:03:0c",
+       "ip_addr": "0.0.0.0"
+      }
+     ]
+    },
+    {
+     "port_id": "13",
+     "accelerator_addr": [
+      {
+       "accelerator_id": "0",
+       "mac_addr": "02:00:00:00:00:0d",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "1",
+       "mac_addr": "02:00:00:00:01:0d",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "3",
+       "mac_addr": "02:00:00:00:03:0d",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "8",
+       "mac_addr": "02:00:00:01:00:0d",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "9",
+       "mac_addr": "02:00:00:01:01:0d",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "10",
+       "mac_addr": "02:00:00:01:02:0d",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "11",
+       "mac_addr": "02:00:00:01:03:0d",
+       "ip_addr": "0.0.0.0"
+      }
+     ]
+    },
+    {
+     "port_id": "14",
+     "accelerator_addr": [
+      {
+       "accelerator_id": "0",
+       "mac_addr": "02:00:00:00:00:0e",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "1",
+       "mac_addr": "02:00:00:00:01:0e",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "3",
+       "mac_addr": "02:00:00:00:03:0e",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "8",
+       "mac_addr": "02:00:00:01:00:0e",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "9",
+       "mac_addr": "02:00:00:01:01:0e",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "10",
+       "mac_addr": "02:00:00:01:02:0e",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "11",
+       "mac_addr": "02:00:00:01:03:0e",
+       "ip_addr": "0.0.0.0"
+      }
+     ]
+    },
+    {
+     "port_id": "15",
+     "accelerator_addr": [
+      {
+       "accelerator_id": "0",
+       "mac_addr": "02:00:00:00:00:0f",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "1",
+       "mac_addr": "02:00:00:00:01:0f",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "3",
+       "mac_addr": "02:00:00:00:03:0f",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "8",
+       "mac_addr": "02:00:00:01:00:0f",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "9",
+       "mac_addr": "02:00:00:01:01:0f",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "10",
+       "mac_addr": "02:00:00:01:02:0f",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "11",
+       "mac_addr": "02:00:00:01:03:0f",
+       "ip_addr": "0.0.0.0"
+      }
+     ]
+    },
+    {
+     "port_id": "16",
+     "accelerator_addr": [
+      {
+       "accelerator_id": "0",
+       "mac_addr": "02:00:00:00:00:10",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "1",
+       "mac_addr": "02:00:00:00:01:10",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "3",
+       "mac_addr": "02:00:00:00:03:10",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "8",
+       "mac_addr": "02:00:00:01:00:10",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "9",
+       "mac_addr": "02:00:00:01:01:10",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "10",
+       "mac_addr": "02:00:00:01:02:10",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "11",
+       "mac_addr": "02:00:00:01:03:10",
+       "ip_addr": "0.0.0.0"
+      }
+     ]
+    },
+    {
+     "port_id": "17",
+     "accelerator_addr": [
+      {
+       "accelerator_id": "0",
+       "mac_addr": "02:00:00:00:00:11",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "1",
+       "mac_addr": "02:00:00:00:01:11",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "3",
+       "mac_addr": "02:00:00:00:03:11",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "8",
+       "mac_addr": "02:00:00:01:00:11",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "9",
+       "mac_addr": "02:00:00:01:01:11",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "10",
+       "mac_addr": "02:00:00:01:02:11",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "11",
+       "mac_addr": "02:00:00:01:03:11",
+       "ip_addr": "0.0.0.0"
+      }
+     ]
+    },
+    {
+     "port_id": "18",
+     "accelerator_addr": [
+      {
+       "accelerator_id": "0",
+       "mac_addr": "02:00:00:00:00:12",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "1",
+       "mac_addr": "02:00:00:00:01:12",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "3",
+       "mac_addr": "02:00:00:00:03:12",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "8",
+       "mac_addr": "02:00:00:01:00:12",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "9",
+       "mac_addr": "02:00:00:01:01:12",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "10",
+       "mac_addr": "02:00:00:01:02:12",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "11",
+       "mac_addr": "02:00:00:01:03:12",
+       "ip_addr": "0.0.0.0"
+      }
+     ]
+    },
+    {
+     "port_id": "19",
+     "accelerator_addr": [
+      {
+       "accelerator_id": "0",
+       "mac_addr": "02:00:00:00:00:13",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "1",
+       "mac_addr": "02:00:00:00:01:13",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "3",
+       "mac_addr": "02:00:00:00:03:13",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "8",
+       "mac_addr": "02:00:00:01:00:13",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "9",
+       "mac_addr": "02:00:00:01:01:13",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "10",
+       "mac_addr": "02:00:00:01:02:13",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "11",
+       "mac_addr": "02:00:00:01:03:13",
+       "ip_addr": "0.0.0.0"
+      }
+     ]
+    },
+    {
+     "port_id": "20",
+     "accelerator_addr": [
+      {
+       "accelerator_id": "0",
+       "mac_addr": "02:00:00:00:00:14",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "1",
+       "mac_addr": "02:00:00:00:01:14",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "3",
+       "mac_addr": "02:00:00:00:03:14",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "8",
+       "mac_addr": "02:00:00:01:00:14",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "9",
+       "mac_addr": "02:00:00:01:01:14",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "10",
+       "mac_addr": "02:00:00:01:02:14",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "11",
+       "mac_addr": "02:00:00:01:03:14",
+       "ip_addr": "0.0.0.0"
+      }
+     ]
+    },
+    {
+     "port_id": "21",
+     "accelerator_addr": [
+      {
+       "accelerator_id": "0",
+       "mac_addr": "02:00:00:00:00:15",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "1",
+       "mac_addr": "02:00:00:00:01:15",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "3",
+       "mac_addr": "02:00:00:00:03:15",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "8",
+       "mac_addr": "02:00:00:01:00:15",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "9",
+       "mac_addr": "02:00:00:01:01:15",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "10",
+       "mac_addr": "02:00:00:01:02:15",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "11",
+       "mac_addr": "02:00:00:01:03:15",
+       "ip_addr": "0.0.0.0"
+      }
+     ]
+    },
+    {
+     "port_id": "22",
+     "accelerator_addr": [
+      {
+       "accelerator_id": "0",
+       "mac_addr": "02:00:00:00:00:16",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "1",
+       "mac_addr": "02:00:00:00:01:16",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "3",
+       "mac_addr": "02:00:00:00:03:16",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "8",
+       "mac_addr": "02:00:00:01:00:16",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "9",
+       "mac_addr": "02:00:00:01:01:16",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "10",
+       "mac_addr": "02:00:00:01:02:16",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "11",
+       "mac_addr": "02:00:00:01:03:16",
+       "ip_addr": "0.0.0.0"
+      }
+     ]
+    },
+    {
+     "port_id": "23",
+     "accelerator_addr": [
+      {
+       "accelerator_id": "0",
+       "mac_addr": "02:00:00:00:00:17",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "1",
+       "mac_addr": "02:00:00:00:01:17",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "3",
+       "mac_addr": "02:00:00:00:03:17",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "8",
+       "mac_addr": "02:00:00:01:00:17",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "9",
+       "mac_addr": "02:00:00:01:01:17",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "10",
+       "mac_addr": "02:00:00:01:02:17",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "11",
+       "mac_addr": "02:00:00:01:03:17",
+       "ip_addr": "0.0.0.0"
+      }
+     ]
+    },
+    {
+     "port_id": "24",
+     "accelerator_addr": [
+      {
+       "accelerator_id": "0",
+       "mac_addr": "02:00:00:00:00:18",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "1",
+       "mac_addr": "02:00:00:00:01:18",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "3",
+       "mac_addr": "02:00:00:00:03:18",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "8",
+       "mac_addr": "02:00:00:01:00:18",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "9",
+       "mac_addr": "02:00:00:01:01:18",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "10",
+       "mac_addr": "02:00:00:01:02:18",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "11",
+       "mac_addr": "02:00:00:01:03:18",
+       "ip_addr": "0.0.0.0"
+      }
+     ]
+    },
+    {
+     "port_id": "25",
+     "accelerator_addr": [
+      {
+       "accelerator_id": "0",
+       "mac_addr": "02:00:00:00:00:19",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "1",
+       "mac_addr": "02:00:00:00:01:19",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "3",
+       "mac_addr": "02:00:00:00:03:19",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "8",
+       "mac_addr": "02:00:00:01:00:19",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "9",
+       "mac_addr": "02:00:00:01:01:19",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "10",
+       "mac_addr": "02:00:00:01:02:19",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "11",
+       "mac_addr": "02:00:00:01:03:19",
+       "ip_addr": "0.0.0.0"
+      }
+     ]
+    },
+    {
+     "port_id": "26",
+     "accelerator_addr": [
+      {
+       "accelerator_id": "0",
+       "mac_addr": "02:00:00:00:00:1a",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "1",
+       "mac_addr": "02:00:00:00:01:1a",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "3",
+       "mac_addr": "02:00:00:00:03:1a",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "8",
+       "mac_addr": "02:00:00:01:00:1a",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "9",
+       "mac_addr": "02:00:00:01:01:1a",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "10",
+       "mac_addr": "02:00:00:01:02:1a",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "11",
+       "mac_addr": "02:00:00:01:03:1a",
+       "ip_addr": "0.0.0.0"
+      }
+     ]
+    },
+    {
+     "port_id": "27",
+     "accelerator_addr": [
+      {
+       "accelerator_id": "0",
+       "mac_addr": "02:00:00:00:00:1b",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "1",
+       "mac_addr": "02:00:00:00:01:1b",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "3",
+       "mac_addr": "02:00:00:00:03:1b",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "8",
+       "mac_addr": "02:00:00:01:00:1b",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "9",
+       "mac_addr": "02:00:00:01:01:1b",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "10",
+       "mac_addr": "02:00:00:01:02:1b",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "11",
+       "mac_addr": "02:00:00:01:03:1b",
+       "ip_addr": "0.0.0.0"
+      }
+     ]
+    },
+    {
+     "port_id": "28",
+     "accelerator_addr": [
+      {
+       "accelerator_id": "0",
+       "mac_addr": "02:00:00:00:00:1c",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "1",
+       "mac_addr": "02:00:00:00:01:1c",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "3",
+       "mac_addr": "02:00:00:00:03:1c",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "8",
+       "mac_addr": "02:00:00:01:00:1c",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "9",
+       "mac_addr": "02:00:00:01:01:1c",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "10",
+       "mac_addr": "02:00:00:01:02:1c",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "11",
+       "mac_addr": "02:00:00:01:03:1c",
+       "ip_addr": "0.0.0.0"
+      }
+     ]
+    },
+    {
+     "port_id": "29",
+     "accelerator_addr": [
+      {
+       "accelerator_id": "0",
+       "mac_addr": "02:00:00:00:00:1d",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "1",
+       "mac_addr": "02:00:00:00:01:1d",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "3",
+       "mac_addr": "02:00:00:00:03:1d",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "8",
+       "mac_addr": "02:00:00:01:00:1d",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "9",
+       "mac_addr": "02:00:00:01:01:1d",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "10",
+       "mac_addr": "02:00:00:01:02:1d",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "11",
+       "mac_addr": "02:00:00:01:03:1d",
+       "ip_addr": "0.0.0.0"
+      }
+     ]
+    },
+    {
+     "port_id": "30",
+     "accelerator_addr": [
+      {
+       "accelerator_id": "0",
+       "mac_addr": "02:00:00:00:00:1e",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "1",
+       "mac_addr": "02:00:00:00:01:1e",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "3",
+       "mac_addr": "02:00:00:00:03:1e",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "8",
+       "mac_addr": "02:00:00:01:00:1e",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "9",
+       "mac_addr": "02:00:00:01:01:1e",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "10",
+       "mac_addr": "02:00:00:01:02:1e",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "11",
+       "mac_addr": "02:00:00:01:03:1e",
+       "ip_addr": "0.0.0.0"
+      }
+     ]
+    },
+    {
+     "port_id": "31",
+     "accelerator_addr": [
+      {
+       "accelerator_id": "0",
+       "mac_addr": "02:00:00:00:00:1f",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "1",
+       "mac_addr": "02:00:00:00:01:1f",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "3",
+       "mac_addr": "02:00:00:00:03:1f",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "8",
+       "mac_addr": "02:00:00:01:00:1f",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "9",
+       "mac_addr": "02:00:00:01:01:1f",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "10",
+       "mac_addr": "02:00:00:01:02:1f",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "11",
+       "mac_addr": "02:00:00:01:03:1f",
+       "ip_addr": "0.0.0.0"
+      }
+     ]
+    },
+    {
+     "port_id": "32",
+     "accelerator_addr": [
+      {
+       "accelerator_id": "0",
+       "mac_addr": "02:00:00:00:00:20",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "1",
+       "mac_addr": "02:00:00:00:01:20",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "3",
+       "mac_addr": "02:00:00:00:03:20",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "8",
+       "mac_addr": "02:00:00:01:00:20",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "9",
+       "mac_addr": "02:00:00:01:01:20",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "10",
+       "mac_addr": "02:00:00:01:02:20",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "11",
+       "mac_addr": "02:00:00:01:03:20",
+       "ip_addr": "0.0.0.0"
+      }
+     ]
+    },
+    {
+     "port_id": "33",
+     "accelerator_addr": [
+      {
+       "accelerator_id": "0",
+       "mac_addr": "02:00:00:00:00:21",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "1",
+       "mac_addr": "02:00:00:00:01:21",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "3",
+       "mac_addr": "02:00:00:00:03:21",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "8",
+       "mac_addr": "02:00:00:01:00:21",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "9",
+       "mac_addr": "02:00:00:01:01:21",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "10",
+       "mac_addr": "02:00:00:01:02:21",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "11",
+       "mac_addr": "02:00:00:01:03:21",
+       "ip_addr": "0.0.0.0"
+      }
+     ]
+    },
+    {
+     "port_id": "34",
+     "accelerator_addr": [
+      {
+       "accelerator_id": "0",
+       "mac_addr": "02:00:00:00:00:22",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "1",
+       "mac_addr": "02:00:00:00:01:22",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "3",
+       "mac_addr": "02:00:00:00:03:22",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "8",
+       "mac_addr": "02:00:00:01:00:22",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "9",
+       "mac_addr": "02:00:00:01:01:22",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "10",
+       "mac_addr": "02:00:00:01:02:22",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "11",
+       "mac_addr": "02:00:00:01:03:22",
+       "ip_addr": "0.0.0.0"
+      }
+     ]
+    },
+    {
+     "port_id": "35",
+     "accelerator_addr": [
+      {
+       "accelerator_id": "0",
+       "mac_addr": "02:00:00:00:00:23",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "1",
+       "mac_addr": "02:00:00:00:01:23",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "3",
+       "mac_addr": "02:00:00:00:03:23",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "8",
+       "mac_addr": "02:00:00:01:00:23",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "9",
+       "mac_addr": "02:00:00:01:01:23",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "10",
+       "mac_addr": "02:00:00:01:02:23",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "11",
+       "mac_addr": "02:00:00:01:03:23",
+       "ip_addr": "0.0.0.0"
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "bdf": "0004:01:00.1",
+   "port": [
+    {
+     "port_id": "0",
+     "accelerator_addr": [
+      {
+       "accelerator_id": "0",
+       "mac_addr": "02:00:00:00:00:00",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "1",
+       "mac_addr": "02:00:00:00:01:00",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "2",
+       "mac_addr": "02:00:00:00:02:00",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "8",
+       "mac_addr": "02:00:00:01:00:00",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "9",
+       "mac_addr": "02:00:00:01:01:00",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "10",
+       "mac_addr": "02:00:00:01:02:00",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "11",
+       "mac_addr": "02:00:00:01:03:00",
+       "ip_addr": "0.0.0.0"
+      }
+     ]
+    },
+    {
+     "port_id": "1",
+     "accelerator_addr": [
+      {
+       "accelerator_id": "0",
+       "mac_addr": "02:00:00:00:00:01",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "1",
+       "mac_addr": "02:00:00:00:01:01",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "2",
+       "mac_addr": "02:00:00:00:02:01",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "8",
+       "mac_addr": "02:00:00:01:00:01",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "9",
+       "mac_addr": "02:00:00:01:01:01",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "10",
+       "mac_addr": "02:00:00:01:02:01",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "11",
+       "mac_addr": "02:00:00:01:03:01",
+       "ip_addr": "0.0.0.0"
+      }
+     ]
+    },
+    {
+     "port_id": "2",
+     "accelerator_addr": [
+      {
+       "accelerator_id": "0",
+       "mac_addr": "02:00:00:00:00:02",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "1",
+       "mac_addr": "02:00:00:00:01:02",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "2",
+       "mac_addr": "02:00:00:00:02:02",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "8",
+       "mac_addr": "02:00:00:01:00:02",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "9",
+       "mac_addr": "02:00:00:01:01:02",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "10",
+       "mac_addr": "02:00:00:01:02:02",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "11",
+       "mac_addr": "02:00:00:01:03:02",
+       "ip_addr": "0.0.0.0"
+      }
+     ]
+    },
+    {
+     "port_id": "3",
+     "accelerator_addr": [
+      {
+       "accelerator_id": "0",
+       "mac_addr": "02:00:00:00:00:03",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "1",
+       "mac_addr": "02:00:00:00:01:03",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "2",
+       "mac_addr": "02:00:00:00:02:03",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "8",
+       "mac_addr": "02:00:00:01:00:03",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "9",
+       "mac_addr": "02:00:00:01:01:03",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "10",
+       "mac_addr": "02:00:00:01:02:03",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "11",
+       "mac_addr": "02:00:00:01:03:03",
+       "ip_addr": "0.0.0.0"
+      }
+     ]
+    },
+    {
+     "port_id": "4",
+     "accelerator_addr": [
+      {
+       "accelerator_id": "0",
+       "mac_addr": "02:00:00:00:00:04",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "1",
+       "mac_addr": "02:00:00:00:01:04",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "2",
+       "mac_addr": "02:00:00:00:02:04",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "8",
+       "mac_addr": "02:00:00:01:00:04",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "9",
+       "mac_addr": "02:00:00:01:01:04",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "10",
+       "mac_addr": "02:00:00:01:02:04",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "11",
+       "mac_addr": "02:00:00:01:03:04",
+       "ip_addr": "0.0.0.0"
+      }
+     ]
+    },
+    {
+     "port_id": "5",
+     "accelerator_addr": [
+      {
+       "accelerator_id": "0",
+       "mac_addr": "02:00:00:00:00:05",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "1",
+       "mac_addr": "02:00:00:00:01:05",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "2",
+       "mac_addr": "02:00:00:00:02:05",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "8",
+       "mac_addr": "02:00:00:01:00:05",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "9",
+       "mac_addr": "02:00:00:01:01:05",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "10",
+       "mac_addr": "02:00:00:01:02:05",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "11",
+       "mac_addr": "02:00:00:01:03:05",
+       "ip_addr": "0.0.0.0"
+      }
+     ]
+    },
+    {
+     "port_id": "6",
+     "accelerator_addr": [
+      {
+       "accelerator_id": "0",
+       "mac_addr": "02:00:00:00:00:06",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "1",
+       "mac_addr": "02:00:00:00:01:06",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "2",
+       "mac_addr": "02:00:00:00:02:06",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "8",
+       "mac_addr": "02:00:00:01:00:06",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "9",
+       "mac_addr": "02:00:00:01:01:06",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "10",
+       "mac_addr": "02:00:00:01:02:06",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "11",
+       "mac_addr": "02:00:00:01:03:06",
+       "ip_addr": "0.0.0.0"
+      }
+     ]
+    },
+    {
+     "port_id": "7",
+     "accelerator_addr": [
+      {
+       "accelerator_id": "0",
+       "mac_addr": "02:00:00:00:00:07",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "1",
+       "mac_addr": "02:00:00:00:01:07",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "2",
+       "mac_addr": "02:00:00:00:02:07",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "8",
+       "mac_addr": "02:00:00:01:00:07",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "9",
+       "mac_addr": "02:00:00:01:01:07",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "10",
+       "mac_addr": "02:00:00:01:02:07",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "11",
+       "mac_addr": "02:00:00:01:03:07",
+       "ip_addr": "0.0.0.0"
+      }
+     ]
+    },
+    {
+     "port_id": "8",
+     "accelerator_addr": [
+      {
+       "accelerator_id": "0",
+       "mac_addr": "02:00:00:00:00:08",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "1",
+       "mac_addr": "02:00:00:00:01:08",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "2",
+       "mac_addr": "02:00:00:00:02:08",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "8",
+       "mac_addr": "02:00:00:01:00:08",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "9",
+       "mac_addr": "02:00:00:01:01:08",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "10",
+       "mac_addr": "02:00:00:01:02:08",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "11",
+       "mac_addr": "02:00:00:01:03:08",
+       "ip_addr": "0.0.0.0"
+      }
+     ]
+    },
+    {
+     "port_id": "9",
+     "accelerator_addr": [
+      {
+       "accelerator_id": "0",
+       "mac_addr": "02:00:00:00:00:09",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "1",
+       "mac_addr": "02:00:00:00:01:09",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "2",
+       "mac_addr": "02:00:00:00:02:09",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "8",
+       "mac_addr": "02:00:00:01:00:09",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "9",
+       "mac_addr": "02:00:00:01:01:09",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "10",
+       "mac_addr": "02:00:00:01:02:09",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "11",
+       "mac_addr": "02:00:00:01:03:09",
+       "ip_addr": "0.0.0.0"
+      }
+     ]
+    },
+    {
+     "port_id": "10",
+     "accelerator_addr": [
+      {
+       "accelerator_id": "0",
+       "mac_addr": "02:00:00:00:00:0a",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "1",
+       "mac_addr": "02:00:00:00:01:0a",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "2",
+       "mac_addr": "02:00:00:00:02:0a",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "8",
+       "mac_addr": "02:00:00:01:00:0a",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "9",
+       "mac_addr": "02:00:00:01:01:0a",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "10",
+       "mac_addr": "02:00:00:01:02:0a",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "11",
+       "mac_addr": "02:00:00:01:03:0a",
+       "ip_addr": "0.0.0.0"
+      }
+     ]
+    },
+    {
+     "port_id": "11",
+     "accelerator_addr": [
+      {
+       "accelerator_id": "0",
+       "mac_addr": "02:00:00:00:00:0b",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "1",
+       "mac_addr": "02:00:00:00:01:0b",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "2",
+       "mac_addr": "02:00:00:00:02:0b",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "8",
+       "mac_addr": "02:00:00:01:00:0b",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "9",
+       "mac_addr": "02:00:00:01:01:0b",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "10",
+       "mac_addr": "02:00:00:01:02:0b",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "11",
+       "mac_addr": "02:00:00:01:03:0b",
+       "ip_addr": "0.0.0.0"
+      }
+     ]
+    },
+    {
+     "port_id": "12",
+     "accelerator_addr": [
+      {
+       "accelerator_id": "0",
+       "mac_addr": "02:00:00:00:00:0c",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "1",
+       "mac_addr": "02:00:00:00:01:0c",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "2",
+       "mac_addr": "02:00:00:00:02:0c",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "8",
+       "mac_addr": "02:00:00:01:00:0c",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "9",
+       "mac_addr": "02:00:00:01:01:0c",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "10",
+       "mac_addr": "02:00:00:01:02:0c",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "11",
+       "mac_addr": "02:00:00:01:03:0c",
+       "ip_addr": "0.0.0.0"
+      }
+     ]
+    },
+    {
+     "port_id": "13",
+     "accelerator_addr": [
+      {
+       "accelerator_id": "0",
+       "mac_addr": "02:00:00:00:00:0d",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "1",
+       "mac_addr": "02:00:00:00:01:0d",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "2",
+       "mac_addr": "02:00:00:00:02:0d",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "8",
+       "mac_addr": "02:00:00:01:00:0d",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "9",
+       "mac_addr": "02:00:00:01:01:0d",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "10",
+       "mac_addr": "02:00:00:01:02:0d",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "11",
+       "mac_addr": "02:00:00:01:03:0d",
+       "ip_addr": "0.0.0.0"
+      }
+     ]
+    },
+    {
+     "port_id": "14",
+     "accelerator_addr": [
+      {
+       "accelerator_id": "0",
+       "mac_addr": "02:00:00:00:00:0e",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "1",
+       "mac_addr": "02:00:00:00:01:0e",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "2",
+       "mac_addr": "02:00:00:00:02:0e",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "8",
+       "mac_addr": "02:00:00:01:00:0e",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "9",
+       "mac_addr": "02:00:00:01:01:0e",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "10",
+       "mac_addr": "02:00:00:01:02:0e",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "11",
+       "mac_addr": "02:00:00:01:03:0e",
+       "ip_addr": "0.0.0.0"
+      }
+     ]
+    },
+    {
+     "port_id": "15",
+     "accelerator_addr": [
+      {
+       "accelerator_id": "0",
+       "mac_addr": "02:00:00:00:00:0f",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "1",
+       "mac_addr": "02:00:00:00:01:0f",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "2",
+       "mac_addr": "02:00:00:00:02:0f",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "8",
+       "mac_addr": "02:00:00:01:00:0f",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "9",
+       "mac_addr": "02:00:00:01:01:0f",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "10",
+       "mac_addr": "02:00:00:01:02:0f",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "11",
+       "mac_addr": "02:00:00:01:03:0f",
+       "ip_addr": "0.0.0.0"
+      }
+     ]
+    },
+    {
+     "port_id": "16",
+     "accelerator_addr": [
+      {
+       "accelerator_id": "0",
+       "mac_addr": "02:00:00:00:00:10",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "1",
+       "mac_addr": "02:00:00:00:01:10",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "2",
+       "mac_addr": "02:00:00:00:02:10",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "8",
+       "mac_addr": "02:00:00:01:00:10",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "9",
+       "mac_addr": "02:00:00:01:01:10",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "10",
+       "mac_addr": "02:00:00:01:02:10",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "11",
+       "mac_addr": "02:00:00:01:03:10",
+       "ip_addr": "0.0.0.0"
+      }
+     ]
+    },
+    {
+     "port_id": "17",
+     "accelerator_addr": [
+      {
+       "accelerator_id": "0",
+       "mac_addr": "02:00:00:00:00:11",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "1",
+       "mac_addr": "02:00:00:00:01:11",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "2",
+       "mac_addr": "02:00:00:00:02:11",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "8",
+       "mac_addr": "02:00:00:01:00:11",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "9",
+       "mac_addr": "02:00:00:01:01:11",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "10",
+       "mac_addr": "02:00:00:01:02:11",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "11",
+       "mac_addr": "02:00:00:01:03:11",
+       "ip_addr": "0.0.0.0"
+      }
+     ]
+    },
+    {
+     "port_id": "18",
+     "accelerator_addr": [
+      {
+       "accelerator_id": "0",
+       "mac_addr": "02:00:00:00:00:12",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "1",
+       "mac_addr": "02:00:00:00:01:12",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "2",
+       "mac_addr": "02:00:00:00:02:12",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "8",
+       "mac_addr": "02:00:00:01:00:12",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "9",
+       "mac_addr": "02:00:00:01:01:12",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "10",
+       "mac_addr": "02:00:00:01:02:12",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "11",
+       "mac_addr": "02:00:00:01:03:12",
+       "ip_addr": "0.0.0.0"
+      }
+     ]
+    },
+    {
+     "port_id": "19",
+     "accelerator_addr": [
+      {
+       "accelerator_id": "0",
+       "mac_addr": "02:00:00:00:00:13",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "1",
+       "mac_addr": "02:00:00:00:01:13",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "2",
+       "mac_addr": "02:00:00:00:02:13",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "8",
+       "mac_addr": "02:00:00:01:00:13",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "9",
+       "mac_addr": "02:00:00:01:01:13",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "10",
+       "mac_addr": "02:00:00:01:02:13",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "11",
+       "mac_addr": "02:00:00:01:03:13",
+       "ip_addr": "0.0.0.0"
+      }
+     ]
+    },
+    {
+     "port_id": "20",
+     "accelerator_addr": [
+      {
+       "accelerator_id": "0",
+       "mac_addr": "02:00:00:00:00:14",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "1",
+       "mac_addr": "02:00:00:00:01:14",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "2",
+       "mac_addr": "02:00:00:00:02:14",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "8",
+       "mac_addr": "02:00:00:01:00:14",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "9",
+       "mac_addr": "02:00:00:01:01:14",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "10",
+       "mac_addr": "02:00:00:01:02:14",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "11",
+       "mac_addr": "02:00:00:01:03:14",
+       "ip_addr": "0.0.0.0"
+      }
+     ]
+    },
+    {
+     "port_id": "21",
+     "accelerator_addr": [
+      {
+       "accelerator_id": "0",
+       "mac_addr": "02:00:00:00:00:15",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "1",
+       "mac_addr": "02:00:00:00:01:15",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "2",
+       "mac_addr": "02:00:00:00:02:15",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "8",
+       "mac_addr": "02:00:00:01:00:15",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "9",
+       "mac_addr": "02:00:00:01:01:15",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "10",
+       "mac_addr": "02:00:00:01:02:15",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "11",
+       "mac_addr": "02:00:00:01:03:15",
+       "ip_addr": "0.0.0.0"
+      }
+     ]
+    },
+    {
+     "port_id": "22",
+     "accelerator_addr": [
+      {
+       "accelerator_id": "0",
+       "mac_addr": "02:00:00:00:00:16",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "1",
+       "mac_addr": "02:00:00:00:01:16",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "2",
+       "mac_addr": "02:00:00:00:02:16",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "8",
+       "mac_addr": "02:00:00:01:00:16",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "9",
+       "mac_addr": "02:00:00:01:01:16",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "10",
+       "mac_addr": "02:00:00:01:02:16",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "11",
+       "mac_addr": "02:00:00:01:03:16",
+       "ip_addr": "0.0.0.0"
+      }
+     ]
+    },
+    {
+     "port_id": "23",
+     "accelerator_addr": [
+      {
+       "accelerator_id": "0",
+       "mac_addr": "02:00:00:00:00:17",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "1",
+       "mac_addr": "02:00:00:00:01:17",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "2",
+       "mac_addr": "02:00:00:00:02:17",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "8",
+       "mac_addr": "02:00:00:01:00:17",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "9",
+       "mac_addr": "02:00:00:01:01:17",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "10",
+       "mac_addr": "02:00:00:01:02:17",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "11",
+       "mac_addr": "02:00:00:01:03:17",
+       "ip_addr": "0.0.0.0"
+      }
+     ]
+    },
+    {
+     "port_id": "24",
+     "accelerator_addr": [
+      {
+       "accelerator_id": "0",
+       "mac_addr": "02:00:00:00:00:18",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "1",
+       "mac_addr": "02:00:00:00:01:18",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "2",
+       "mac_addr": "02:00:00:00:02:18",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "8",
+       "mac_addr": "02:00:00:01:00:18",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "9",
+       "mac_addr": "02:00:00:01:01:18",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "10",
+       "mac_addr": "02:00:00:01:02:18",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "11",
+       "mac_addr": "02:00:00:01:03:18",
+       "ip_addr": "0.0.0.0"
+      }
+     ]
+    },
+    {
+     "port_id": "25",
+     "accelerator_addr": [
+      {
+       "accelerator_id": "0",
+       "mac_addr": "02:00:00:00:00:19",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "1",
+       "mac_addr": "02:00:00:00:01:19",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "2",
+       "mac_addr": "02:00:00:00:02:19",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "8",
+       "mac_addr": "02:00:00:01:00:19",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "9",
+       "mac_addr": "02:00:00:01:01:19",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "10",
+       "mac_addr": "02:00:00:01:02:19",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "11",
+       "mac_addr": "02:00:00:01:03:19",
+       "ip_addr": "0.0.0.0"
+      }
+     ]
+    },
+    {
+     "port_id": "26",
+     "accelerator_addr": [
+      {
+       "accelerator_id": "0",
+       "mac_addr": "02:00:00:00:00:1a",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "1",
+       "mac_addr": "02:00:00:00:01:1a",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "2",
+       "mac_addr": "02:00:00:00:02:1a",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "8",
+       "mac_addr": "02:00:00:01:00:1a",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "9",
+       "mac_addr": "02:00:00:01:01:1a",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "10",
+       "mac_addr": "02:00:00:01:02:1a",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "11",
+       "mac_addr": "02:00:00:01:03:1a",
+       "ip_addr": "0.0.0.0"
+      }
+     ]
+    },
+    {
+     "port_id": "27",
+     "accelerator_addr": [
+      {
+       "accelerator_id": "0",
+       "mac_addr": "02:00:00:00:00:1b",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "1",
+       "mac_addr": "02:00:00:00:01:1b",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "2",
+       "mac_addr": "02:00:00:00:02:1b",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "8",
+       "mac_addr": "02:00:00:01:00:1b",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "9",
+       "mac_addr": "02:00:00:01:01:1b",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "10",
+       "mac_addr": "02:00:00:01:02:1b",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "11",
+       "mac_addr": "02:00:00:01:03:1b",
+       "ip_addr": "0.0.0.0"
+      }
+     ]
+    },
+    {
+     "port_id": "28",
+     "accelerator_addr": [
+      {
+       "accelerator_id": "0",
+       "mac_addr": "02:00:00:00:00:1c",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "1",
+       "mac_addr": "02:00:00:00:01:1c",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "2",
+       "mac_addr": "02:00:00:00:02:1c",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "8",
+       "mac_addr": "02:00:00:01:00:1c",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "9",
+       "mac_addr": "02:00:00:01:01:1c",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "10",
+       "mac_addr": "02:00:00:01:02:1c",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "11",
+       "mac_addr": "02:00:00:01:03:1c",
+       "ip_addr": "0.0.0.0"
+      }
+     ]
+    },
+    {
+     "port_id": "29",
+     "accelerator_addr": [
+      {
+       "accelerator_id": "0",
+       "mac_addr": "02:00:00:00:00:1d",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "1",
+       "mac_addr": "02:00:00:00:01:1d",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "2",
+       "mac_addr": "02:00:00:00:02:1d",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "8",
+       "mac_addr": "02:00:00:01:00:1d",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "9",
+       "mac_addr": "02:00:00:01:01:1d",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "10",
+       "mac_addr": "02:00:00:01:02:1d",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "11",
+       "mac_addr": "02:00:00:01:03:1d",
+       "ip_addr": "0.0.0.0"
+      }
+     ]
+    },
+    {
+     "port_id": "30",
+     "accelerator_addr": [
+      {
+       "accelerator_id": "0",
+       "mac_addr": "02:00:00:00:00:1e",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "1",
+       "mac_addr": "02:00:00:00:01:1e",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "2",
+       "mac_addr": "02:00:00:00:02:1e",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "8",
+       "mac_addr": "02:00:00:01:00:1e",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "9",
+       "mac_addr": "02:00:00:01:01:1e",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "10",
+       "mac_addr": "02:00:00:01:02:1e",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "11",
+       "mac_addr": "02:00:00:01:03:1e",
+       "ip_addr": "0.0.0.0"
+      }
+     ]
+    },
+    {
+     "port_id": "31",
+     "accelerator_addr": [
+      {
+       "accelerator_id": "0",
+       "mac_addr": "02:00:00:00:00:1f",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "1",
+       "mac_addr": "02:00:00:00:01:1f",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "2",
+       "mac_addr": "02:00:00:00:02:1f",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "8",
+       "mac_addr": "02:00:00:01:00:1f",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "9",
+       "mac_addr": "02:00:00:01:01:1f",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "10",
+       "mac_addr": "02:00:00:01:02:1f",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "11",
+       "mac_addr": "02:00:00:01:03:1f",
+       "ip_addr": "0.0.0.0"
+      }
+     ]
+    },
+    {
+     "port_id": "32",
+     "accelerator_addr": [
+      {
+       "accelerator_id": "0",
+       "mac_addr": "02:00:00:00:00:20",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "1",
+       "mac_addr": "02:00:00:00:01:20",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "2",
+       "mac_addr": "02:00:00:00:02:20",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "8",
+       "mac_addr": "02:00:00:01:00:20",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "9",
+       "mac_addr": "02:00:00:01:01:20",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "10",
+       "mac_addr": "02:00:00:01:02:20",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "11",
+       "mac_addr": "02:00:00:01:03:20",
+       "ip_addr": "0.0.0.0"
+      }
+     ]
+    },
+    {
+     "port_id": "33",
+     "accelerator_addr": [
+      {
+       "accelerator_id": "0",
+       "mac_addr": "02:00:00:00:00:21",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "1",
+       "mac_addr": "02:00:00:00:01:21",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "2",
+       "mac_addr": "02:00:00:00:02:21",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "8",
+       "mac_addr": "02:00:00:01:00:21",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "9",
+       "mac_addr": "02:00:00:01:01:21",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "10",
+       "mac_addr": "02:00:00:01:02:21",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "11",
+       "mac_addr": "02:00:00:01:03:21",
+       "ip_addr": "0.0.0.0"
+      }
+     ]
+    },
+    {
+     "port_id": "34",
+     "accelerator_addr": [
+      {
+       "accelerator_id": "0",
+       "mac_addr": "02:00:00:00:00:22",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "1",
+       "mac_addr": "02:00:00:00:01:22",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "2",
+       "mac_addr": "02:00:00:00:02:22",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "8",
+       "mac_addr": "02:00:00:01:00:22",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "9",
+       "mac_addr": "02:00:00:01:01:22",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "10",
+       "mac_addr": "02:00:00:01:02:22",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "11",
+       "mac_addr": "02:00:00:01:03:22",
+       "ip_addr": "0.0.0.0"
+      }
+     ]
+    },
+    {
+     "port_id": "35",
+     "accelerator_addr": [
+      {
+       "accelerator_id": "0",
+       "mac_addr": "02:00:00:00:00:23",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "1",
+       "mac_addr": "02:00:00:00:01:23",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "2",
+       "mac_addr": "02:00:00:00:02:23",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "8",
+       "mac_addr": "02:00:00:01:00:23",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "9",
+       "mac_addr": "02:00:00:01:01:23",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "10",
+       "mac_addr": "02:00:00:01:02:23",
+       "ip_addr": "0.0.0.0"
+      },
+      {
+       "accelerator_id": "11",
+       "mac_addr": "02:00:00:01:03:23",
+       "ip_addr": "0.0.0.0"
+      }
+     ]
+    }
+   ]
+  }
+ ]
+}

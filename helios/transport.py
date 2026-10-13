@@ -155,7 +155,11 @@ class SshTransport:
                 while chan.recv_stderr_ready():
                     err += chan.recv_stderr(65536)
                     progressed = True
-                if chan.exit_status_ready() and not chan.recv_ready() and not chan.recv_stderr_ready():
+                # OpenSSH may send exit-status BEFORE the last stdout data; stopping on exit status alone
+                # truncated large outputs (a 235 KB afmctl JSON came back cut at 229 KB). Stop only when
+                # the server has also sent EOF and both buffers are drained.
+                if (chan.exit_status_ready() and chan.eof_received
+                        and not chan.recv_ready() and not chan.recv_stderr_ready()):
                     break
                 now = time.monotonic()
                 if now > deadline:

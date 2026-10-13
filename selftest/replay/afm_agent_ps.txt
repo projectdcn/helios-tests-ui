@@ -1,0 +1,4 @@
+/usr/bin/afm_agent.sh
+/switch-agent
+/sb-node-agent -slot-id 0 -controllers 10.0.0.83
+/sb-node-agent -slot-id 1 -controllers 10.0.0.83

@@ -115,6 +115,27 @@ class SonicSwitch:
         return self.run(f"sonic-db-cli{_ns_flag(ns)} CONFIG_DB hget {shlex.quote('PORT|' + port)} description",
                         timeout=30).stdout.strip()
 
+    def port_descriptions(self, ns: str | None) -> dict[str, str]:
+        """All CONFIG_DB PORT descriptions in one round trip: {EthernetN: 'To ComputeTray Slot0/GPU0[0]/Port9'}."""
+        flag = _ns_flag(ns)
+        script = (f"for k in $(sonic-db-cli{flag} CONFIG_DB keys 'PORT|Ethernet*'); do "
+                  f"echo \"${{k#PORT|}}|$(sonic-db-cli{flag} CONFIG_DB hget \"$k\" description)\"; done")
+        out = {}
+        for line in self.sh(script, timeout=180).splitlines():
+            port, _, desc = line.partition("|")
+            if port:
+                out[port.strip()] = desc.strip()
+        return out
+
+    def fdb(self, ns: str | None) -> list[dict]:
+        """`show mac` rows: [{'Vlan', 'MacAddress', 'Port', 'Type'}]."""
+        return parse_table(self.sh(f"show mac{_ns_flag(ns)}", timeout=120))
+
+    def sb_node_agent_slots(self) -> list[int]:
+        """Slot ids of the sb-node-agent processes inside this switch's afm-agent container (sideband mode)."""
+        r = self.run("docker exec afm-agent ps -eo args", sudo=True, timeout=60)
+        return [int(m.group(1)) for m in re.finditer(r"sb-node-agent\s+-slot-id\s+(\d+)", r.stdout)]
+
     def interfaces_counters(self, ns: str | None) -> dict[str, dict]:
         rows = parse_table(self.sh(f"show interfaces counters{_ns_flag(ns)} -d all"))
         return {r["IFACE"]: r for r in rows if self.is_fabric_port(r.get("IFACE", ""))}

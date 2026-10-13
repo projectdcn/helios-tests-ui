@@ -1,0 +1,4 @@
+COMMAND         COMMAND
+systemd         /sbin/init
+sshd            sshd: /usr/sbin/sshd -D
+amd-smi         /opt/rocm/bin/amd-smi

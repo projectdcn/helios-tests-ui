@@ -95,6 +95,37 @@ def parse_ping(text: str) -> PingResult:
     return res
 
 
+_DESC_RE = re.compile(r"Slot(\d+)/GPU(\d+)\[(\d+)\]/Port(\d+)")
+
+
+def parse_port_description(desc: str):
+    """'To ComputeTray Slot0/GPU2[2]/Port9' -> (slot, gpu, acc, port) or None."""
+    m = _DESC_RE.search(desc or "")
+    return tuple(int(x) for x in m.groups()) if m else None
+
+
+def parse_accel_addr(text: str) -> dict[str, dict[int, dict[str, str]]]:
+    """`afmctl show port accelerator-addr --json` -> {bdf: {port_id: {accelerator_id: mac}}}."""
+    out: dict[str, dict[int, dict[str, str]]] = {}
+    for d in _devices(json.loads(text)):
+        ports = {}
+        for p in d.get("port") or []:
+            ports[int(p.get("port_id", p.get("id")))] = {
+                str(a["accelerator_id"]): str(a["mac_addr"]).lower() for a in p.get("accelerator_addr") or []}
+        out[str(d.get("bdf", ""))] = ports
+    return out
+
+
+def parse_vpod_accels(text: str) -> dict[str, tuple[str, set[str]]]:
+    """`afmctl show device --json` -> {bdf: (own accelerator_id, set(vpod_accelerators))}."""
+    out = {}
+    for d in _devices(json.loads(text)):
+        spec = d.get("spec") or {}
+        out[str(d.get("bdf", ""))] = (str(spec.get("accelerator_id", "")),
+                                      {str(a) for a in spec.get("vpod_accelerators") or []})
+    return out
+
+
 class Afmctl:
     """afmctl on one compute tray (always sudo, stderr discarded)."""
 
@@ -107,6 +138,12 @@ class Afmctl:
 
     def devices(self) -> list[Device]:
         return parse_show_device(self._json("show device --json"))
+
+    def accel_addr(self) -> dict[str, dict[int, dict[str, str]]]:
+        return parse_accel_addr(self._json("show port accelerator-addr --json"))
+
+    def vpod_accels(self) -> dict[str, tuple[str, set[str]]]:
+        return parse_vpod_accels(self._json("show device --json"))
 
     def ports(self, bdf: str) -> list[Port]:
         return parse_show_port(self._json(f"show port -b {bdf} --json")).get(bdf, [])

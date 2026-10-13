@@ -1,0 +1,147 @@
+No.  Vlan  MacAddress         Port          Type
+---  ----  -----------------  ------------  ------
+  1  1900  02:00:00:00:00:12  Ethernet1018  Static
+  2  2000  02:00:00:00:00:13  Ethernet1019  Static
+  3  2100  02:00:00:00:00:14  Ethernet1020  Static
+  4  2200  02:00:00:00:00:15  Ethernet1021  Static
+  5  2300  02:00:00:00:00:16  Ethernet1022  Static
+  6  2400  02:00:00:00:00:17  Ethernet1023  Static
+  7  2500  02:00:00:00:00:18  Ethernet1024  Static
+  8  2600  02:00:00:00:00:19  Ethernet1025  Static
+  9  2700  02:00:00:00:00:1a  Ethernet1026  Static
+ 10  2800  02:00:00:00:00:1b  Ethernet1027  Static
+ 11  2900  02:00:00:00:00:1c  Ethernet1028  Static
+ 12  3000  02:00:00:00:00:1d  Ethernet1029  Static
+ 13  3100  02:00:00:00:00:1e  Ethernet1030  Static
+ 14  3200  02:00:00:00:00:1f  Ethernet1031  Static
+ 15  3300  02:00:00:00:00:20  Ethernet1032  Static
+ 16  3400  02:00:00:00:00:21  Ethernet1033  Static
+ 17  3500  02:00:00:00:00:22  Ethernet1034  Static
+ 18  3600  02:00:00:00:00:23  Ethernet1035  Static
+ 19  1900  02:00:00:00:01:12  Ethernet1054  Static
+ 20  2000  02:00:00:00:01:13  Ethernet1055  Static
+ 21  2100  02:00:00:00:01:14  Ethernet1056  Static
+ 22  2200  02:00:00:00:01:15  Ethernet1057  Static
+ 23  2300  02:00:00:00:01:16  Ethernet1058  Static
+ 24  2400  02:00:00:00:01:17  Ethernet1059  Static
+ 25  2500  02:00:00:00:01:18  Ethernet1060  Static
+ 26  2600  02:00:00:00:01:19  Ethernet1061  Static
+ 27  2700  02:00:00:00:01:1a  Ethernet1062  Static
+ 28  2800  02:00:00:00:01:1b  Ethernet1063  Static
+ 29  2900  02:00:00:00:01:1c  Ethernet1064  Static
+ 30  3000  02:00:00:00:01:1d  Ethernet1065  Static
+ 31  3100  02:00:00:00:01:1e  Ethernet1066  Static
+ 32  3200  02:00:00:00:01:1f  Ethernet1067  Static
+ 33  3300  02:00:00:00:01:20  Ethernet1068  Static
+ 34  3400  02:00:00:00:01:21  Ethernet1069  Static
+ 35  3500  02:00:00:00:01:22  Ethernet1070  Static
+ 36  3600  02:00:00:00:01:23  Ethernet1071  Static
+ 37  1900  02:00:00:00:02:12  Ethernet1090  Static
+ 38  2000  02:00:00:00:02:13  Ethernet1091  Static
+ 39  2100  02:00:00:00:02:14  Ethernet1092  Static
+ 40  2200  02:00:00:00:02:15  Ethernet1093  Static
+ 41  2300  02:00:00:00:02:16  Ethernet1094  Static
+ 42  2400  02:00:00:00:02:17  Ethernet1095  Static
+ 43  2500  02:00:00:00:02:18  Ethernet1096  Static
+ 44  2600  02:00:00:00:02:19  Ethernet1097  Static
+ 45  2700  02:00:00:00:02:1a  Ethernet1098  Static
+ 46  2800  02:00:00:00:02:1b  Ethernet1099  Static
+ 47  2900  02:00:00:00:02:1c  Ethernet1100  Static
+ 48  3000  02:00:00:00:02:1d  Ethernet1101  Static
+ 49  3100  02:00:00:00:02:1e  Ethernet1102  Static
+ 50  3200  02:00:00:00:02:1f  Ethernet1103  Static
+ 51  3300  02:00:00:00:02:20  Ethernet1104  Static
+ 52  3400  02:00:00:00:02:21  Ethernet1105  Static
+ 53  3500  02:00:00:00:02:22  Ethernet1106  Static
+ 54  3600  02:00:00:00:02:23  Ethernet1107  Static
+ 55  1900  02:00:00:00:03:12  Ethernet1126  Static
+ 56  2000  02:00:00:00:03:13  Ethernet1127  Static
+ 57  2100  02:00:00:00:03:14  Ethernet1128  Static
+ 58  2200  02:00:00:00:03:15  Ethernet1129  Static
+ 59  2300  02:00:00:00:03:16  Ethernet1130  Static
+ 60  2400  02:00:00:00:03:17  Ethernet1131  Static
+ 61  2500  02:00:00:00:03:18  Ethernet1132  Static
+ 62  2600  02:00:00:00:03:19  Ethernet1133  Static
+ 63  2700  02:00:00:00:03:1a  Ethernet1134  Static
+ 64  2800  02:00:00:00:03:1b  Ethernet1135  Static
+ 65  2900  02:00:00:00:03:1c  Ethernet1136  Static
+ 66  3000  02:00:00:00:03:1d  Ethernet1137  Static
+ 67  3100  02:00:00:00:03:1e  Ethernet1138  Static
+ 68  3200  02:00:00:00:03:1f  Ethernet1139  Static
+ 69  3300  02:00:00:00:03:20  Ethernet1140  Static
+ 70  3400  02:00:00:00:03:21  Ethernet1141  Static
+ 71  3500  02:00:00:00:03:22  Ethernet1142  Static
+ 72  3600  02:00:00:00:03:23  Ethernet1143  Static
+ 73  1900  02:00:00:01:00:12  Ethernet1306  Static
+ 74  2000  02:00:00:01:00:13  Ethernet1307  Static
+ 75  2100  02:00:00:01:00:14  Ethernet1308  Static
+ 76  2200  02:00:00:01:00:15  Ethernet1309  Static
+ 77  2300  02:00:00:01:00:16  Ethernet1310  Static
+ 78  2400  02:00:00:01:00:17  Ethernet1311  Static
+ 79  2500  02:00:00:01:00:18  Ethernet1312  Static
+ 80  2600  02:00:00:01:00:19  Ethernet1313  Static
+ 81  2700  02:00:00:01:00:1a  Ethernet1314  Static
+ 82  2800  02:00:00:01:00:1b  Ethernet1315  Static
+ 83  2900  02:00:00:01:00:1c  Ethernet1316  Static
+ 84  3000  02:00:00:01:00:1d  Ethernet1317  Static
+ 85  3100  02:00:00:01:00:1e  Ethernet1318  Static
+ 86  3200  02:00:00:01:00:1f  Ethernet1319  Static
+ 87  3300  02:00:00:01:00:20  Ethernet1320  Static
+ 88  3400  02:00:00:01:00:21  Ethernet1321  Static
+ 89  3500  02:00:00:01:00:22  Ethernet1322  Static
+ 90  3600  02:00:00:01:00:23  Ethernet1323  Static
+ 91  1900  02:00:00:01:01:12  Ethernet1342  Static
+ 92  2000  02:00:00:01:01:13  Ethernet1343  Static
+ 93  2100  02:00:00:01:01:14  Ethernet1344  Static
+ 94  2200  02:00:00:01:01:15  Ethernet1345  Static
+ 95  2300  02:00:00:01:01:16  Ethernet1346  Static
+ 96  2400  02:00:00:01:01:17  Ethernet1347  Static
+ 97  2500  02:00:00:01:01:18  Ethernet1348  Static
+ 98  2600  02:00:00:01:01:19  Ethernet1349  Static
+ 99  2700  02:00:00:01:01:1a  Ethernet1350  Static
+100  2800  02:00:00:01:01:1b  Ethernet1351  Static
+101  2900  02:00:00:01:01:1c  Ethernet1352  Static
+102  3000  02:00:00:01:01:1d  Ethernet1353  Static
+103  3100  02:00:00:01:01:1e  Ethernet1354  Static
+104  3200  02:00:00:01:01:1f  Ethernet1355  Static
+105  3300  02:00:00:01:01:20  Ethernet1356  Static
+106  3400  02:00:00:01:01:21  Ethernet1357  Static
+107  3500  02:00:00:01:01:22  Ethernet1358  Static
+108  3600  02:00:00:01:01:23  Ethernet1359  Static
+109  1900  02:00:00:01:02:12  Ethernet1378  Static
+110  2000  02:00:00:01:02:13  Ethernet1379  Static
+111  2100  02:00:00:01:02:14  Ethernet1380  Static
+112  2200  02:00:00:01:02:15  Ethernet1381  Static
+113  2300  02:00:00:01:02:16  Ethernet1382  Static
+114  2400  02:00:00:01:02:17  Ethernet1383  Static
+115  2500  02:00:00:01:02:18  Ethernet1384  Static
+116  2600  02:00:00:01:02:19  Ethernet1385  Static
+117  2700  02:00:00:01:02:1a  Ethernet1386  Static
+118  2800  02:00:00:01:02:1b  Ethernet1387  Static
+119  2900  02:00:00:01:02:1c  Ethernet1388  Static
+120  3000  02:00:00:01:02:1d  Ethernet1389  Static
+121  3100  02:00:00:01:02:1e  Ethernet1390  Static
+122  3200  02:00:00:01:02:1f  Ethernet1391  Static
+123  3300  02:00:00:01:02:20  Ethernet1392  Static
+124  3400  02:00:00:01:02:21  Ethernet1393  Static
+125  3500  02:00:00:01:02:22  Ethernet1394  Static
+126  3600  02:00:00:01:02:23  Ethernet1395  Static
+127  1900  02:00:00:01:03:12  Ethernet1414  Static
+128  2000  02:00:00:01:03:13  Ethernet1415  Static
+129  2100  02:00:00:01:03:14  Ethernet1416  Static
+130  2200  02:00:00:01:03:15  Ethernet1417  Static
+131  2300  02:00:00:01:03:16  Ethernet1418  Static
+132  2400  02:00:00:01:03:17  Ethernet1419  Static
+133  2500  02:00:00:01:03:18  Ethernet1420  Static
+134  2600  02:00:00:01:03:19  Ethernet1421  Static
+135  2700  02:00:00:01:03:1a  Ethernet1422  Static
+136  2800  02:00:00:01:03:1b  Ethernet1423  Static
+137  2900  02:00:00:01:03:1c  Ethernet1424  Static
+138  3000  02:00:00:01:03:1d  Ethernet1425  Static
+139  3100  02:00:00:01:03:1e  Ethernet1426  Static
+140  3200  02:00:00:01:03:1f  Ethernet1427  Static
+141  3300  02:00:00:01:03:20  Ethernet1428  Static
+142  3400  02:00:00:01:03:21  Ethernet1429  Static
+143  3500  02:00:00:01:03:22  Ethernet1430  Static
+144  3600  02:00:00:01:03:23  Ethernet1431  Static
+Total number of entries 144
