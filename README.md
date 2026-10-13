@@ -144,7 +144,24 @@ Each run creates a folder `results/<rack>-<timestamp>/` with two files:
 - `tc_results.csv`: one row per test, with the failure message and measured
   values such as bandwidth and bus bandwidth.
 
-### 5. Coverage: automated vs. missing
+### 5. HTML report
+
+Turn one or more run folders into one self-contained HTML page: a summary dashboard
+(counts, charts, key findings, a run summary per suite), then every test with its
+own collapsible command log.
+
+```bash
+.venv/bin/python tools/html_report.py results/<run-folder> [more run folders] -o results/report.html --title "..." --subtitle "..." --notes results/findings.txt
+```
+
+- **Run folders:** list them newest first with `ls -td results/*-2*/`. When several
+  folders contain the same test, a run that executed it wins over one that skipped it.
+- **`--notes`:** an optional file with one finding per line. Start a line with `!`
+  for a problem or `+` for good news.
+- **Where to keep reports:** in `results/`, which is git-ignored. Reports contain lab
+  hostnames and IPs. The charts load Chart.js from a CDN.
+
+### 6. Coverage: automated vs. missing
 
 ```bash
 .venv/bin/python tools/coverage.py                               # per-category table

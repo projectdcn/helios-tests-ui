@@ -301,20 +301,53 @@
 
 <section id="report">
   <h2><span class="num">6</span>HTML report (summary + per-test logs)</h2>
-  <p>Build one self-contained HTML page from one or more runs. When runs are merged, a test that actually ran wins over one that was skipped:</p>
-  <div class="cmd"><pre>.venv/bin/python tools/html_report.py results/&lt;run-A&gt; results/&lt;run-B&gt; -o results/report.html --title &quot;Helios MR3 Test Report&quot; --subtitle &quot;rack, versions&quot; --notes results/findings.txt</pre></div>
+  <p>Turn one or more runs into a single self-contained HTML page: a summary dashboard on top, then every test case with its own command log.</p>
+  <ol class="steps">
+    <li>
+      <strong>Find the run folders.</strong> Every pytest run writes <code>results/&lt;rack&gt;-&lt;timestamp&gt;/</code>. Newest first:
+      <div class="cmd"><pre>ls -td results/*-2*/ | head</pre></div>
+    </li>
+    <li>
+      <strong>Optional: write the key findings</strong> to a text file, one per line. Start a line with <code>!</code> for a problem or <code>+</code> for good news; anything else is neutral:
+      <div class="cmd"><pre>! Switching plane 9 broken: port 9 black-holes traffic on all GPUs
+! NTP not synchronized on any node
++ Control plane healthy: agents connected, IFCP up, topology matches cabling
+Not run: RAS power-cycle tests (disruptive)</pre></div>
+    </li>
+    <li>
+      <strong>Generate the report:</strong>
+      <div class="cmd"><pre>.venv/bin/python tools/html_report.py results/&lt;run-folder&gt; [more run folders] -o results/report.html --title &quot;...&quot; --subtitle &quot;...&quot; --notes results/findings.txt</pre></div>
+      <p class="muted">For example, today's MR3 report merges the full read-only run, the stage-3 run and the RDMA run:</p>
+      <div class="cmd"><pre>.venv/bin/python tools/html_report.py results/mr3-20261013-071856 results/mr3-20261013-072136 results/mr3-20261013-075720 -o results/MR3-Test-Report.html --title &quot;Helios MR3 Test Report&quot; --subtitle &quot;QFX5252 st1 + 2 compute trays&quot; --notes results/mr3-findings.txt</pre></div>
+    </li>
+    <li>
+      <strong>Open it</strong> in a browser:
+      <div class="cmd"><pre>open results/report.html</pre></div>
+    </li>
+  </ol>
+  <div class="table-wrap">
+  <table>
+    <thead><tr><th>Option</th><th>Meaning</th></tr></thead>
+    <tbody>
+      <tr><td><code>results/&lt;run-folder&gt; …</code></td><td>One or more run folders. When the same test appears in several, a run that actually executed it (pass, fail or blocked) wins over one that skipped it; otherwise the later run wins.</td></tr>
+      <tr><td><code>-o</code></td><td>Output HTML file (required).</td></tr>
+      <tr><td><code>--title</code> / <code>--subtitle</code></td><td>Page title, and the line under it (rack, versions, etc.).</td></tr>
+      <tr><td><code>--notes</code></td><td>Key-findings file shown in the dashboard (optional).</td></tr>
+    </tbody>
+  </table>
+  </div>
   <div class="table-wrap">
   <table>
     <thead><tr><th>Part of the page</th><th>Contents</th></tr></thead>
     <tbody>
-      <tr><td>Dashboard</td><td>Banner (rack, runs, times, executed result), counts (cases, passed, failed, blocked, skipped, items), result doughnut, per-suite bar chart</td></tr>
-      <tr><td>Key findings</td><td>From <code>--notes</code>: one finding per line. Start a line with <code>!</code> for a problem or <code>+</code> for good news.</td></tr>
+      <tr><td>Dashboard</td><td>Banner (rack, runs, times, executed result), counts (test cases, passed, failed, blocked, skipped, test items), result doughnut, per-suite bar chart</td></tr>
+      <tr><td>Key findings</td><td>The lines from <code>--notes</code></td></tr>
       <tr><td>Run summary</td><td>One row per suite with counts, duration and result, linking to its section, plus expand/collapse-all buttons</td></tr>
-      <tr><td>Suite sections</td><td>One row per test: plan ID, test, description, duration, status. Each has a collapsible log with the failure message, measurements and the full colour-coded command trace.</td></tr>
+      <tr><td>Suite sections</td><td>One row per test: plan ID, test, description, duration, status. Each has a collapsible log with the failure message, measurements and the full colour-coded command trace (commands, output, exit codes, timings).</td></tr>
     </tbody>
   </table>
   </div>
-  <p class="muted">The charts load Chart.js from a public CDN, so they need internet access. Reports contain lab hostnames and IPs, so keep them in the git-ignored <code>results/</code> folder.</p>
+  <p class="muted">Logs per test exist for runs made from 2026-10-13 onward. The charts load Chart.js from a public CDN, so they need internet access. Reports contain lab hostnames and IPs, so keep them in the git-ignored <code>results/</code> folder.</p>
 </section>
 
 <section id="coverage">
