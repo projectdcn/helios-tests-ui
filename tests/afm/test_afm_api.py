@@ -152,7 +152,8 @@ def test_switches_admitted(afm, inventory, checks, record_property):
     switch count = inventory switches; every ASIC port reported has an oper-state."""
     sw = afm.switches()
     record_property("switchnodes", {s["meta"]["name"]: (s.get("status") or {}).get("admission-phase") for s in sw})
-    checks.check(len(sw) == len(inventory.switches), f"AFM has {len(sw)} switch nodes, inventory {len(inventory.switches)}")
+    want = int(inventory.th("afm.expected_switches", len(inventory.switches)))
+    checks.check(len(sw) == want, f"AFM has {len(sw)} switch nodes, expected {want}")
     for s in sw:
         st = s.get("status") or {}
         n = s["meta"]["name"]
@@ -170,8 +171,8 @@ def test_compute_node_specs(afm, inventory, checks, record_property):
     """Every compute: admitted + healthy, slot-id, CPU info, gpu-info has the inventory GPU count, every
     GPU Ready with a rack-unique acc-id and vPOD membership, GPU ports PortReady (failed ports listed)."""
     nodes = afm.computes()
-    checks.check(len(nodes) == len(inventory.computes),
-                 f"AFM has {len(nodes)} compute nodes, inventory {len(inventory.computes)}")
+    want_n = int(inventory.th("afm.expected_computes", len(inventory.computes)))
+    checks.check(len(nodes) == want_n, f"AFM has {len(nodes)} compute nodes, expected {want_n}")
     acc_ids: dict[int, str] = {}
     summary = {}
     for n in nodes:
