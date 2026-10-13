@@ -92,6 +92,10 @@ def test_healthy_rack_passes(tmp_path):
     assert verdicts["TC-SWH-009"] == "SKIP"  # manual
 
 
+# every test behind the datapath pre-flight gate (helios/preflight.py) - a broken fabric must block all of them
+GATED_TRAFFIC = {"SMOKE-RCCL-1N", "SMOKE-RCCL-MN", "TC-AFM-001", "TC-AFM-002", "TC-AFM-003", "TC-AFM-004",
+                 "TC-AFM-005A", "TC-HW-008", "TC-HW-017", "TC-AFM-LU-001", "TC-RAS-reset-001", "TC-RAS-reset-002",
+                 "TC-RAS-reset-003", "TC-RAS-reset-004", "TC-RAS-reset-007", "TC-RAS-reset-008", "TC-RAS-reset-009"}
 RAS_TRAFFIC = {"TC-RAS-reset-001", "TC-RAS-reset-002", "TC-RAS-reset-003", "TC-RAS-reset-004", "TC-RAS-reset-007", "TC-RAS-reset-008", "TC-RAS-reset-009"}
 
 FAULTS = {
@@ -120,7 +124,7 @@ FAULTS = {
                         {"TC-SWH-036", "TC-SWA-079"}),  # also breaks member symmetry
     "ping_loss": (lambda d: _edit(d / "afmctl_ping.txt", r"IFoE Request    : 35/35 PASS, 0/35 fail",
                                   "IFoE Request    : 33/35 PASS, 2/35 fail"),
-                  {"TC-AFM-001", "TC-HW-017"}),  # HW-017 re-validates with L2 ping
+                  {"TC-AFM-001", "TC-HW-017", *GATED_TRAFFIC}),  # pre-flight ping probe blocks traffic
     # RAS cases and TC-HW-008 re-validate with the same TransferBench / RCCL workloads
     "tb_slow": (lambda d: _edit(d / "transferbench.txt", r"612\.48", "212.48"),
                 {"TC-AFM-002", "TC-AFM-003", "TC-HW-008", "TC-HW-017", "TC-AFM-LU-001", *RAS_TRAFFIC}),
@@ -156,7 +160,7 @@ FAULTS = {
                              {"TC-RAS-reset-001", "TC-RAS-reset-002", "TC-RAS-reset-003", "TC-RAS-reset-004",
                               "TC-RAS-reset-007", "TC-RAS-reset-008", "TC-RAS-reset-009"}),
     "node_never_returns": (lambda d: _edit_rule(d, "^true$", rc=255),
-                           {"TC-RAS-reset-007", "TC-RAS-reset-008", "TC-RAS-reset-009", "TC-BUG-021"}),  # same SSH-return probe
+                           {"TC-BUG-021", *GATED_TRAFFIC}),  # same SSH probe; pre-flight sees nodes not responding
     # ---- metrics exporter
     "exporter_not_listening": (lambda d: _edit_rule(d, "sport\\ =\\ :5000", stdout=""), {"TC-CTL-139"}),
     "metrics_http_500": (lambda d: _edit(d / "metrics_c1.txt", r"^HTTP/1\.1 200 OK", "HTTP/1.1 500 Internal Server Error"),
@@ -197,12 +201,12 @@ FAULTS = {
                              {"TC-AFM-003", "TC-RAS-reset-003", "TC-RAS-reset-004", "TC-RAS-reset-007",
                               "TC-RAS-reset-008", "TC-RAS-reset-009"}),
     "gpu_not_active": (lambda d: _edit(d / "afmctl_device_c2.json", r'"config_phase": "ACTIVE"', '"config_phase": "PROVIDER"'),
-                       {"TC-AFM-001", "TC-HW-017", "TC-BU-011"}),
+                       {"TC-BU-011", *GATED_TRAFFIC}),  # pre-flight blocks all traffic tests
     "ping_no_summary": (lambda d: _edit(d / "afmctl_ping.txt", r"Summary:(.|\n)*", "ERR - Failed to start ping test\n"),
-                        {"TC-AFM-001", "TC-HW-017"}),
+                        {"TC-AFM-001", "TC-HW-017", *GATED_TRAFFIC}),
     # MR3 failure mode: one plane silently drops a port's ingress while links/LLDP/VLAN look healthy
     "port_dropping_lifetime": (lambda d: _drops(d, "Ethernet264", live=False), {"TC-SWA-074"}),
-    "port_still_dropping": (lambda d: _drops(d, "Ethernet272", live=True), {"TC-SWA-074"}),
+    "port_still_dropping": (lambda d: _drops(d, "Ethernet272", live=True), {"TC-SWA-074", *GATED_TRAFFIC}),
     # ---- sideband bring-up / destination MACs
     "sb_slot_missing": (lambda d: _edit(d / "afm_agent_ps.txt", r"^/sb-node-agent -slot-id 0 .*\n", ""), {"TC-BU-009"}),
     "agent_on_compute": (lambda d: _edit(d / "compute_ps.txt", r"\Z", "inb-node-agent  /usr/bin/inb-node-agent\n"),

@@ -18,7 +18,7 @@ from helios.compute import render
 from helios.rack import fan_out
 from helios.wait import wait_until
 
-pytestmark = [pytest.mark.l2, pytest.mark.disruptive]
+pytestmark = [pytest.mark.l2, pytest.mark.disruptive, pytest.mark.usefixtures("datapath_ready")]
 
 
 def _tmpl(inventory, key):

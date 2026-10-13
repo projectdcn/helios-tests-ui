@@ -119,6 +119,23 @@ def computes(rack, pytestconfig):
 
 
 @pytest.fixture
+def datapath_ready(rack, computes, inventory, pytestconfig):
+    """Fail fast (no traffic) when the IFoE fabric is known-broken; see helios/preflight.py.
+    Result cached per set of computes for the session. Disable: thresholds.datapath.preflight.enabled: false."""
+    if inventory.th("datapath.preflight.enabled", True) is False:
+        return
+    from . import preflight
+
+    cache = pytestconfig.__dict__.setdefault("_helios_preflight", {})
+    key = tuple(sorted(c.name for c in computes))
+    if key not in cache:
+        cache[key] = preflight.run(rack, computes, inventory)
+    if cache[key]:
+        pytest.fail("datapath pre-flight failed - not starting IFoE traffic (it would hang or be meaningless):\n"
+                    + "\n".join(f"  - {p}" for p in cache[key]), pytrace=False)
+
+
+@pytest.fixture
 def checks():
     return Checks()
 

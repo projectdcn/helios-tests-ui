@@ -47,7 +47,7 @@ def _judge(tag: str, r, checks, allow_oom: bool) -> None:
 
 
 @pytest.mark.tc("SMOKE-RCCL-1N")
-def test_rccl_smoke_single_node(computes, inventory, checks):
+def test_rccl_smoke_single_node(datapath_ready, computes, inventory, checks):
     """Each compute tray on its own: all local GPUs, all collectives x 1KB/4MB/1GB."""
     cmd = " ".join(x for x in (_cfg(inventory, "env", ""), _bin(inventory), _cfg(inventory, "args", "")) if x)
     timeout = float(_cfg(inventory, "timeout_s", 600))
@@ -61,7 +61,7 @@ def test_rccl_smoke_single_node(computes, inventory, checks):
 
 
 @pytest.mark.tc("SMOKE-RCCL-MN")
-def test_rccl_smoke_multi_node(computes, inventory, checks):
+def test_rccl_smoke_multi_node(datapath_ready, computes, inventory, checks):
     """One rank per GPU across all selected computes (cross-domain over the scale-up fabric)."""
     if len(computes) < 2:
         pytest.skip("multi-node smoke test needs >= 2 computes")

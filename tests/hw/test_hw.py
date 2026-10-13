@@ -30,7 +30,7 @@ def test_interface_speed_matches_config(switch, checks):
 
 
 @pytest.mark.tc("TC-HW-008")
-def test_transferbench_smoke_a2a_in_domain(computes, inventory, checks, record_property):
+def test_transferbench_smoke_a2a_in_domain(datapath_ready, computes, inventory, checks, record_property):
     size = inventory.th("datapath.transferbench.smoke_size", "64M")
     record_property("bw_gbps", datapath.transferbench_in_domain(computes, inventory, checks, size=size))
     checks.assert_all()

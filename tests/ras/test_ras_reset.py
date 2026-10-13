@@ -20,7 +20,7 @@ from helios.compute import render
 from helios.rack import fan_out
 from helios.wait import wait_for_ssh, wait_until
 
-pytestmark = [pytest.mark.l2, pytest.mark.disruptive]
+pytestmark = [pytest.mark.l2, pytest.mark.disruptive, pytest.mark.usefixtures("datapath_ready")]
 
 REBOOT = "nohup sh -c 'sleep 2; systemctl reboot' >/dev/null 2>&1 &"
 

@@ -133,9 +133,9 @@ for ns in NS:
         return table(["IFACE", "STATE", "RX_OK", "RX_BPS", "RX_UTIL", "RX_ERR", "RX_DRP", "RX_OVR",
                       "TX_OK", "TX_BPS", "TX_UTIL", "TX_ERR", "TX_DRP", "TX_OVR"], rows, right=set(range(14)))
 
-    # counters only ever go up within a session (8 reads per namespace before wrapping)
+    # counters only ever go up within a session (40 reads per namespace before wrapping)
     add(f"show interfaces counters -n {ns} -d all", host=SW,
-        seq=[(f"intf_counters_{ns}_{i}.txt", counters(i)) for i in range(8)])
+        seq=[(f"intf_counters_{ns}_{i}.txt", counters(i)) for i in range(40)])
     add(rf"^for k in \$\(sonic-db-cli -n {ns} CONFIG_DB keys 'PORT\|Ethernet\*'\); do p=",
         "".join(f"{p} 400000 400000\n" for p in ports + [INTERNAL[ns]]), host=SW, regex=True)
     idx = ns.removeprefix("asic")

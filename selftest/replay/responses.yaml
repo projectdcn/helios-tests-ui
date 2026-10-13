@@ -171,6 +171,38 @@
   - intf_counters_asic0_5.txt
   - intf_counters_asic0_6.txt
   - intf_counters_asic0_7.txt
+  - intf_counters_asic0_8.txt
+  - intf_counters_asic0_9.txt
+  - intf_counters_asic0_10.txt
+  - intf_counters_asic0_11.txt
+  - intf_counters_asic0_12.txt
+  - intf_counters_asic0_13.txt
+  - intf_counters_asic0_14.txt
+  - intf_counters_asic0_15.txt
+  - intf_counters_asic0_16.txt
+  - intf_counters_asic0_17.txt
+  - intf_counters_asic0_18.txt
+  - intf_counters_asic0_19.txt
+  - intf_counters_asic0_20.txt
+  - intf_counters_asic0_21.txt
+  - intf_counters_asic0_22.txt
+  - intf_counters_asic0_23.txt
+  - intf_counters_asic0_24.txt
+  - intf_counters_asic0_25.txt
+  - intf_counters_asic0_26.txt
+  - intf_counters_asic0_27.txt
+  - intf_counters_asic0_28.txt
+  - intf_counters_asic0_29.txt
+  - intf_counters_asic0_30.txt
+  - intf_counters_asic0_31.txt
+  - intf_counters_asic0_32.txt
+  - intf_counters_asic0_33.txt
+  - intf_counters_asic0_34.txt
+  - intf_counters_asic0_35.txt
+  - intf_counters_asic0_36.txt
+  - intf_counters_asic0_37.txt
+  - intf_counters_asic0_38.txt
+  - intf_counters_asic0_39.txt
 - cmd: ^for k in \$\(sonic-db-cli -n asic0 CONFIG_DB keys 'PORT\|Ethernet\*'\); do p=
   rc: 0
   host: ^sw
@@ -279,6 +311,38 @@
   - intf_counters_asic1_5.txt
   - intf_counters_asic1_6.txt
   - intf_counters_asic1_7.txt
+  - intf_counters_asic1_8.txt
+  - intf_counters_asic1_9.txt
+  - intf_counters_asic1_10.txt
+  - intf_counters_asic1_11.txt
+  - intf_counters_asic1_12.txt
+  - intf_counters_asic1_13.txt
+  - intf_counters_asic1_14.txt
+  - intf_counters_asic1_15.txt
+  - intf_counters_asic1_16.txt
+  - intf_counters_asic1_17.txt
+  - intf_counters_asic1_18.txt
+  - intf_counters_asic1_19.txt
+  - intf_counters_asic1_20.txt
+  - intf_counters_asic1_21.txt
+  - intf_counters_asic1_22.txt
+  - intf_counters_asic1_23.txt
+  - intf_counters_asic1_24.txt
+  - intf_counters_asic1_25.txt
+  - intf_counters_asic1_26.txt
+  - intf_counters_asic1_27.txt
+  - intf_counters_asic1_28.txt
+  - intf_counters_asic1_29.txt
+  - intf_counters_asic1_30.txt
+  - intf_counters_asic1_31.txt
+  - intf_counters_asic1_32.txt
+  - intf_counters_asic1_33.txt
+  - intf_counters_asic1_34.txt
+  - intf_counters_asic1_35.txt
+  - intf_counters_asic1_36.txt
+  - intf_counters_asic1_37.txt
+  - intf_counters_asic1_38.txt
+  - intf_counters_asic1_39.txt
 - cmd: ^for k in \$\(sonic-db-cli -n asic1 CONFIG_DB keys 'PORT\|Ethernet\*'\); do p=
   rc: 0
   host: ^sw
