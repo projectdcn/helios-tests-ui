@@ -103,11 +103,15 @@ add("show platform syseeprom", "TlvInfo Header:\n   Id String:    TlvInfo\n   Ve
     [["Product Name", "0x21", "16", "HELIOS-SW-2ASIC"], ["Serial Number", "0x23", "10", "SWSN000001"],
      ["Base MAC Address", "0x24", "6", "AA:BB:CC:00:11:22"], ["Platform Name", "0x28", "28", "x86_64-helios_switch-r0"]]),
     name="syseeprom.txt", host=SW)
+# QFX5252 layout (MR3): CPLDs appear only in the Description column
 fw = table(["Chassis", "Module", "Component", "Version", "Description"],
-           [["HELIOS-SW", "N/A", "BIOS", "5.29.0.1", "BIOS - Basic Input/Output System"],
-            ["", "", "CPLD1", "0x0F", "Main board CPLD"],
-            ["", "", "CPLD2", "0x0A", "Fan board CPLD"],
-            ["", "", "FPGA", "1.4.2", "System FPGA"]])
+           [["QFX5252-SUT-ALT", "N/A", "BIOS", "BD-01-0003", "System BIOS ROM"],
+            ["", "", "BMC", "1.0-20261006162827", "Baseboard Management Controller firmware"],
+            ["", "", "CB_FPGA", "0x0007", "Control Board FPGA firmware"],
+            ["", "", "SWB0_FPGA", "0x0005", "Switch Board 0 FPGA firmware"],
+            ["", "", "SWB1_FPGA", "0x0005", "Switch Board 1 FPGA firmware"],
+            ["", "", "PMC", "0x0009", "PMC CPLD firmware"],
+            ["", "", "ICB", "0x0006", "ICB CPLD firmware"]])
 add("show platform firmware status", fw, name="firmware.txt", host=SW)
 add("fwutil show status", fw, name="firmware.txt", host=SW)
 

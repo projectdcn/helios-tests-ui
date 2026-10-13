@@ -172,6 +172,7 @@ thresholds:
     psu_load_balance: true                  # false where supplies don't load-share (busbar main/standby HSC)
     expected_lldp_neighbors: null
     interface_speed: 400G
+    port_speed_overrides: {}                # per-port exceptions, e.g. {Ethernet513: 100G} for uplinks
     interface_mtu: 9100
     err_window_s: 30
     max_err_delta: 0

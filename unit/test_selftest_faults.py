@@ -93,7 +93,10 @@ FAULTS = {
     "mtu_wrong": (lambda d: _edit(d / "intf_status_asic0.txt", r"(Ethernet16\s+\S+\s+400G  )9100", r"\g<1>1500"),
                   {"TC-SWH-033"}),
     "eeprom_bad_mac": (lambda d: _edit(d / "syseeprom.txt", "AA:BB:CC:00:11:22", "00:00:00:00:00:00"), {"TC-SWH-014"}),
-    "no_fpga": (lambda d: _edit(d / "firmware.txt", r"(FPGA\s+)1\.4\.2", r"\1N/A  "), {"TC-SWH-001"}),
+    # all three FPGAs lose their version -> TC-SWH-001 (FPGA is required there, not in fwutil's list)
+    "no_fpga": (lambda d: [_edit(d / "firmware.txt", r"(_FPGA\s+)0x000\d", r"\1N/A   ") for _ in range(3)], {"TC-SWH-001"}),
+    "cpld_missing": (lambda d: [_edit(d / "firmware.txt", r"CPLD firmware", "controller fw ") for _ in range(2)],
+                     {"TC-SWH-001", "TC-SWH-015"}),
     # losing an ASIC namespace also loses its LLDP neighbours (expected_lldp_neighbors: 8)
     "asic1_missing": (lambda d: _edit_rule(d, "ip\\ netns\\ list", stdout="asic0 (id: 0)\n"),
                       {"TC-SWH-016", "TC-SWH-031"}),

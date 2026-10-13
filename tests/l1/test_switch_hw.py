@@ -54,7 +54,9 @@ def _ok_psus(switch) -> dict[str, dict[str, str]]:
 def _firmware_check(rows: list[dict], comps: list[str], switch, checks) -> None:
     assert rows, f"{switch.name}: firmware status returned no components"
     for comp in comps:
-        hits = [r for r in rows if comp.lower() in r.get("Component", "").lower()]
+        # match the component name or its description: e.g. QFX5252 lists CPLDs as "PMC"/"ICB" ("PMC CPLD firmware")
+        hits = [r for r in rows
+                if comp.lower() in r.get("Component", "").lower() or comp.lower() in r.get("Description", "").lower()]
         if checks.check(hits, f"{switch.name}: no {comp} component listed"):
             for r in hits:
                 v = r.get("Version", "").strip()
@@ -268,8 +270,11 @@ def test_psu_status_ok(switch, checks):
 
 @pytest.mark.tc("TC-SWH-020")
 def test_psu_model_and_manufacturer(switch, inventory, checks):
-    info = {n: v for n, v in switch.psu_info().items() if not _identity_exempt(inventory, n)}
-    assert info, f"{switch.name}: STATE_DB has no PSU_INFO"
+    all_info = switch.psu_info()
+    assert all_info, f"{switch.name}: STATE_DB has no PSU_INFO"
+    info = {n: v for n, v in all_info.items() if not _identity_exempt(inventory, n)}
+    if not info:
+        pytest.skip(f"{switch.name}: every PSU entry is exempt from FRU identity (switch.psu_identity_exempt_re)")
     mfr_fields = ("manufacturer", "mfr_id", "vendor")
     if not any(f in v for v in info.values() for f in mfr_fields):
         pytest.skip(f"{switch.name}: platform exposes no PSU manufacturer field ({mfr_fields}) in PSU_INFO")
@@ -544,11 +549,14 @@ def test_lldp_connected_interfaces_up(switch, inventory, checks):
 
 @pytest.mark.tc("TC-SWH-032")
 def test_fabric_interfaces_speed(switch, inventory, checks):
-    want = parse_speed_gbps(str(inventory.th("switch.interface_speed", "400G")))
+    default = parse_speed_gbps(str(inventory.th("switch.interface_speed", "400G")))
+    # per-port exceptions, e.g. 100G uplinks: {Ethernet513: 100G}
+    overrides = {p: parse_speed_gbps(str(v)) for p, v in (inventory.th("switch.port_speed_overrides") or {}).items()}
     for ns, rows in switch.all_interfaces_status().items():
         for r in rows:
             if r.get("Admin", "").lower() != "up":
                 continue
+            want = overrides.get(r["Interface"], default)
             got = parse_speed_gbps(r.get("Speed", ""))
             checks.check(got == want, f"{switch.name}/{ns}: {r['Interface']} speed {r.get('Speed')}, expected {want:g}G")
     checks.assert_all()
