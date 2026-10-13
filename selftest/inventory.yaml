@@ -10,6 +10,8 @@ switches:
 computes:
   - name: c1
     gpus: 4
+    gpu_bdfs: ["0001:01:00.1", "0002:01:00.1", "0003:01:00.1", "0004:01:00.1"]
+    accel_ids: [0, 1, 2, 3]
     bmc: 10.0.0.101
     pdu_outlet: A1
     rdma:
@@ -19,6 +21,8 @@ computes:
       - {dev: ionic_3, ip4: 192.168.13.1, ip6: "fd00:13::1", gpu: 3}
   - name: c2
     gpus: 4
+    gpu_bdfs: ["0001:01:00.1", "0002:01:00.1", "0003:01:00.1", "0004:01:00.1"]
+    accel_ids: [4, 5, 6, 7]
     rdma:
       - {dev: ionic_0, ip4: 192.168.10.2, ip6: "fd00:10::2", gpu: 0}
       - {dev: ionic_1, ip4: 192.168.11.2, ip6: "fd00:11::2", gpu: 1}
@@ -34,14 +38,19 @@ commands:
     load: "modprobe ifoe"
     loaded_check: "lsmod | grep -q '^ifoe '"
   l2ping:
-    cmd: "ping-gpu --src {src_gpu} --dst {dst_name}:{dst_gpu}"
-    success_regex: " 0% packet loss"
+    cmd: "afmctl test ping --bdf {src_bdf} --port 0-35 --dst-accelerator {dst_accel} -c 1 -t 10"
+    sudo: true
+    success_regex: " 0% loss"
   transferbench:
     in_domain: "TransferBench a2a {size}"
-    cross_domain: "TransferBench a2a {size} --remote {dst_host}"
+    rank_cmd: "TB_NUM_RANKS={num_ranks} TB_RANK={rank} TB_MASTER_ADDR={master_addr} TB_SINGLE_LOG=1 TransferBench a2a {size}"
   rccl:
     in_domain: "{rccl_tests_dir}/build/{collective}_perf -b {min_bytes} -e {max_bytes} -f 2 -g {gpus} -n {iters}"
     cross_domain: "mpirun -np {np} -H {hostlist} {rccl_tests_dir}/build/{collective}_perf -b {min_bytes} -e {max_bytes} -f 2 -g 1"
+  rccl_smoke:
+    bin: /opt/helios/RcclSmokeTest
+    env: NCCL_LOG_DIR=/tmp/helios-rccl-logs
+    port: 45000
   perftest:
     nodes: [c1, c2]
     duration_s: 1

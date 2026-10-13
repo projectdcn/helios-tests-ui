@@ -45,6 +45,8 @@ computes:
   - {name: c18, host: helios-c18}
   # Optional per-compute keys:
   #   gpu_addrs: ["02:00:00:01:00:00", ...]   per-GPU accelerator address for commands.l2ping {src_addr}/{dst_addr}
+  #   gpu_bdfs: ["0001:01:00.1", ...]          per-GPU IFoE PCI function for {src_bdf}/{dst_bdf}
+  #   accel_ids: [0, 1, 2, 3]                  per-GPU AFM accelerator ID for {src_accel}/{dst_accel}
   #   bmc: 10.0.0.101                          for commands.ras.dc_cycle {bmc}
   #   pdu_outlet: A1                           for commands.ras.ac_cycle {pdu_outlet}
   #   rdma:                                    scale-out NIC ports P1..P4 for the TC-IBS (mortaro) cases
@@ -66,14 +68,20 @@ commands:
   l2ping:
     # VERIFY: the L2 ping tool AFM's ping check.sh uses. Placeholders:
     #   {src_name} {src_gpu} {src_addr} {dst_name} {dst_host} {dst_gpu} {dst_addr}
+    # e.g. "afmctl test ping --bdf {src_bdf} --port 0-35 --dst-accelerator {dst_accel} -c 1 -t 10" with sudo: true
+    # ({src_bdf}/{dst_accel} come from per-compute gpu_bdfs / accel_ids)
     cmd: null
-    success_regex: " 0% packet loss"
+    sudo: false
+    success_regex: null
     cross_pairs: ring    # ring (both directions) | all
     timeout_s: 30
   transferbench:
     # VERIFY: plan says "2a 1G constrained to an explicit IFoE port subset".
     in_domain: null      # e.g. "TransferBench a2a {size}"   placeholders: {name} {gpus} {ports} {size}
     cross_domain: null   # placeholders: {src_name} {dst_name} {src_host} {dst_host} {gpus} {ports} {size}
+    # Preferred for current TransferBench: socket multi-rank, one process per node (overrides cross_domain), e.g.
+    #   "TB_NUM_RANKS={num_ranks} TB_RANK={rank} TB_MASTER_ADDR={master_addr} TB_SINGLE_LOG=1 /path/TransferBench a2a {size}"
+    rank_cmd: null
     ports: ""
     size: 1G
     bw_regex: null       # null = built-in defaults; set if the summary line differs
@@ -89,6 +97,11 @@ commands:
     # VERIFY: MPI flags / RCCL env for IFoE cross-domain
     cross_domain: null   # placeholders: {np} {hostlist} {nodes} {collective} {rccl_tests_dir} {min_bytes} {max_bytes} {iters}
     timeout_s: 900
+  rccl_smoke:            # RcclSmokeTest pass/fail gate (SMOKE-RCCL-1N / -MN)
+    bin: null            # e.g. /home/<user>/helios/RcclSmokeTest-<rev>/build/RcclSmokeTest
+    env: "NCCL_LOG_DIR=/tmp/helios-rccl-logs"
+    args: ""             # e.g. "--size 1gb"
+    allow_oom_skip: false
   switch:
     fan_power: null      # platform-specific; prints "<fan> <watts>" per line
   perftest:              # TC-IBS-* scale-out RDMA

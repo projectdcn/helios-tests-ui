@@ -187,6 +187,29 @@ add(r"^nohup sh -c 'sleep 2; systemctl reboot'", "", regex=True)
 add("true", "")
 add(r"^(ras-partial-stations|pdu-ctl|ipmitool) ", "", regex=True)
 add(r"^ping-gpu ", "4 packets transmitted, 4 received, 0% packet loss\n", regex=True)
+add(r"^afmctl test ping ", "PING accelerator: 1 sent, 1 received, 0% loss\n", name="afmctl_ping.txt", regex=True)
+# TransferBench socket multi-rank: rank 0 prints the results, workers print nothing
+rules.append({"cmd": r"^TB_NUM_RANKS=\d+ TB_RANK=0 ", "rc": 0, "file": "transferbench.txt"})  # same output as single-node
+add(r"^TB_NUM_RANKS=\d+ TB_RANK=[1-9]", "", regex=True)
+add(r"RcclSmokeTest", """RcclSmokeTest v0.36 (96e7ac2)
+Running single-node smoke test
+GPUs      : 4
+
+  Legend: P=Pass  F=Fail  S=Skip(OOM)  -=Not run
+
+  Collective                 |   1 KB |   4 MB |   1 GB |
+  --------------------------+--------+--------+--------+
+  AllReduce (float32)        |    P   |    P   |    P   |
+  AllGather                  |    P   |    P   |    P   |
+  ReduceScatter (float32)    |    P   |    P   |    P   |
+  AllToAll                   |    P   |    P   |    P   |
+  Broadcast                  |    P   |    P   |    P   |
+  AllReduce (bfloat16)       |    P   |    P   |    P   |
+  ReduceScatter (bfloat16)   |    P   |    P   |    P   |
+
+  RESULT: ALL TESTS PASSED!
+  Test Time: 34.8 s
+""", name="rccl_smoke.txt", regex=True)
 add(r"^TransferBench ", """TransferBench v1.50
 Test 1: a2a  1073741824 bytes
 ...

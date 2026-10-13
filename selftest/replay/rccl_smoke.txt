@@ -1,0 +1,18 @@
+RcclSmokeTest v0.36 (96e7ac2)
+Running single-node smoke test
+GPUs      : 4
+
+  Legend: P=Pass  F=Fail  S=Skip(OOM)  -=Not run
+
+  Collective                 |   1 KB |   4 MB |   1 GB |
+  --------------------------+--------+--------+--------+
+  AllReduce (float32)        |    P   |    P   |    P   |
+  AllGather                  |    P   |    P   |    P   |
+  ReduceScatter (float32)    |    P   |    P   |    P   |
+  AllToAll                   |    P   |    P   |    P   |
+  Broadcast                  |    P   |    P   |    P   |
+  AllReduce (bfloat16)       |    P   |    P   |    P   |
+  ReduceScatter (bfloat16)   |    P   |    P   |    P   |
+
+  RESULT: ALL TESTS PASSED!
+  Test Time: 34.8 s

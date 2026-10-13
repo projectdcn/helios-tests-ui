@@ -413,6 +413,18 @@
   stdout: '4 packets transmitted, 4 received, 0% packet loss
 
     '
+- cmd: '^afmctl test ping '
+  rc: 0
+  file: afmctl_ping.txt
+- cmd: '^TB_NUM_RANKS=\d+ TB_RANK=0 '
+  rc: 0
+  file: transferbench.txt
+- cmd: ^TB_NUM_RANKS=\d+ TB_RANK=[1-9]
+  rc: 0
+  stdout: ''
+- cmd: RcclSmokeTest
+  rc: 0
+  file: rccl_smoke.txt
 - cmd: '^TransferBench '
   rc: 0
   file: transferbench.txt

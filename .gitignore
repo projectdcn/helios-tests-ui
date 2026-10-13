@@ -6,3 +6,9 @@ results/
 *.egg-info/
 # real rack inventories carry hostnames; keep them local
 inventory/*.local.yaml
+.DS_Store
+# vendor tools copied from the lab (binaries, builds, AMD-internal sources) - never commit
+tools/RcclSmokeTest-*/
+tools/TransferBench/
+tools/rccl-tests/
+tools/*.rtf

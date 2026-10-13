@@ -27,10 +27,12 @@ REBOOT = "nohup sh -c 'sleep 2; systemctl reboot' >/dev/null 2>&1 &"
 
 def _require(inventory, scope: str) -> None:
     """Fail fast (skip) on missing workload templates *before* resetting anything."""
-    keys = ["transferbench.in_domain", "rccl.in_domain"] if scope == "in" else \
-           ["transferbench.cross_domain", "rccl.cross_domain"]
-    for k in keys:
-        datapath.template(inventory, k)
+    if scope == "in":
+        datapath.template(inventory, "transferbench.in_domain")
+        datapath.template(inventory, "rccl.in_domain")
+    else:
+        datapath.require_transferbench_cross(inventory)
+        datapath.template(inventory, "rccl.cross_domain")
 
 
 def _wait_ready(nodes, inventory, checks) -> None:

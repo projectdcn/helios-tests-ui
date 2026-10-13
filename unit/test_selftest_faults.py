@@ -99,7 +99,7 @@ FAULTS = {
                       {"TC-SWH-016", "TC-SWH-031"}),
     "vlan_no_members": (lambda d: _edit_rule(d, "-n\\ asic1\\ CONFIG_DB\\ keys\\ 'VLAN_MEMBER", stdout=""),
                         {"TC-SWH-036", "TC-SWA-079"}),  # also breaks member symmetry
-    "ping_loss": (lambda d: _edit_rule(d, "^ping-gpu ", stdout="4 packets transmitted, 0 received, 100% packet loss\n", rc=1),
+    "ping_loss": (lambda d: _edit(d / "afmctl_ping.txt", r"1 received, 0% loss", "0 received, 100% loss"),
                   {"TC-AFM-001", "TC-HW-017"}),  # HW-017 re-validates with L2 ping
     # RAS cases and TC-HW-008 re-validate with the same TransferBench / RCCL workloads
     "tb_slow": (lambda d: _edit(d / "transferbench.txt", r"612\.48", "212.48"),
@@ -168,6 +168,14 @@ FAULTS = {
     "ifoe_unload_stuck": (lambda d: _edit_rule(d, "lsmod", rcs=[0]), {"TC-AFM-LU-001", "TC-HW-017"}),
     "gpu_lost_after_reload": (lambda d: _edit(d / "amd_smi_list.txt", r"GPU: 3\n(.*\n){2}", ""),
                               {"TC-AFM-LU-001", "TC-HW-017"}),
+    # ---- RCCL smoke / TransferBench multi-rank
+    "smoke_collective_fails": (lambda d: _edit(d / "rccl_smoke.txt", r"(AllToAll\s+\|\s+P\s+\|\s+P\s+\|\s+)P", r"\1F"),
+                               {"SMOKE-RCCL-1N", "SMOKE-RCCL-MN"}),
+    "smoke_oom_skip": (lambda d: _edit(d / "rccl_smoke.txt", r"(Broadcast\s+\|\s+P\s+\|\s+P\s+\|\s+)P", r"\1S"),
+                       {"SMOKE-RCCL-1N", "SMOKE-RCCL-MN"}),
+    "tb_worker_rank_fails": (lambda d: _edit_rule(d, "TB_RANK=[1-9]", rc=1, stderr="connect to master failed"),
+                             {"TC-AFM-003", "TC-RAS-reset-003", "TC-RAS-reset-004", "TC-RAS-reset-007",
+                              "TC-RAS-reset-008", "TC-RAS-reset-009"}),
     "thermalctld_down": (lambda d: _edit_rule(d, "thermalctld", stdout="thermalctld   EXITED\n"), {"TC-SWH-004"}),
 }
 

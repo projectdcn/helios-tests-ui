@@ -20,6 +20,16 @@ class ComputeTray:
         addrs = self.host.extra.get("gpu_addrs") or []
         return str(addrs[idx]) if idx < len(addrs) else ""
 
+    def gpu_bdf(self, idx: int) -> str:
+        """IFoE PCI function of GPU ``idx`` from inventory ``gpu_bdfs: [...]`` (e.g. 0001:01:00.1)."""
+        bdfs = self.host.extra.get("gpu_bdfs") or []
+        return str(bdfs[idx]) if idx < len(bdfs) else ""
+
+    def accel_id(self, idx: int) -> str:
+        """AFM accelerator ID of GPU ``idx`` from inventory ``accel_ids: [...]``."""
+        ids = self.host.extra.get("accel_ids") or []
+        return str(ids[idx]) if idx < len(ids) else ""
+
     def rdma_ports(self) -> list[dict]:
         """Scale-out NIC ports from inventory ``rdma: [{dev, ip4, ip6, gpu}, ...]`` (P1..Pn order)."""
         return list(self.host.extra.get("rdma") or [])

@@ -281,3 +281,36 @@ def split_http_response(text: str) -> tuple[int | None, dict[str, str], str]:
         k, _, v = ln.partition(":")
         headers[k.strip().lower()] = v.strip()
     return (int(m.group(1)) if m else None), headers, body
+
+
+# ------------------------------------------------------------ RcclSmokeTest
+
+@dataclass
+class SmokeResult:
+    rows: dict[str, list[str]] = field(default_factory=dict)  # collective -> cells (P/F/S/-) per size
+    sizes: list[str] = field(default_factory=list)
+    passed: bool | None = None                                 # from the RESULT line
+
+    def cells(self, code: str) -> list[str]:
+        return [f"{coll} @ {self.sizes[i] if i < len(self.sizes) else i}"
+                for coll, cells in self.rows.items() for i, c in enumerate(cells) if c == code]
+
+
+def parse_smoketest(text: str) -> SmokeResult:
+    """RcclSmokeTest pass/fail table: '  AllReduce (float32) |  P  |  P  |  F  |' + 'RESULT: ...'."""
+    res = SmokeResult()
+    for line in text.splitlines():
+        s = line.strip()
+        if s.startswith("Collective") and "|" in s:
+            res.sizes = [c.strip() for c in s.split("|")[1:] if c.strip()]
+            continue
+        m = re.match(r"^RESULT:\s*(.*)$", s)
+        if m:
+            res.passed = "ALL TESTS PASSED" in m.group(1).upper()
+            continue
+        if "|" in s and not s.startswith("-"):
+            parts = [p.strip() for p in s.split("|")]
+            cells = [p for p in parts[1:] if p]
+            if parts[0] and cells and all(c in ("P", "F", "S", "-") for c in cells):
+                res.rows[parts[0]] = cells
+    return res

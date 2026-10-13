@@ -45,6 +45,12 @@ def l2_ping(computes, inventory, checks: Checks) -> int:
     tmpl = template(inventory, "l2ping.cmd")
     ok_re = inventory.cmd("l2ping.success_regex")
     timeout = float(inventory.cmd("l2ping.timeout_s", 30))
+    sudo = bool(inventory.cmd("l2ping.sudo", False))
+    for c in computes:  # fail fast on missing per-GPU inventory the template needs
+        for key, getter in (("{src_bdf}", c.gpu_bdf), ("{dst_accel}", c.accel_id)):
+            if key in tmpl and not all(getter(i) for i in range(c.gpus)):
+                pytest.skip(f"{c.name}: commands.l2ping.cmd uses {key} but inventory lacks "
+                            f"{'gpu_bdfs' if 'bdf' in key else 'accel_ids'} for all {c.gpus} GPUs")
 
     jobs: dict[str, list[tuple]] = {c.name: [] for c in computes}
     for c in computes:
@@ -56,9 +62,10 @@ def l2_ping(computes, inventory, checks: Checks) -> int:
     def run_src(c):
         fails = []
         for kind, src, s, dst, d in jobs[c.name]:
-            cmd = render(tmpl, src_name=src.name, src_gpu=s, src_addr=src.gpu_addr(s),
-                         dst_name=dst.name, dst_host=dst.host.host, dst_gpu=d, dst_addr=dst.gpu_addr(d))
-            r = src.run(cmd, timeout=timeout)
+            cmd = render(tmpl, src_name=src.name, src_gpu=s, src_addr=src.gpu_addr(s), src_bdf=src.gpu_bdf(s),
+                         src_accel=src.accel_id(s), dst_name=dst.name, dst_host=dst.host.host, dst_gpu=d,
+                         dst_addr=dst.gpu_addr(d), dst_bdf=dst.gpu_bdf(d), dst_accel=dst.accel_id(d))
+            r = src.run(cmd, timeout=timeout, sudo=sudo)
             if not (r.ok and (not ok_re or re.search(ok_re, r.stdout))):
                 fails.append(f"[{kind}] {src.name}/gpu{s} -> {dst.name}/gpu{d}: rc={r.rc} {r.tail(200)!r}")
         return fails
@@ -103,7 +110,42 @@ def transferbench_in_domain(computes, inventory, checks: Checks, size: str | Non
             for c, r, exc in fan_out(run, computes, _workers(inventory, "parallel_computes", len(computes), True))}
 
 
+def run_ranks(jobs: list[tuple], timeout: float) -> list:
+    """Start every (node, command) at once (one SSH channel each) and wait for all of them.
+    For socket-bootstrapped multi-rank tools (TransferBench TB_RANK, RCCL NCCL_COMM_ID) —
+    no node-to-node SSH or MPI needed. Returns [(node, CmdResult | None, exc | None)] in order."""
+    return [(job[0], r, exc) for job, r, exc in
+            fan_out(lambda j: j[0].run(j[1], timeout=timeout), jobs, len(jobs))]
+
+
+def _tb_multirank(pairs, inventory, checks, regexes, kw, timeout, min_bw) -> dict:
+    """Cross-domain TransferBench in socket multi-rank mode: rank 0 on src, rank 1 on dst."""
+    tmpl = inventory.cmd("transferbench.rank_cmd")
+    out = {}
+    for a, b in pairs:
+        tag = f"{a.name}->{b.name}"
+        jobs = [(node, render(tmpl, rank=r, num_ranks=2, master_addr=a.host.host, name=node.name, gpus=node.gpus, **kw))
+                for r, node in enumerate((a, b))]
+        res = run_ranks(jobs, timeout)
+        for node, r, exc in res[1:]:
+            checks.check(not exc and r.ok, f"{tag}: worker rank on {node.name} failed: {exc or f'rc={r.rc} {r.tail()!r}'}")
+        _, r0, exc0 = res[0]
+        out[tag] = _tb_check(tag, r0, exc0, regexes, min_bw, checks)
+    return out
+
+
+def require_transferbench_cross(inventory) -> None:
+    """Skip unless cross-domain TransferBench is configured (multi-rank rank_cmd or single cross_domain)."""
+    if not inventory.cmd("transferbench.rank_cmd"):
+        template(inventory, "transferbench.cross_domain")
+
+
 def transferbench_cross_domain(computes, inventory, checks: Checks, size: str | None = None) -> dict:
+    if inventory.cmd("transferbench.rank_cmd"):
+        regexes, kw, timeout = _tb_common(inventory, size)
+        pairs = compute_pairs(computes, inventory.cmd("transferbench.cross_pairs", "ring"))
+        return _tb_multirank(pairs, inventory, checks, regexes, kw, timeout,
+                             inventory.th("datapath.transferbench.cross_domain_min_gbps"))
     tmpl = template(inventory, "transferbench.cross_domain")
     regexes, kw, timeout = _tb_common(inventory, size)
     min_bw = inventory.th("datapath.transferbench.cross_domain_min_gbps")

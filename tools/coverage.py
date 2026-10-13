@@ -37,7 +37,7 @@ def main() -> None:
     print(f"{'TOTAL':<20} {sum(auto.values()):>9} {sum(total.values()):>6}")
     stray = sorted(set(done) - known)
     if stray:
-        print(f"\ntests tagged with IDs not in the manifest: {stray}")
+        print(f"\nextra tests (IDs not in the test plan): {stray}")
     if "--missing" in sys.argv:
         for c in cases:
             if c["id"] not in done:
