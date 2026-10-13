@@ -139,8 +139,6 @@ class SshTransport:
         remote = f"timeout -k {self.KILL_GRACE_S} {max(1, int(timeout))} bash -c {shlex.quote(full)}"
         start = time.monotonic()
         log.debug("[%s] $ %s", self.host.name, full)
-        if timeout >= self.HEARTBEAT_S:
-            log.info("[%s] running (timeout %ds): %s", self.host.name, timeout, _short(cmd))
         chan = self._ensure().get_transport().open_session(timeout=self.connect_timeout)
         try:
             chan.exec_command(remote)
@@ -164,7 +162,7 @@ class SshTransport:
                 now = time.monotonic()
                 if now > deadline:
                     raise CommandTimeout(f"[{self.host.name}] timed out after {timeout}s: {cmd}")
-                if now >= next_beat:
+                if now >= next_beat:  # only long commands get progress lines
                     log.info("[%s] still running after %ds (timeout %ds): %s",
                              self.host.name, now - start, timeout, _short(cmd))
                     next_beat += self.HEARTBEAT_S
@@ -178,7 +176,7 @@ class SshTransport:
         if rc == 124:
             res.stderr += f"\n[helios] killed by remote timeout after {timeout}s"
             log.warning("[%s] TIMED OUT after %ds and was killed: %s", self.host.name, timeout, _short(cmd))
-        elif timeout >= self.HEARTBEAT_S:
+        elif res.duration >= self.HEARTBEAT_S:
             log.info("[%s] finished rc=%s in %.0fs: %s", self.host.name, rc, res.duration, _short(cmd))
         log.debug("[%s] rc=%s %.2fs%s", self.host.name, rc, res.duration, _output_for_log(res))
         return res
