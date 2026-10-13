@@ -26,14 +26,32 @@ def afm_cfg(inventory):
         from fake_afm import FakeAfm
 
         faults = set(cfg.get("fake_faults") or []) | set(filter(None, os.environ.get("HELIOS_FAKE_AFM_FAULTS", "").split(",")))
-        srv = FakeAfm(faults).start()
+        srv = FakeAfm(faults, cfg.get("fake_topology")).start()
         cfg["url"] = srv.url
+        cfg["_fake_state"] = srv.state
         yield cfg
         srv.stop()
         return
     if not cfg.get("url"):
         pytest.skip("inventory has no afm.url")
     yield cfg
+
+
+@pytest.fixture(scope="session")
+def rack(inventory, afm_cfg):
+    """The plugin's Rack; against the fake controller its switch transports drive the simulated rack."""
+    from helios.rack import Rack
+
+    r = Rack(inventory)
+    st = afm_cfg.get("_fake_state")
+    if st is not None:
+        from fake_rack import FakeSwitchTransport
+
+        for n, (name, sw) in enumerate(r.switches.items()):
+            idx = st.sim.switch_ips.index(sw.host.host) if sw.host.host in st.sim.switch_ips else n
+            sw.t = FakeSwitchTransport(sw.host, st, idx, sw.t)
+    yield r
+    r.close()
 
 
 @pytest.fixture(scope="session")

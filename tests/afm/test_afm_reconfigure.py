@@ -33,14 +33,18 @@ def _planes(afm):
     return st.get("available-switch-planes")
 
 
-def _reconfigure(afm, name: str, retry_412_s: float = 0):
+def _reconfigure(afm, name: str, retry_412_s: float = 0, interval: float = 10):
     """POST Reconfigure; with retry_412_s, retries while AFM answers 412 (another reconfigure in flight)."""
     end = time.monotonic() + retry_412_s
     while True:
         r = afm.raw("POST", f"{CN}/{name}/Reconfigure", {})
         if r.status_code != 412 or time.monotonic() >= end:
             return r
-        time.sleep(10)
+        time.sleep(interval)
+
+
+def _retry(inventory) -> float:
+    return float(inventory.th("afm.retry_interval_s", 10))
 
 
 def _wait_recovered(afm, inventory, names, checks, baseline_planes):
@@ -88,7 +92,7 @@ def test_reconfigure_all_sequential(afm, afm_ready, inventory, pytestconfig, che
     took = {}
     for name in _computes(afm, pytestconfig):
         t0 = time.monotonic()
-        r = _reconfigure(afm, name, retry_412_s=180)
+        r = _reconfigure(afm, name, retry_412_s=180, interval=_retry(inventory))
         checks.check(r.status_code == 200, f"Reconfigure {name} -> HTTP {r.status_code}: {r.text[:200]}")
         _wait_recovered(afm, inventory, [name], checks, base)
         took[name] = round(time.monotonic() - t0, 1)
@@ -104,7 +108,7 @@ def test_reconfigure_all_parallel(afm, afm_ready, inventory, pytestconfig, check
     names = _computes(afm, pytestconfig)
     base = _planes(afm)
     with ThreadPoolExecutor(len(names)) as ex:
-        res = dict(zip(names, ex.map(lambda n: _reconfigure(afm, n, retry_412_s=180), names)))
+        res = dict(zip(names, ex.map(lambda n: _reconfigure(afm, n, retry_412_s=180, interval=_retry(inventory)), names)))
     record_property("status", {n: r.status_code for n, r in res.items()})
     for n, r in res.items():
         checks.check(r.status_code == 200, f"Reconfigure {n} -> HTTP {r.status_code}: {r.text[:200]}")
@@ -120,7 +124,7 @@ def test_reconfigure_back_to_back(afm, afm_ready, inventory, pytestconfig, check
     guard) or 200 (idempotent) - never 5xx; the compute recovers once."""
     name = inventory.th("afm.reconfigure_compute") or _computes(afm, pytestconfig)[0]
     base = _planes(afm)
-    r1 = _reconfigure(afm, name)
+    r1 = _reconfigure(afm, name, retry_412_s=180, interval=_retry(inventory))  # wait out a Reconfigure still in flight from an earlier test
     r2 = _reconfigure(afm, name)
     record_property("status", [r1.status_code, r2.status_code])
     checks.check(r1.status_code == 200, f"1st Reconfigure -> HTTP {r1.status_code}: {r1.text[:200]}")

@@ -336,7 +336,7 @@ def wait_for(fn: Callable[[], Any], timeout: float, interval: float = 5, what: s
             if not v:
                 log.debug("AFM wait: %s not reached in %ss", what or fn, timeout)
             return v
-        time.sleep(interval)
+        time.sleep(max(0.0, min(interval, end - time.monotonic())))
 
 
 def conditions_ok(obj: dict, ctype: str = "healthy") -> bool:

@@ -37,10 +37,11 @@ FAULTS = {
 }
 
 
-def _run(tmp_path: Path, faults: str = "", tcs: set[str] | None = None) -> dict[str, str]:
+def _run(tmp_path: Path, faults: str = "", tcs: set[str] | None = None,
+         inventory: str = "inventory.yaml") -> dict[str, str]:
     results = tmp_path / "results"
     args = [sys.executable, "-m", "pytest", str(ROOT / "tests" / "afm"), "--inventory",
-            str(ROOT / "selftest" / "inventory.yaml"), "--results-dir", str(results), "--allow-disruptive",
+            str(ROOT / "selftest" / inventory), "--results-dir", str(results), "--allow-disruptive",
             "-q", "-p", "no:cacheprovider", "-o", "log_cli=false"]
     if tcs:
         args += ["--tc", ",".join(sorted(tcs))]
@@ -52,11 +53,47 @@ def _run(tmp_path: Path, faults: str = "", tcs: set[str] | None = None) -> dict[
         return {row["tc_id"]: row["verdict"] for row in csv.DictReader(f)}
 
 
+# Disruptive lifecycle cases against the 3-switch / 3-compute fake (selftest/inventory-afm3.yaml, switch
+# "SSH" simulated by selftest/fake_rack.py). One product fault per entry; each run is limited to its IDs
+# because a fault that breaks the rack correctly turns every later case BLOCKED.
+LIFECYCLE_FAULTS = [
+    ("stale_planes", {"TC-AFM-024"}),            # planes not restored after switch delete + readmit
+    ("stale_planes", {"TC-AFM-033"}),
+    ("vlan_wipe", {"TC-AFM-027"}),               # AIFM-1901
+    ("no_readmit", {"TC-AFM-045"}),
+    ("decom_in_vpod_ok", {"TC-AFM-047"}),
+    ("configfailed_sticky", {"TC-AFM-036", "TC-AFM-038"}),
+    ("configfailed_never", {"TC-AFM-036", "TC-AFM-038"}),
+    ("sigstop_ignored", {"TC-AFM-007", "TC-AFM-RC-017"}),
+    ("agent_stop_ignored", {"TC-AFM-019"}),
+    ("no_respawn", {"TC-AFM-006"}),
+    ("no_unreachable_event", {"TC-AFM-019"}),
+    ("no_healthy_event", {"TC-AFM-007"}),
+    ("decom_with_agent_down_ok", {"TC-AFM-032"}),
+    ("reconfig_decom_ok", {"TC-AFM-RC-019", "TC-AFM-RC-020"}),
+    ("unhealthy_reconf_ok", {"TC-AFM-RC-017"}),
+    ("planes_no_drop", {"TC-AFM-023", "TC-AFM-026"}),
+]
+
+
 def test_healthy_fake_all_pass(tmp_path):
     verdicts = _run(tmp_path)
-    bad = {k: v for k, v in verdicts.items() if v != "PASS"}
+    bad = {k: v for k, v in verdicts.items() if v not in ("PASS", "SKIP")}
     assert not bad, bad
-    assert len(verdicts) >= 60
+    assert sum(v == "PASS" for v in verdicts.values()) >= 80
+
+
+def test_healthy_fake_3switch_all_pass(tmp_path):
+    verdicts = _run(tmp_path, inventory="inventory-afm3.yaml")
+    bad = {k: v for k, v in verdicts.items() if v != "PASS" and k != "TC-AFM-035A"}  # 035A = one-switch only
+    assert not bad, bad
+    assert len(verdicts) >= 95
+
+
+@pytest.mark.parametrize("fault,tcs", LIFECYCLE_FAULTS, ids=[f"{f}-{sorted(t)[0]}" for f, t in LIFECYCLE_FAULTS])
+def test_lifecycle_fault_detected(tmp_path, fault, tcs):
+    verdicts = _run(tmp_path, fault, tcs, inventory="inventory-afm3.yaml")
+    assert {k for k, v in verdicts.items() if v == "FAIL"} == tcs, verdicts
 
 
 @pytest.mark.parametrize("fault", sorted(FAULTS))

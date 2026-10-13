@@ -1,0 +1,49 @@
+# Self-test for the disruptive AFM lifecycle cases: fake controller with 3 switches / 3 computes
+# (selftest/fake_afm.py + fake_rack.py). Switch "SSH" is simulated; other commands fall back to replay.
+#   pytest tests/afm --inventory selftest/inventory-afm3.yaml --allow-disruptive
+rack: selftest-afm3
+transport:
+  kind: replay
+  dir: replay
+
+switches:
+  - {name: sw1, host: 10.0.0.81}
+  - {name: sw2, host: 10.0.0.82}
+  - {name: sw3, host: 10.0.0.83}
+computes:
+  - {name: c1, gpus: 4}
+  - {name: c2, gpus: 4}
+  - {name: c3, gpus: 4}
+
+afm:
+  url: https://helios-afm.lab.example
+  fake: true
+  fake_topology: {switches: 3, computes: 3, time_scale: 0.05}
+  fake_faults: []
+  verify_tls: false
+  auth:
+    kind: session
+    username: admin
+    password: selftest-admin-pw   # fake controller only
+    tenant: default
+
+thresholds:
+  afm:
+    quorum_members: 3
+    max_not_ready_ports_per_compute: 0
+    poll_s: 0.2
+    time_scale: 0.05
+    link_watch_s: 1
+    retry_interval_s: 0.2
+    agent_settle_s: 0
+    absent_hold_s: 0.3
+    plane_settle_interval_s: 0
+    plane_restore_s: 1
+    readmit_timeout_s: 5
+    switch_readmit_s: 5
+    agent_down_detect_s: 5
+    agent_respawn_s: 5
+    agent_recover_s: 5
+    vpod_timeout_s: 5
+    membership_timeout_s: 5
+    aggwatch: {event_wait_s: 5, settle_s: 0.5, quiet_s: 2, idle_s: 3, cycles: 5, burst: 10, concurrent: 3, no_options_s: 5}

@@ -33,6 +33,7 @@ afm:
   url: https://helios-afm.lab.example
   fake: true            # tests/afm run against selftest/fake_afm.py (in-process HTTPS + WebSocket)
   fake_faults: []
+  fake_topology: {switches: 1, computes: 2, time_scale: 0.05}
   verify_tls: false
   auth:
     kind: session
@@ -73,6 +74,22 @@ commands:
 thresholds:
   afm:                  # short timings for the fake controller
     quorum_members: 1
+    poll_s: 0.2
+    time_scale: 0.05
+    link_watch_s: 1
+    retry_interval_s: 0.2
+    agent_settle_s: 0
+    absent_hold_s: 0.3
+    plane_settle_interval_s: 0
+    plane_restore_s: 1
+    readmit_timeout_s: 5
+    switch_readmit_s: 5
+    agent_down_detect_s: 5
+    agent_respawn_s: 5
+    agent_recover_s: 5
+    vpod_timeout_s: 5
+    membership_timeout_s: 5
+    reconfigure_timeout_s: 5
     aggwatch: {event_wait_s: 5, settle_s: 0.5, quiet_s: 2, idle_s: 3, cycles: 5, burst: 10, concurrent: 3, no_options_s: 5}
   switch:
     expected_fans: 4

@@ -21,6 +21,7 @@ import struct
 import subprocess
 import tempfile
 import threading
+import sys
 import time
 import uuid
 from datetime import datetime, timezone
@@ -56,7 +57,7 @@ def status_env(code: int, msg: str, text: str) -> dict:
 
 
 class State:
-    def __init__(self, faults: set[str]):
+    def __init__(self, faults: set[str], topology: dict | None = None):
         self.f = faults
         self.lock = threading.RLock()
         self.sessions: dict[str, str] = {}
@@ -67,28 +68,19 @@ class State:
         self.watchers: list[dict] = []
         self.audit: list[dict] = []
         self.techsupport: dict[str, dict] = {}
-        gpu_ready = "Failed" if "gpu_not_ready" in faults else "Ready"
-        computes = {}
-        for slot in range(2):
-            gi = {}
-            for g in range(4):
-                gi[f"0500{slot}{g}c1-0000-1000-80f7-ca5e4f760e70"] = {
-                    "index": g, "acc-id": slot * 4 + g + (0 if "dup_acc" not in faults else -g),
-                    "oper-state": gpu_ready if g == 0 else "Ready", "vpod-membership": "pod-1.system",
-                    "ports": [{"id": p, "oper-state": "PortReady"} for p in range(36)], "ifoe-stations": list(range(18))}
-            n = f"pod-1-{slot}-ComputeTray"
-            computes[n] = obj("ComputeNode", n, {"admit": True, "slot-id": slot, "scaleup-pod": "pod-1"},
-                              {"admission-phase": "admitted", "conditions": [{"type": "healthy", "status": "true"}],
-                               "cpus": [{"num-cores": 8, "model-name": "AMD Ryzen Embedded V3C48"}],
-                               "scale-up-info": {"gpu-info": gi}})
+        sys.path.insert(0, str(Path(__file__).resolve().parent))
+        from fake_rack import Sim
+
+        topo = topology or {}
+        self.sim = Sim(self, int(topo.get("switches", 1)), int(topo.get("computes", 2)))
+        self.sim.time_scale = float(topo.get("time_scale", 1))
+        n_ct = int(topo.get("computes", 2))
         self.objs = {
-            "ComputeNode": computes,
-            "SwitchNode": {"pod-1-0-SwitchTray": obj(
-                "SwitchNode", "pod-1-0-SwitchTray", {"ip-address": "10.0.0.83", "slot-id": 0},
-                {"admission-phase": "admitted", "conditions": [{"type": "healthy", "status": "true"}]})},
+            "ComputeNode": self.sim.computes,
+            "SwitchNode": self.sim.switches,
             "Pod": {"pod-1": obj("Pod", "pod-1", {"rack-type": "minirack", "cabling": "mr3"}, {"state": "active"})},
             "VPod": {"pod-1.system": obj("VPod", "pod-1.system",
-                                         {"GPUs": [{"slot-id": s, "index": i} for s in range(2) for i in range(4)],
+                                         {"GPUs": [{"slot-id": s, "index": i} for s in range(n_ct) for i in range(4)],
                                           "parent-pod": "pod-1", "failover-policy": "system-failover-policy"},
                                          {"vpod-state": "degraded", "provisioned-switch-planes": 36,
                                           "available-switch-planes": 33, "effective-switch-planes": 33,
@@ -205,6 +197,7 @@ class Handler(BaseHTTPRequestHandler):
         if body is ValueError:
             return self._err(400, "invalid JSON body")
         with st.lock:
+            st.sim.refresh(st.objs)
             return self._dispatch(method, path, qs, body, user)
 
     def _deny(self, user, group, kind, action) -> bool:
@@ -227,20 +220,21 @@ class Handler(BaseHTTPRequestHandler):
                     return self._send(200, obj("Version", "version", status={"build-version": "0.1.0-AICC-797"}))
                 down = "quorum_down" in st.f
                 return self._send(200, obj("Cluster", "cluster", status={
-                    "leader": "10.0.0.83", "conditions": [{"type": "healthy", "status": "false" if down else "true"}],
-                    "quorum-status": {"members": [{"name": "10.0.0.83", "status": "stopped" if down else "started",
-                                                   "conditions": [{"status": "true"}]}]}}))
+                    "leader": st.sim.leader, "conditions": [{"type": "healthy", "status": "false" if down else "true"}],
+                    "quorum-status": {"members": [{"name": ip, "status": "stopped" if down else "started",
+                                                   "conditions": [{"status": "true"}]} for ip in st.sim.quorum]}}))
             kind = CLUSTER_KINDS.get(res)
             if not kind:
                 return self._err(404, f"unknown resource {res}")
-            if len(p) == 7 and method == "POST" and p[6] == "Reconfigure":
+            if kind == "ComputeNode" and len(p) > 5 and (method == "DELETE" or len(p) == 7):
                 if self._deny(user, "cluster", kind, "update"):
                     return
-                if p[5] not in st.objs[kind]:
-                    return self._err(404, "Object get failed: object not found")
-                st.record(user, "Reconfigure", kind, p[5], path)
-                return self._send(200, st.objs[kind][p[5]])
+                return self._compute_op(method, p[5], p[6] if len(p) == 7 else "Delete", body, user, path)
+            if kind == "VPod" and (method != "GET"):
+                return self._vpod(method, p[5] if len(p) > 5 else None, p[6] if len(p) == 7 else None, body, user,
+                                  path, action)
             if kind == "SwitchNode" and len(p) > 5 and (method == "DELETE" or len(p) == 7):
+                self._last_body = body
                 return self._switch_op(method, p[5], p[6] if len(p) == 7 else "Delete", user)
             return self._crud(method, "cluster", kind, p[5] if len(p) > 5 else None, body, user, path, action)
         # ---- auth group
@@ -270,7 +264,8 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/events/v1/events":
             if self._deny(user, "events", "Event", "read"):
                 return
-            return self._send(200, {"kind": "EventList", "items": []})
+            evs = sorted(st.sim.events, key=lambda e: e["meta"]["creation-time"], reverse=True)
+            return self._send(200, {"kind": "EventList", "items": evs[: int((qs.get("page-size") or [1000])[0])]})
         if path.startswith("/audit/v1/events"):
             if self._deny(user, "monitoring", "AuditEvent", "read"):
                 return
@@ -349,22 +344,116 @@ class Handler(BaseHTTPRequestHandler):
         return self._err(405, "method not allowed")
 
     def _switch_op(self, method, name, op, user):
-        st = self.st
+        st, sim = self.st, self.st.sim
         if self._deny(user, "cluster", "SwitchNode", "update"):
             return
         sw = st.objs["SwitchNode"].get(name)
         if sw is None:
             return self._err(404, "Object get failed: object not found")
+        i, ph = sim.sw_index(name), sw["status"]["admission-phase"]
+        body = self._last_body if isinstance(getattr(self, "_last_body", None), dict) else {}
         if op == "ReactivateSwitchNode":
+            if ph != "drained":
+                return self._err(412, f"switch {name} is {ph}, not drained")
             sw["status"]["admission-phase"] = "admitted"
             return self._send(200, sw)
-        in_service = [s for s in st.objs["SwitchNode"].values() if s["status"].get("admission-phase") == "admitted"]
-        if len(in_service) <= 1 and "minirack_drain_ok" not in st.f:
+        if op == "Delete":
+            if ph not in ("decommissioned", "decommission_failed"):
+                return self._err(412, f"switch {name} is {ph}: decommission it first")
+            st.objs["SwitchNode"].pop(name)
+            sim.event("switchnode_deleted", f"switch {name} deleted")
+            return self._send(200, sw)
+        others = [j for j in sim.in_service() if j != i]
+        if not others and "minirack_drain_ok" not in st.f:
             return self._send(412, {**status_env(412, f"cannot {op}: {name} is the last remaining in-service switch",
                                                  "Failed pre conditions"),
                                     "object-ref": {"kind": f"{op}Request"}})
-        sw["status"]["admission-phase"] = {"DrainSwitchNode": "drained"}.get(op, "decommissioned")
+        if op == "DrainSwitchNode":
+            sw["status"]["admission-phase"] = "drained"
+            sim.event("switchnode_drained", f"switch {name} drained")
+        elif op == "DecommissionSwitchNode":
+            force = bool(body.get("force-decommission"))
+            ok = force or sim.agent_up[i] or "decom_with_agent_down_ok" in st.f
+            sw["status"]["admission-phase"] = "decommissioned" if ok else "decommission_failed"
+            sim.event("switchnode_decommissioned", f"switch {name} {sw['status']['admission-phase']}")
+        else:
+            return self._err(404, f"unknown switch action {op}")
         return self._send(200, sw)
+
+    def _compute_op(self, method, name, op, body, user, path):
+        st, sim = self.st, self.st.sim
+        c = st.objs["ComputeNode"].get(name)
+        if c is None:
+            return self._err(404 if op != "Reconfigure" or "rc_412_missing" not in st.f else 412,
+                             "Object get failed: object not found")
+        ph, slot = c["status"]["admission-phase"], c["spec"]["slot-id"]
+        in_vpod = sorted({g.get("vpod-membership") for g in c["status"]["scale-up-info"]["gpu-info"].values()} - {""})
+        if op == "Reconfigure":
+            if ph != "admitted" and "reconfig_decom_ok" not in st.f:
+                return self._err(412, f"reconfigure compute tray is not allowed: compute node {name} is {ph} (decommissioned)")
+            if (slot in sim.stopped or sim.slot_host(slot) is None) and "unhealthy_reconf_ok" not in st.f:
+                return self._err(412, f"reconfigure compute tray is not allowed: compute node {name} does not have scaleup info")
+            if time.monotonic() - sim.reconf_at.get(name, -99) < 1:
+                return self._err(412, f"reconfigure of {name} already in progress")
+            sim.reconf_at[name] = time.monotonic()
+            for u in sim.gpus[slot]:
+                sim.removed_at[u] = time.monotonic()
+            st.record(user, "Reconfigure", "ComputeNode", name, path)
+            return self._send(200, c)
+        if op == "Decommission":
+            if in_vpod and "decom_in_vpod_ok" not in st.f:
+                return self._err(412, f"GPUs are part of vPods ({','.join(in_vpod)})")
+            c["status"]["admission-phase"] = "decommissioned"
+            return self._send(200, c)
+        if op == "Delete":
+            if ph == "admitted":
+                return self._err(412, f"compute node {name} is admitted: decommission it first")
+            st.objs["ComputeNode"].pop(name)
+            return self._send(200, c)
+        return self._err(404, f"unknown compute action {op}")
+
+    def _vpod(self, method, name, op, body, user, path, action):
+        st, sim = self.st, self.st.sim
+        if self._deny(user, "cluster", "VPod", action):
+            return
+        coll = st.objs["VPod"]
+        if op in ("Reconcile", "ReconfigureDataFabric"):
+            if name not in coll:
+                return self._err(404, "Object get failed: object not found")
+            if op == "ReconfigureDataFabric":
+                sim.ack.setdefault(name, set()).update(sim.failed_links(st.objs, coll[name]))
+            return self._send(200, coll[name])
+        if method == "POST":
+            if isinstance(body, dict):
+                err = sim.validate_gpus((body.get("spec") or {}).get("GPUs") or [])
+                if err:
+                    return self._err(400, err)
+            r = self._crud(method, "cluster", "VPod", None, body, user, path, action)
+            if isinstance(body, dict) and (body.get("meta") or {}).get("name") in coll:
+                sim.vpod_written(body["meta"]["name"])
+            return r
+        if name not in coll:
+            return self._err(404, "Object get failed: object not found")
+        if method == "PUT":
+            before = list(coll[name]["spec"].get("GPUs") or [])
+            after = list(((body or {}).get("spec") or {}).get("GPUs") or [])
+            had = {(g.get("slot-id"), g.get("index")) for g in before}
+            err = sim.validate_gpus([g for g in after if (g.get("slot-id"), g.get("index")) not in had])
+            if err:
+                return self._err(400, err)
+            sim.gpus_removed(before, after)
+            if not any(sim.agent_up.values()) and "stale_macs" in st.f:
+                sim.stale_macs += max(0, len(before) - len(after))
+            r = self._crud(method, "cluster", "VPod", name, body, user, path, action)
+            sim.vpod_written(name)
+            return r
+        if method == "DELETE":
+            n = len(coll[name]["spec"].get("GPUs") or [])
+            if n:
+                return self._err(412, f"vPod {name} cannot be deleted, {n} GPUs still assigned")
+            sim.configfailed.discard(name)
+            return self._crud(method, "cluster", "VPod", name, body, user, path, action)
+        return self._err(405, "method not allowed")
 
     def _auth(self, method, kind, name, body, user, path, action):
         st = self.st
@@ -573,8 +662,8 @@ def _close(sock) -> None:
 class FakeAfm:
     """HTTPS (self-signed, generated with openssl) so Secure cookies flow exactly as on the real AFM."""
 
-    def __init__(self, faults: set[str] | None = None):
-        self.state = State(set(faults or ()))
+    def __init__(self, faults: set[str] | None = None, topology: dict | None = None):
+        self.state = State(set(faults or ()), topology)
         handler = type("H", (Handler,), {"st": self.state})
         self.httpd = ThreadingHTTPServer(("127.0.0.1", 0), handler)
         self.httpd.daemon_threads = True
