@@ -23,6 +23,7 @@ include = ["helios*"]
 [tool.pytest.ini_options]
 addopts = "-ra"
 # live progress in the terminal: which node is running what, heartbeats every 30s, timeouts
+log_level = "INFO"     # keep DEBUG command traces out of pytest's failure reports (they go to logs/*.log)
 log_cli = true
 log_cli_level = "INFO"
 log_cli_format = "%(asctime)s %(levelname)s %(message)s"

@@ -263,6 +263,8 @@ class ReplayTransport:
     def run(self, cmd: str, *, timeout: float = 120, sudo: bool = False,
             env: dict[str, Any] | None = None) -> CmdResult:
         self.calls.append(cmd)
+        log.debug("[%s] $ %s", self.host.name, build_command(cmd, sudo, env))
+        res = CmdResult(self.host.name, cmd, 127, "", f"replay: no rule matches {cmd!r}")
         for i, rule in enumerate(self.rules):
             if rule.host and not rule.host.search(self.host.name):
                 continue
@@ -270,8 +272,10 @@ class ReplayTransport:
                 n = self._hits.get(i, 0)
                 self._hits[i] = n + 1
                 out = rule.stdouts[n % len(rule.stdouts)].replace("@@NOW@@", f"{time.time():.6f}")
-                return CmdResult(self.host.name, cmd, rule.rcs[n % len(rule.rcs)], out, rule.stderr)
-        return CmdResult(self.host.name, cmd, 127, "", f"replay: no rule matches {cmd!r}")
+                res = CmdResult(self.host.name, cmd, rule.rcs[n % len(rule.rcs)], out, rule.stderr)
+                break
+        log.debug("[%s] rc=%s 0.00s%s", self.host.name, res.rc, _output_for_log(res))
+        return res
 
     def close(self) -> None:
         pass

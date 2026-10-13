@@ -42,6 +42,8 @@ def pytest_addoption(parser):
 def pytest_configure(config):
     # paramiko's DEBUG handshake chatter drowns the command trace in --log-file
     logging.getLogger("paramiko").setLevel(logging.WARNING)
+    # the per-test command trace (logs/*.log) needs DEBUG records regardless of pytest's log levels
+    logging.getLogger("helios.cmd").setLevel(logging.DEBUG)
     for m in MARKERS:
         config.addinivalue_line("markers", m)
     path = config.getoption("--inventory")
@@ -142,6 +144,56 @@ def checks():
 
 # ----------------------------------------------------------------- results
 
+ITEM_LOG_LIMIT = 600_000  # chars per test log kept for the report
+
+
+class _ItemLog(logging.Handler):
+    """Collects the helios.cmd command trace (commands, outputs, rc, timings) of one test item."""
+
+    def __init__(self):
+        super().__init__(logging.DEBUG)
+        self.setFormatter(logging.Formatter("%(asctime)s.%(msecs)03d %(levelname)-7s %(message)s", "%H:%M:%S"))
+        self.lines: list[str] = []
+        self.size = 0
+
+    def emit(self, record):
+        if self.size > ITEM_LOG_LIMIT:
+            return
+        text = self.format(record)
+        self.lines.append(text)
+        self.size += len(text)
+        if self.size > ITEM_LOG_LIMIT:
+            self.lines.append(f"... [log truncated at {ITEM_LOG_LIMIT:,} chars; full trace in --log-file]")
+
+
+@pytest.hookimpl(hookwrapper=True)
+def pytest_runtest_protocol(item, nextitem):
+    cfg = item.config
+    if cfg._helios_inventory is None:
+        yield
+        return
+    handler = _ItemLog()
+    cmd_log = logging.getLogger("helios.cmd")
+    cmd_log.addHandler(handler)
+    started = time.strftime("%Y-%m-%d %H:%M:%S")
+    try:
+        yield
+    finally:
+        cmd_log.removeHandler(handler)
+        cfg.__dict__.setdefault("_helios_item_logs", {})[item.nodeid] = (started, "\n".join(handler.lines))
+
+
+def _describe(item) -> tuple[str, str, str]:
+    """(suite, test name, first docstring line) for reports."""
+    try:
+        rel = Path(str(item.path)).resolve().relative_to(Path(str(item.config.rootpath)).resolve() / "tests")
+        suite = str(rel.with_suffix("")).replace("\\", "/")
+    except ValueError:
+        suite = Path(str(item.path)).stem
+    doc = (getattr(getattr(item, "obj", None), "__doc__", None) or "").strip().splitlines()
+    return suite, item.name, (doc[0].strip() if doc else "")
+
+
 @pytest.hookimpl(hookwrapper=True)
 def pytest_runtest_makereport(item, call):
     outcome = yield
@@ -158,9 +210,13 @@ def pytest_runtest_makereport(item, call):
         if rep.when == "setup" and rep.failed:
             # the datapath pre-flight refused to start traffic: not a test failure, the fabric is broken
             outcome = "blocked" if "datapath pre-flight failed" in (rep.longreprtext or "") else "error"
+        suite, test, desc = _describe(item)
         item.config._helios_reports.append({
             "tc_id": tc_id(item) or "",
             "nodeid": item.nodeid,
+            "suite": suite,
+            "test": test,
+            "description": desc,
             "outcome": outcome,
             "duration_s": round(rep.duration, 2),
             "properties": json.dumps(dict(item.user_properties)) if item.user_properties else "",
@@ -175,6 +231,14 @@ def pytest_sessionfinish(session):
         return
     out = Path(cfg.getoption("--results-dir")) / f"{cfg._helios_inventory.rack}-{time.strftime('%Y%m%d-%H%M%S')}"
     out.mkdir(parents=True, exist_ok=True)
+    # one command-trace file per test item, referenced from tc_results.csv (used by tools/html_report.py)
+    logs = cfg.__dict__.get("_helios_item_logs", {})
+    (out / "logs").mkdir(exist_ok=True)
+    for i, r in enumerate(reports, start=1):
+        started, text = logs.get(r["nodeid"], ("", ""))
+        name = f"{i:03d}_" + "".join(ch if ch.isalnum() or ch in "-_." else "_" for ch in r["nodeid"].split("::")[-1])[:80] + ".log"
+        (out / "logs" / name).write_text(text + "\n" if text else "(no remote commands)\n")
+        r["started"], r["log"] = started, f"logs/{name}"
     with open(out / "tc_results.csv", "w", newline="") as f:
         w = csv.DictWriter(f, fieldnames=list(reports[0]))
         w.writeheader()
