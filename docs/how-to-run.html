@@ -110,6 +110,7 @@
     <a href="#selftest">Without a rack</a>
     <a href="#mini">Mini rack (MR3)</a>
     <a href="#full">Full rack</a>
+    <a href="#afm">AFM controller API</a>
     <a href="#select">Specific cases</a>
     <a href="#results">Results</a>
     <a href="#report">HTML report</a>
@@ -137,9 +138,15 @@
   <div class="cmd"><pre>read -s &quot;HELIOS_COMPUTE_PASSWORD?Compute password: &quot; &amp;&amp; export HELIOS_COMPUTE_PASSWORD &amp;&amp; echo</pre></div>
   <p class="muted">Only needed for the DC power-cycle test:</p>
   <div class="cmd"><pre>read -s &quot;HELIOS_BMC_PASSWORD?BMC password: &quot; &amp;&amp; export HELIOS_BMC_PASSWORD &amp;&amp; echo</pre></div>
+  <p class="muted">Only needed for the AFM controller API tests (<code>tests/afm</code>):</p>
+  <div class="cmd"><pre>read -s &quot;HELIOS_AFM_PASSWORD?AFM admin password: &quot; &amp;&amp; export HELIOS_AFM_PASSWORD &amp;&amp; echo</pre></div>
   <div class="note">
-    <strong>Scope today:</strong> the suite automates 85 tests (83 plan cases plus 2 RCCL smoke tests). They cover switch hardware, the switch agent, datapath, scale-out RDMA, RAS reset, the metrics exporter and node platform checks, all over SSH.
-    The AFM REST tranche (failover, vPOD, switch and compute lifecycle, AggWatch, reconfigure) isn't automated yet.
+    <strong>Scope today:</strong> 156 of the 542 plan cases are automated, plus 2 RCCL smoke tests.
+    <ul>
+      <li><strong>Over SSH:</strong> switch hardware, switch agent, datapath, scale-out RDMA, RAS reset, metrics exporter, node platform, sideband and IFCP.</li>
+      <li><strong>Over the AFM REST API and AggWatch WebSocket (<code>tests/afm</code>, 64 cases):</strong> auth, cluster and object specs, failover policies, RBAC, audit, metrics, techsupport, AggWatch, and compute Reconfigure.</li>
+    </ul>
+    The AFM vPOD, failover, switch and compute lifecycle cases run by hand on the full rack (TC-AFM-006…047) are being automated next.
   </div>
 </section>
 
@@ -215,7 +222,7 @@
 
   <div class="stage">
     <h3>Stage 4: AFM controller API (REST + AggWatch)</h3>
-    <p>The AFM controller runs on the switch tray (<code>https://10.153.80.83</code>, API guide at <code>/docs/</code>). The <code>afm:</code> section of the inventory names the admin user; the password comes from <code>HELIOS_AFM_PASSWORD</code>, which you export yourself in the same terminal. Without it, only the unauthenticated cases run (RC-021, CTL-089, AGGW-003/004, CTL-004) and the rest SKIP.</p>
+    <p>See <a href="#afm">AFM controller API</a> for the curl connectivity check. The AFM controller runs on the switch tray (<code>https://10.153.80.83</code>, API guide at <code>/docs/</code>). The <code>afm:</code> section of the inventory names the admin user; the password comes from <code>HELIOS_AFM_PASSWORD</code>, which you export yourself in the same terminal. Without it, only the unauthenticated cases run (RC-021, CTL-089, AGGW-003/004, CTL-004) and the rest SKIP.</p>
     <div class="cmd"><pre>read -s HELIOS_AFM_PASSWORD &amp;&amp; export HELIOS_AFM_PASSWORD
 .venv/bin/pytest tests/afm --inventory inventory/mr3.local.yaml -v --log-file=results/mr3-afm.log</pre></div>
     <p>Non-disruptive: reads, plus throw-away objects named <code>helios-&lt;tc&gt;-*</code> (failover policies, alert policies, test users / roles / role-bindings, empty vPODs). These are deleted after every test, even a failing one. No GPU, link or vPOD membership is touched. The run takes about 10 minutes; the AggWatch idle, no-options and burst cases are the slow ones.</p>
@@ -232,6 +239,7 @@
 
 <section id="full">
   <h2><span class="num">3</span>Full rack (6 switches, 18 computes)</h2>
+  <div class="note"><strong>g02-g17 access today:</strong> only the AFM API is reachable from the runner, through the SSH tunnel to <code>https://localhost:8443</code>, so <a href="#afm">tests/afm</a> runs there now. The SSH suites below need a runner (or jump host) that reaches the switch (10.190.198.46–.51) and compute (10.190.178/179.x) management IPs.</div>
   <ol class="steps">
     <li>
       <strong>Create the inventory from the example:</strong>
@@ -274,8 +282,57 @@
   </ol>
 </section>
 
+<section id="afm">
+  <h2><span class="num">4</span>AFM controller API (both racks)</h2>
+  <p>The <code>tests/afm</code> suite talks to the AFM controller over HTTPS: REST and the AggWatch WebSocket. It doesn't SSH to any tray, so it only needs the controller URL, the admin user and <code>HELIOS_AFM_PASSWORD</code> exported in the same terminal.</p>
+  <div class="table-wrap">
+  <table>
+    <thead><tr><th>Rack</th><th>Controller URL</th><th>Inventory (git-ignored)</th></tr></thead>
+    <tbody>
+      <tr><td>MR3</td><td><code>https://10.153.80.83</code> (afm_controller on st1, reachable directly)</td><td><code>inventory/mr3.local.yaml</code></td></tr>
+      <tr><td>g02-g17 full rack</td><td><code>https://localhost:8443</code> through an SSH tunnel to a controller (.49/.50/.51 port 443)</td><td><code>inventory/fullrack-afm.local.yaml</code> (AFM only: 3 controllers, 6 switches, 17 computes expected)</td></tr>
+    </tbody>
+  </table>
+  </div>
+
+  <h3>1. Full rack only: open the tunnel</h3>
+  <p>Keep this running in its own terminal. The browser UI at <code>https://localhost:8443/#/login</code> uses the same tunnel.</p>
+  <div class="cmd"><pre>ssh -N -L 8443:10.190.198.51:443 &lt;user&gt;@&lt;jump-host&gt;</pre></div>
+
+  <h3>2. Check that curl reaches the API</h3>
+  <p>Set the controller URL for the rack you're checking. MR3:</p>
+  <div class="cmd"><pre>AFM=https://10.153.80.83</pre></div>
+  <p>Full rack:</p>
+  <div class="cmd"><pre>AFM=https://localhost:8443</pre></div>
+  <p>Without credentials, the API must answer <strong>401</strong>. <strong>000</strong> means there's no connection: the tunnel is down or the port is wrong.</p>
+  <div class="cmd"><pre>curl -sk -o /dev/null -w &#x27;%{http_code}\n&#x27; $AFM/configs/cluster/v1/version</pre></div>
+  <p>With the password exported, the login must print <code>login: 200</code>, and the next two calls must return JSON: the build version, then the cluster status with <code>healthy: true</code> and the quorum members.</p>
+  <div class="cmd"><pre>curl -sk -c /tmp/afm.jar -o /dev/null -w &#x27;login: %{http_code}\n&#x27; -H &#x27;Content-Type: application/json&#x27; -d &quot;{\&quot;username\&quot;:\&quot;admin\&quot;,\&quot;password\&quot;:\&quot;$HELIOS_AFM_PASSWORD\&quot;,\&quot;tenant\&quot;:\&quot;default\&quot;}&quot; $AFM/v1/login</pre></div>
+  <div class="cmd"><pre>curl -sk -b /tmp/afm.jar $AFM/configs/cluster/v1/version</pre></div>
+  <div class="cmd"><pre>curl -sk -b /tmp/afm.jar $AFM/configs/cluster/v1/cluster | python3 -m json.tool | head -40</pre></div>
+  <p class="muted">Delete the session cookie when you're done:</p>
+  <div class="cmd"><pre>rm -f /tmp/afm.jar</pre></div>
+
+  <h3>3. Run the suite</h3>
+  <p>MR3:</p>
+  <div class="cmd"><pre>.venv/bin/pytest tests/afm --inventory inventory/mr3.local.yaml -v --log-file=results/mr3-afm.log</pre></div>
+  <p>Full rack. Techsupport (TC-AFM-048) is left out because each node's bundle is 0.3–2 GB and would download through the tunnel; run it on its own with <code>--tc TC-AFM-048</code>.</p>
+  <div class="cmd"><pre>.venv/bin/pytest tests/afm --inventory inventory/fullrack-afm.local.yaml --deselect tests/afm/test_afm_rbac_audit.py::test_techsupport -v --log-file=results/fullrack-afm.log</pre></div>
+  <div class="table-wrap">
+  <table>
+    <thead><tr><th>Kind</th><th>What it does to the rack</th></tr></thead>
+    <tbody>
+      <tr><td>No password</td><td>RC-021, CTL-089, AGGW-003/004 and CTL-004 run anyway (unauthenticated requests). Everything else SKIPs.</td></tr>
+      <tr><td>Non-disruptive (default)</td><td>Reads, plus throw-away <code>helios-&lt;tc&gt;-*</code> objects deleted after each test: failover and alert policies (100 for the AggWatch burst test), test users/roles/role-bindings, and one empty vPOD (no GPUs). About 10 minutes.</td></tr>
+      <tr><td>Disruptive (<code>--allow-disruptive</code>)</td><td>Compute Reconfigure (GPU reset): RC-001…004. Mini-rack switch guard: TC-AFM-035A. Each first checks AFM health and reports BLOCKED if AFM isn't healthy.</td></tr>
+    </tbody>
+  </table>
+  </div>
+  <p class="muted">Expectations live under <code>thresholds.afm</code>: <code>quorum_members</code>, <code>expected_switches</code>, <code>expected_computes</code>, <code>build_version</code>, <code>system_policy</code>, <code>max_not_ready_ports_per_compute</code>, <code>metrics.known_no_series</code>, <code>reconfigure_timeout_s</code> and the <code>aggwatch.*</code> timings. The first run on a new AFM build may need these calibrated.</p>
+</section>
+
 <section id="select">
-  <h2><span class="num">4</span>Running specific cases</h2>
+  <h2><span class="num">5</span>Running specific cases</h2>
   <div class="table-wrap">
   <table>
     <thead><tr><th>What you want</th><th>Add this</th></tr></thead>
@@ -287,6 +344,7 @@
       <tr><td>Switch agent / hardware / RDMA / RAS only</td><td><code>tests/switch</code> / <code>tests/hw</code> / <code>tests/scaleout</code> / <code>tests/ras</code></td></tr>
       <tr><td>Metrics exporter / platform / IFoE driver only</td><td><code>tests/telemetry</code> / <code>tests/platform</code> / <code>tests/ifoe</code></td></tr>
       <tr><td>Sideband bring-up and IFCP (agents, sessions, cabling vs topology)</td><td><code>tests/sideband</code></td></tr>
+      <tr><td>AFM controller API (REST + AggWatch)</td><td><code>tests/afm</code> (AggWatch only: <code>tests/afm/test_aggwatch.py</code>)</td></tr>
       <tr><td>By level or marker</td><td><code>-m l1</code> / <code>-m "l1 and not stress"</code></td></tr>
       <tr><td>Tests that restart services, reset devices, reload drivers or reboot</td><td><code>--allow-disruptive</code></td></tr>
       <tr><td>Manual tests (e.g. the TC-SWH-009 heat test)</td><td><code>--run-manual</code></td></tr>
@@ -298,25 +356,25 @@
 </section>
 
 <section id="results">
-  <h2><span class="num">5</span>Results (both racks)</h2>
+  <h2><span class="num">6</span>Results (both racks)</h2>
   <p>Each run creates a folder <code>results/&lt;rack&gt;-&lt;timestamp&gt;/</code> containing:</p>
   <div class="table-wrap">
   <table>
     <thead><tr><th>File</th><th>Contents</th></tr></thead>
     <tbody>
-      <tr><td><code>tc_summary.csv</code></td><td>One PASS / FAIL / BLOCKED / SKIP / PARTIAL verdict per plan ID. BLOCKED means the datapath pre-flight refused to start traffic.</td></tr>
+      <tr><td><code>tc_summary.csv</code></td><td>One PASS / FAIL / BLOCKED / SKIP / PARTIAL verdict per plan ID. BLOCKED means a pre-flight refused to start: the datapath gate (traffic tests), the RDMA gate (scale-out) or the AFM health gate (disruptive AFM tests).</td></tr>
       <tr><td><code>tc_results.csv</code></td><td>One row per test item: suite, test, description, outcome, duration, start time, failure message, measured values, and the path to its log.</td></tr>
-      <tr><td><code>logs/NNN_&lt;test&gt;.log</code></td><td>The command trace of that one test: every command, its output, exit code and timing.</td></tr>
+      <tr><td><code>logs/NNN_&lt;test&gt;.log</code></td><td>The trace of that one test: every command (or AFM request/response, secrets redacted), its output, exit code and timing.</td></tr>
     </tbody>
   </table>
   </div>
   <p>The <code>--log-file</code> records every command, its output, exit code and duration. Passwords are never logged.</p>
   <p class="muted">Execution results also go into <code>testplan/HPE_AMD Helios Juniper ScaleUp TestPlan.xlsx</code>: Execution Status, SW Version and Execution Notes on the Testcases sheet, plus the Execution Summary sheet.</p>
-  <div class="note warn"><strong>Not runnable yet:</strong> the AFM L2 tranche. It needs the AFM endpoint and user for each rack, plus <code>HELIOS_AFM_PASSWORD</code> set the same way as the other passwords.</div>
+  <div class="note"><strong>Updating the workbook:</strong> close it in Excel first. A script writing the file while Excel has it open loses its changes when Excel saves. The g02-g17 full-rack results (10–12 Oct: AFM L2 batch and the 18-tray traffic validation) are already recorded in it.</div>
 </section>
 
 <section id="report">
-  <h2><span class="num">6</span>HTML report (summary + per-test logs)</h2>
+  <h2><span class="num">7</span>HTML report (summary + per-test logs)</h2>
   <p>Turn one or more runs into a single self-contained HTML page: a summary dashboard on top, then every test case with its own command log.</p>
   <ol class="steps">
     <li>
@@ -367,7 +425,7 @@ Not run: RAS power-cycle tests (disruptive)</pre></div>
 </section>
 
 <section id="coverage">
-  <h2><span class="num">7</span>Coverage: automated vs. missing</h2>
+  <h2><span class="num">8</span>Coverage: automated vs. missing</h2>
   <div class="cmd"><pre>.venv/bin/python tools/coverage.py</pre></div>
   <div class="cmd"><pre>.venv/bin/python tools/coverage.py --missing &gt; results/missing.txt</pre></div>
   <p class="muted"><code>automated</code> = cases with a <code>@pytest.mark.tc</code> test; <code>total</code> = cases in the plan; <code>--missing</code> lists every case with no test yet.</p>
