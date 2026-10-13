@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import logging
+import os
 import re
 import shlex
 import threading
@@ -74,6 +75,11 @@ def build_command(cmd: str, sudo: bool = False, env: dict[str, Any] | None = Non
 LOG_OUTPUT_LIMIT = 6000
 
 
+def _short(cmd: str, n: int = 110) -> str:
+    cmd = " ".join(cmd.split())
+    return cmd if len(cmd) <= n else cmd[: n - 3] + "..."
+
+
 def _output_for_log(res: "CmdResult") -> str:
     """Command output for the --log-file trace (head of stdout + stderr), so failures are diagnosable."""
     parts = []
@@ -111,9 +117,10 @@ class SshTransport:
         client.load_system_host_keys()
         # Lab racks get reimaged constantly; host-key pinning would just break runs.
         client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-        use_keys = h.password is None
+        use_keys = h.password is None or bool(h.key_file)
+        key_file = os.path.expanduser(h.key_file) if h.key_file else None  # paramiko does not expand ~
         client.connect(
-            h.host, port=h.port, username=h.user, password=h.password, key_filename=h.key_file,
+            h.host, port=h.port, username=h.user, password=h.password, key_filename=key_file,
             timeout=self.connect_timeout, banner_timeout=self.connect_timeout,
             auth_timeout=self.connect_timeout, look_for_keys=use_keys, allow_agent=use_keys,
         )
@@ -121,16 +128,25 @@ class SshTransport:
         log.debug("[%s] connected %s@%s:%s", h.name, h.user, h.host, h.port)
         return client
 
+    HEARTBEAT_S = 30
+    KILL_GRACE_S = 10
+
     def run(self, cmd: str, *, timeout: float = 120, sudo: bool = False,
             env: dict[str, Any] | None = None) -> CmdResult:
         full = build_command(cmd, sudo, env)
+        # Enforce the timeout on the remote side too: closing the SSH channel does not kill a hung tool
+        # (e.g. a GPU workload stuck in the driver), so coreutils `timeout` sends TERM, then KILL.
+        remote = f"timeout -k {self.KILL_GRACE_S} {max(1, int(timeout))} bash -c {shlex.quote(full)}"
         start = time.monotonic()
         log.debug("[%s] $ %s", self.host.name, full)
+        if timeout >= self.HEARTBEAT_S:
+            log.info("[%s] running (timeout %ds): %s", self.host.name, timeout, _short(cmd))
         chan = self._ensure().get_transport().open_session(timeout=self.connect_timeout)
         try:
-            chan.exec_command(full)
+            chan.exec_command(remote)
             out, err = bytearray(), bytearray()
-            deadline = start + timeout
+            deadline = start + timeout + self.KILL_GRACE_S + 15  # let the remote timeout fire first (rc 124)
+            next_beat = start + self.HEARTBEAT_S
             while True:
                 progressed = False
                 while chan.recv_ready():
@@ -141,8 +157,13 @@ class SshTransport:
                     progressed = True
                 if chan.exit_status_ready() and not chan.recv_ready() and not chan.recv_stderr_ready():
                     break
-                if time.monotonic() > deadline:
+                now = time.monotonic()
+                if now > deadline:
                     raise CommandTimeout(f"[{self.host.name}] timed out after {timeout}s: {cmd}")
+                if now >= next_beat:
+                    log.info("[%s] still running after %ds (timeout %ds): %s",
+                             self.host.name, now - start, timeout, _short(cmd))
+                    next_beat += self.HEARTBEAT_S
                 if not progressed:
                     time.sleep(0.02)
             rc = chan.recv_exit_status()
@@ -150,6 +171,11 @@ class SshTransport:
             chan.close()
         res = CmdResult(self.host.name, cmd, rc, out.decode(errors="replace"),
                         err.decode(errors="replace"), time.monotonic() - start)
+        if rc == 124:
+            res.stderr += f"\n[helios] killed by remote timeout after {timeout}s"
+            log.warning("[%s] TIMED OUT after %ds and was killed: %s", self.host.name, timeout, _short(cmd))
+        elif timeout >= self.HEARTBEAT_S:
+            log.info("[%s] finished rc=%s in %.0fs: %s", self.host.name, rc, res.duration, _short(cmd))
         log.debug("[%s] rc=%s %.2fs%s", self.host.name, rc, res.duration, _output_for_log(res))
         return res
 

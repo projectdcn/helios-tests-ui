@@ -22,5 +22,10 @@ include = ["helios*"]
 
 [tool.pytest.ini_options]
 addopts = "-ra"
+# live progress in the terminal: which node is running what, heartbeats every 30s, timeouts
+log_cli = true
+log_cli_level = "INFO"
+log_cli_format = "%(asctime)s %(levelname)s %(message)s"
+log_cli_date_format = "%H:%M:%S"
 log_file_level = "DEBUG"
 log_file_format = "%(asctime)s %(levelname)s %(name)s: %(message)s"
