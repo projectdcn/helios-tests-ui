@@ -1,0 +1,4 @@
+link ionic_0/1 state ACTIVE physical_state LINK_UP netdev eth0
+link ionic_1/1 state ACTIVE physical_state LINK_UP netdev eth1
+link ionic_2/1 state ACTIVE physical_state LINK_UP netdev eth2
+link ionic_3/1 state ACTIVE physical_state LINK_UP netdev eth3

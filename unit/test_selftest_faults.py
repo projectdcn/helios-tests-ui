@@ -96,6 +96,7 @@ def test_healthy_rack_passes(tmp_path):
 GATED_TRAFFIC = {"SMOKE-RCCL-1N", "SMOKE-RCCL-MN", "TC-AFM-001", "TC-AFM-002", "TC-AFM-003", "TC-AFM-004",
                  "TC-AFM-005A", "TC-HW-008", "TC-HW-017", "TC-AFM-LU-001", "TC-RAS-reset-001", "TC-RAS-reset-002",
                  "TC-RAS-reset-003", "TC-RAS-reset-004", "TC-RAS-reset-007", "TC-RAS-reset-008", "TC-RAS-reset-009"}
+IBS_ALL = {"TC-IBS-001", "TC-IBS-002", "TC-IBS-003", "TC-IBS-004", "TC-IBS-005", "TC-IBS-006"}
 RAS_TRAFFIC = {"TC-RAS-reset-001", "TC-RAS-reset-002", "TC-RAS-reset-003", "TC-RAS-reset-004", "TC-RAS-reset-007", "TC-RAS-reset-008", "TC-RAS-reset-009"}
 
 FAULTS = {
@@ -231,6 +232,9 @@ FAULTS = {
                                         r'("id": "20", .*?"ll_up": ")yes', r"\1no"), {"TC-SBM-062"}),
     "cabling_mismatch": (lambda d: _edit(d / "afmctl_port_c1_0001.json",
                                          r'("id": "3", .*?"peer_port_id": ")1003"', r'\g<1>1004"'), {"TC-E2E-062"}),
+    "rdma_nic_link_down": (lambda d: _edit(d / "rdma_link.txt", r"ionic_2/1 state ACTIVE physical_state LINK_UP",
+                                           "ionic_2/1 state DOWN physical_state DISABLED"), IBS_ALL),
+    "perftest_without_rocm": (lambda d: _edit(d / "perftest_help.txt", r".*use_rocm.*\n", ""), IBS_ALL),
     "thermalctld_down": (lambda d: _edit_rule(d, "thermalctld", stdout="thermalctld   EXITED\n"), {"TC-SWH-004"}),
 }
 

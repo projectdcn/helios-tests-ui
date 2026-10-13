@@ -465,6 +465,12 @@
   stdout: '7.92 3.10 1.20 9/412 31337
 
     '
+- cmd: ^rdma\ link\ show$
+  rc: 0
+  file: rdma_link.txt
+- cmd: ^ib_write_bw\ \-\-help\ 2>\&1$
+  rc: 0
+  file: perftest_help.txt
 - cmd: '^ib_(write|send|read)_bw '
   rc: 0
   file: perftest.txt

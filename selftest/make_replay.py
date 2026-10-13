@@ -190,6 +190,11 @@ PERF = """----------------------------------------------------------------------
  65536      7442117          0.00               390.12\t\t   0.744097
 ---------------------------------------------------------------------------------------
 """
+add("rdma link show", "".join(f"link ionic_{i}/1 state ACTIVE physical_state LINK_UP netdev eth{i}\n" for i in range(4)),
+    name="rdma_link.txt")
+add("ib_write_bw --help 2>&1", "Usage:\n  ib_write_bw            start a server and wait for connection\n"
+    "      --use_rocm=<rocm device id> Use selected ROCm device for GPUDirect RDMA testing\n"
+    "      --ipv6 Use IPv6 GID. Default is IPv4\n", name="perftest_help.txt")
 add(r"^ib_(write|send|read)_bw ", PERF, name="perftest.txt", regex=True)
 add(r"^afmctl reset device --datapath", "datapath reset: ok\n", regex=True)
 add(r"^nohup sh -c 'sleep 2; systemctl reboot'", "", regex=True)

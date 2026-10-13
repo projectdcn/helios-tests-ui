@@ -13,8 +13,17 @@ ALL_VERBS = ["write", "write_imm", "send", "send_imm", "read"]
 
 
 @pytest.fixture
-def nodes(rack, inventory):
-    return perftest.scaleout_nodes(rack, inventory)
+def nodes(rack, inventory, pytestconfig):
+    """The two scale-out nodes; fails setup (reported BLOCKED) when NIC links are down or perftest lacks ROCm."""
+    pair = perftest.scaleout_nodes(rack, inventory)
+    cache = pytestconfig.__dict__.setdefault("_helios_rdma_preflight", {})
+    key = tuple(n.name for n in pair)
+    if key not in cache:
+        cache[key] = perftest.rdma_preflight(pair, inventory)
+    if cache[key]:
+        pytest.fail("datapath pre-flight failed - scale-out RDMA not ready, not starting perftest:\n"
+                    + "\n".join(f"  - {p}" for p in cache[key]), pytrace=False)
+    return pair
 
 
 def _defaults(inventory):

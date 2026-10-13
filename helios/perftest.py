@@ -66,6 +66,29 @@ def scaleout_nodes(rack, inventory) -> tuple[ComputeTray, ComputeTray]:
     return a, b
 
 
+def rdma_preflight(nodes, inventory, need_gpu_mem: bool = True) -> list[str]:
+    """Problems that make scale-out RDMA results meaningless: NIC port link not ACTIVE, no IP for the
+    address family, or (GPU-memory tests) perftest built without ROCm (no --use_rocm)."""
+    problems = []
+    af_keys = ("ip6",) if inventory.cmd("perftest.default_af", "ipv6") == "ipv6" else ("ip4",)
+    for n in nodes:
+        r = n.run("rdma link show", timeout=30)
+        states = dict(re.findall(r"link (\S+)/\d+ state (\S+)", r.stdout))
+        for i, port in enumerate(n.rdma_ports()):
+            dev = port.get("dev", "?")
+            st = states.get(dev, "missing")
+            if st != "ACTIVE":
+                phys = re.search(rf"link {re.escape(dev)}/\d+ state \S+ physical_state (\S+)", r.stdout)
+                problems.append(f"{n.name} P{i + 1} {dev}: link {st}{f' ({phys.group(1)})' if phys else ''}")
+            elif not any(port.get(k) for k in af_keys):
+                problems.append(f"{n.name} P{i + 1} {dev}: no {'/'.join(af_keys)} address in inventory")
+        if need_gpu_mem:
+            h = n.run("ib_write_bw --help 2>&1", timeout=30)
+            if "use_rocm" not in h.stdout:
+                problems.append(f"{n.name}: perftest has no --use_rocm (built without ROCm) - GPU-memory RDMA unavailable")
+    return problems
+
+
 def cross_pairs(a: ComputeTray, b: ComputeTray, only: list[int] | None = None) -> list[tuple[Endpoint, Endpoint]]:
     """Port pair i = (a.Pi, b.Pi). ``only`` = 1-based port numbers to keep."""
     n = min(len(a.rdma_ports()), len(b.rdma_ports()))

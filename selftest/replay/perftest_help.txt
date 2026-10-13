@@ -1,0 +1,4 @@
+Usage:
+  ib_write_bw            start a server and wait for connection
+      --use_rocm=<rocm device id> Use selected ROCm device for GPUDirect RDMA testing
+      --ipv6 Use IPv6 GID. Default is IPv4
