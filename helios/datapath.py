@@ -40,8 +40,80 @@ def _workers(inventory, key: str, n: int, default: bool) -> int:
 
 # ------------------------------------------------------------------ L2 ping
 
+def _l2_ping_afmctl(computes, inventory, checks: Checks) -> int:
+    """L2 ping driven by afmctl discovery (no per-rack IDs to maintain): accelerator IDs from
+    `afmctl show device --json`, ports = LINK_UP on both ends from `afmctl show port -b <bdf> --json`.
+    Pairs (``l2ping.pairs``): ring = next GPU on the same tray + same-index GPU on the next tray (both
+    directions across trays), as the full-rack suite does; full = every GPU pair. Pings are serial per
+    source tray (afmctl ping is not re-entrant per host) and parallel across trays."""
+    from .afmctl import Afmctl
+
+    timeout = float(inventory.cmd("l2ping.timeout_s", 200))
+    mode = inventory.cmd("l2ping.pairs", "ring")
+    min_ports = int(inventory.th("datapath.l2ping.min_common_ports", 1))
+
+    def discover(c):
+        a = Afmctl(c)
+        devs = a.devices()
+        return a, devs, {d.bdf: {p.id for p in a.ports(d.bdf) if p.up} for d in devs}
+
+    info = {}
+    for c, res, exc in fan_out(discover, computes):
+        if exc:
+            checks.fail(f"{c.name}: afmctl discovery failed: {exc}")
+            continue
+        a, devs, up = res
+        checks.check(len(devs) == c.gpus, f"{c.name}: afmctl shows {len(devs)} devices, expected {c.gpus}")
+        not_active = [f"{d.bdf}={d.config_phase}" for d in devs if d.config_phase != "ACTIVE"]
+        checks.check(not not_active, f"{c.name}: config_phase not ACTIVE: {not_active}")
+        info[c.name] = (a, devs, up)
+
+    names = [c.name for c in computes if c.name in info]
+    jobs: dict[str, list[tuple]] = {n: [] for n in names}
+    for i, name in enumerate(names):
+        _, devs, up = info[name]
+        peers = names[i + 1:] + names[:i] if mode == "full" else names[i + 1:i + 2] or names[:1]
+        peers = [p for p in peers if p != name]
+        for g, d in enumerate(devs):
+            targets = [("within", name, h) for h in range(len(devs)) if h != g] if mode == "full" else \
+                      ([("within", name, (g + 1) % len(devs))] if len(devs) > 1 else [])
+            for pn in peers:
+                pdevs = info[pn][1]
+                targets += [("cross", pn, h) for h in range(len(pdevs))] if mode == "full" else \
+                           ([("cross", pn, g)] if g < len(pdevs) else [])
+            for kind, pn, h in targets:
+                dd = info[pn][1][h]
+                jobs[name].append((kind, d, pn, dd, sorted(up[d.bdf] & info[pn][2][dd.bdf])))
+
+    def run(name):
+        a = info[name][0]
+        fails = []
+        for kind, d, pn, dd, common in jobs[name]:
+            tag = f"[{kind}] {name}/{d.bdf} (acc {d.accel_id}) -> {pn} acc {dd.accel_id}"
+            if len(common) < min_ports:
+                fails.append(f"{tag}: only {len(common)} LINK_UP port(s) in common")
+                continue
+            res, r = a.ping(d.bdf, dd.accel_id, common, timeout=timeout)
+            if r.rc == 124:
+                fails.append(f"{tag}: exceeded {timeout:.0f}s")
+            elif res.total is None:
+                fails.append(f"{tag}: no 'IFoE Request' summary{' (host busy)' if res.busy else ''}: {r.tail(200)!r}")
+            elif not res.ok:
+                fails.append(f"{tag}: {res.request_fail}/{res.total} port(s) failed {res.failed_ports or ''}".rstrip())
+        return fails
+
+    for name, fails, exc in fan_out(run, names):
+        if exc:
+            checks.fail(f"{name}: {exc}")
+        for f in fails or []:
+            checks.fail(f)
+    return sum(len(v) for v in jobs.values())
+
+
 def l2_ping(computes, inventory, checks: Checks) -> int:
     """Within each tray (every GPU pair) and across trays (ring/all, both directions). Returns ping count."""
+    if inventory.cmd("l2ping.mode") == "afmctl":
+        return _l2_ping_afmctl(computes, inventory, checks)
     tmpl = template(inventory, "l2ping.cmd")
     ok_re = inventory.cmd("l2ping.success_regex")
     timeout = float(inventory.cmd("l2ping.timeout_s", 30))

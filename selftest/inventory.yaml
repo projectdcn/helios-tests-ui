@@ -38,9 +38,7 @@ commands:
     load: "modprobe ifoe"
     loaded_check: "lsmod | grep -q '^ifoe '"
   l2ping:
-    cmd: "afmctl test ping --bdf {src_bdf} --port 0-35 --dst-accelerator {dst_accel} -c 1 -t 10"
-    sudo: true
-    success_regex: " 0% loss"
+    mode: afmctl          # discover acc ids + LINK_UP ports via afmctl; ring pairs
   transferbench:
     in_domain: "TransferBench a2a {size}"
     rank_cmd: "TB_NUM_RANKS={num_ranks} TB_RANK={rank} TB_MASTER_ADDR={master_addr} TB_SINGLE_LOG=1 TransferBench a2a {size}"

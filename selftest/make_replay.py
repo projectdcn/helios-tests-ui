@@ -191,7 +191,24 @@ add(r"^nohup sh -c 'sleep 2; systemctl reboot'", "", regex=True)
 add("true", "")
 add(r"^(ras-partial-stations|pdu-ctl|ipmitool) ", "", regex=True)
 add(r"^ping-gpu ", "4 packets transmitted, 4 received, 0% packet loss\n", regex=True)
-add(r"^afmctl test ping ", "PING accelerator: 1 sent, 1 received, 0% loss\n", name="afmctl_ping.txt", regex=True)
+# afmctl discovery (formats from the full-rack log). c2 deliberately uses acc 8-11, not 4-7: IDs must be discovered.
+import json as _json
+BDFS = [f"000{g + 1}:01:00.1" for g in range(4)]
+for cname, base in (("c1", 0), ("c2", 8)):
+    add("afmctl show device --json 2>/dev/null", _json.dumps({"device": [
+        {"bdf": b, "spec": {"accelerator_id": str(base + g), "config_phase": "ACTIVE",
+                            "local_accelerators": [str(base + i) for i in range(4)]}} for g, b in enumerate(BDFS)]}),
+        name=f"afmctl_device_{cname}.json", host=f"^{cname}$")
+for b in BDFS:  # port 7 is physically down everywhere; the rest LINK_UP
+    add(f"afmctl show port -b {b} --json 2>/dev/null", _json.dumps({"device": [{"bdf": b, "port": [
+        {"id": str(p), "spec": {"admin_state": "enabled"},
+         "status": {"link_status": "NO_PHY_LINK, PCS_NO_BLOCK_LOCK" if p == 7 else "LINK_UP"}} for p in range(36)]}]}))
+add(r"^timeout \d+ afmctl test ping ", """PING test 0001:01:00.1 -> accelerator 1, count 1
+Summary:
+  IFoE Request    : 35/35 PASS, 0/35 fail (0.00% loss)
+  IFoE Response   : 35/35 PASS, 0/35 fail (0.00% loss)
+  Non-IFoE        : 35/35 PASS, 0/35 fail (0.00% loss)
+""", name="afmctl_ping.txt", regex=True)
 # TransferBench socket multi-rank: rank 0 prints the results, workers print nothing
 rules.append({"cmd": r"^TB_NUM_RANKS=\d+ TB_RANK=0 ", "rc": 0, "file": "transferbench.txt"})  # same output as single-node
 add(r"^TB_NUM_RANKS=\d+ TB_RANK=[1-9]", "", regex=True)

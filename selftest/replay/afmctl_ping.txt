@@ -1,1 +1,5 @@
-PING accelerator: 1 sent, 1 received, 0% loss
+PING test 0001:01:00.1 -> accelerator 1, count 1
+Summary:
+  IFoE Request    : 35/35 PASS, 0/35 fail (0.00% loss)
+  IFoE Response   : 35/35 PASS, 0/35 fail (0.00% loss)
+  Non-IFoE        : 35/35 PASS, 0/35 fail (0.00% loss)

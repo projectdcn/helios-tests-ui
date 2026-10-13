@@ -66,7 +66,9 @@ afm:                    # used by L2+ tranches; L1 does not need it
 
 commands:
   l2ping:
-    # VERIFY: the L2 ping tool AFM's ping check.sh uses. Placeholders:
+    mode: afmctl         # recommended: discover acc ids + LINK_UP ports via afmctl (no cmd template needed)
+    pairs: ring          # ring (as the full-rack suite) | full (every GPU pair; slow: ~30s per ping, serial per tray)
+    # template mode (mode unset): the L2 ping tool AFM's ping check.sh uses. Placeholders:
     #   {src_name} {src_gpu} {src_addr} {dst_name} {dst_host} {dst_gpu} {dst_addr}
     # e.g. "afmctl test ping --bdf {src_bdf} --port 0-35 --dst-accelerator {dst_accel} -c 1 -t 10" with sudo: true
     # ({src_bdf}/{dst_accel} come from per-compute gpu_bdfs / accel_ids)

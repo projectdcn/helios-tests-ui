@@ -102,7 +102,8 @@ FAULTS = {
                       {"TC-SWH-016", "TC-SWH-031"}),
     "vlan_no_members": (lambda d: _edit_rule(d, "-n\\ asic1\\ CONFIG_DB\\ keys\\ 'VLAN_MEMBER", stdout=""),
                         {"TC-SWH-036", "TC-SWA-079"}),  # also breaks member symmetry
-    "ping_loss": (lambda d: _edit(d / "afmctl_ping.txt", r"1 received, 0% loss", "0 received, 100% loss"),
+    "ping_loss": (lambda d: _edit(d / "afmctl_ping.txt", r"IFoE Request    : 35/35 PASS, 0/35 fail",
+                                  "IFoE Request    : 33/35 PASS, 2/35 fail"),
                   {"TC-AFM-001", "TC-HW-017"}),  # HW-017 re-validates with L2 ping
     # RAS cases and TC-HW-008 re-validate with the same TransferBench / RCCL workloads
     "tb_slow": (lambda d: _edit(d / "transferbench.txt", r"612\.48", "212.48"),
@@ -179,6 +180,10 @@ FAULTS = {
     "tb_worker_rank_fails": (lambda d: _edit_rule(d, "TB_RANK=[1-9]", rc=1, stderr="connect to master failed"),
                              {"TC-AFM-003", "TC-RAS-reset-003", "TC-RAS-reset-004", "TC-RAS-reset-007",
                               "TC-RAS-reset-008", "TC-RAS-reset-009"}),
+    "gpu_not_active": (lambda d: _edit(d / "afmctl_device_c2.json", r'"config_phase": "ACTIVE"', '"config_phase": "PROVIDER"'),
+                       {"TC-AFM-001", "TC-HW-017"}),
+    "ping_no_summary": (lambda d: _edit(d / "afmctl_ping.txt", r"Summary:(.|\n)*", "ERR - Failed to start ping test\n"),
+                        {"TC-AFM-001", "TC-HW-017"}),
     "thermalctld_down": (lambda d: _edit_rule(d, "thermalctld", stdout="thermalctld   EXITED\n"), {"TC-SWH-004"}),
 }
 

@@ -91,7 +91,8 @@ def test_ifoe_driver_remove_readd(computes, inventory, checks, record_property):
     """One remove/re-add, then the accelerator table must work again: L2 ping and TransferBench in-domain."""
     for k in ("unload", "load", "loaded_check"):
         _tmpl(inventory, k)
-    datapath.template(inventory, "l2ping.cmd")
+    if inventory.cmd("l2ping.mode") != "afmctl":
+        datapath.template(inventory, "l2ping.cmd")
     _cycle(computes, inventory, checks, 1)
     _gpu_health(computes, inventory, checks, "after re-add")
     record_property("pings", datapath.l2_ping(computes, inventory, checks))
