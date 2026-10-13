@@ -38,6 +38,50 @@ def test_interface_counters_no_errors(switch, inventory, checks):
     checks.assert_all()
 
 
+@pytest.mark.tc("TC-SWA-074")
+def test_interface_drops(switch, inventory, checks, record_property):
+    """Fabric ports must not drop traffic. Two checks per port and direction (RX_DRP/RX_OK, TX_DRP/TX_OK):
+
+    * lifetime: drops > ``switch.drops.min_count`` (100k) AND drops/OK > ``max_ratio`` (1%) - small
+      historical counts from bring-up or link events are ignored
+    * live: drop rate over ``window_s`` (10 s) > ``max_rate_pps`` (100/s), i.e. still dropping now
+
+    Found on MR3: the switch silently dropped ~100% of one plane's ingress (VLAN 1000, port 9 of every
+    GPU on a tray) while links, LLDP, VLAN/FDB and RX_ERR all looked healthy - RCCL hung, nothing else failed.
+    """
+    min_count = float(inventory.th("switch.drops.min_count", 100_000))
+    max_ratio = float(inventory.th("switch.drops.max_ratio", 0.01))
+    window = float(inventory.th("switch.drops.window_s", 10))
+    max_rate = float(inventory.th("switch.drops.max_rate_pps", 100))
+    pairs = (("RX_DRP", "RX_OK"), ("TX_DRP", "TX_OK"))
+
+    before = {ns: switch.interfaces_counters(ns) for ns in switch.namespaces()}
+    t0 = time.monotonic()
+    time.sleep(window)
+    elapsed = max(time.monotonic() - t0, 1e-6)
+    offenders = {}
+    for ns in switch.namespaces():
+        for port, row in switch.interfaces_counters(ns).items():
+            for drp, ok in pairs:
+                d, n = to_float(row.get(drp)), to_float(row.get(ok)) or 0
+                if d is None:
+                    continue
+                problems = []
+                if d > min_count and d > max_ratio * max(n, 1):
+                    # SONiC's RX_OK/TX_OK include the frames later dropped, so the ratio is drops/OK
+                    problems.append(f"{drp}={d:,.0f} ({d / max(n, 1):.1%} of {ok})")
+                b = to_float(before[ns].get(port, {}).get(drp))
+                if b is not None and (d - b) / elapsed > max_rate:
+                    problems.append(f"still dropping {(d - b) / elapsed:,.0f}/s")
+                if problems:
+                    offenders[(ns, port)] = offenders.get((ns, port), []) + problems
+    record_property("drop_offenders", {f"{ns}/{p}": v for (ns, p), v in offenders.items()})
+    for (ns, port), problems in sorted(offenders.items()):
+        desc = switch.port_description(port, ns)
+        checks.fail(f"{switch.name}/{ns}: {port}{f' ({desc})' if desc else ''}: {'; '.join(problems)}")
+    checks.assert_all()
+
+
 @pytest.mark.tc("TC-SWA-075")
 def test_traffic_flowing(switch, inventory, checks, record_property):
     """RX_OK and TX_OK advance on every oper-up fabric port over ``switch.traffic_window_s``

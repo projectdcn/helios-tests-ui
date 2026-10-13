@@ -180,6 +180,7 @@ thresholds:
     max_err_delta: 0
     max_err_absolute: null
     min_vlans: 1
+    drops: {min_count: 100000, max_ratio: 0.01, window_s: 10, max_rate_pps: 100}   # TC-SWA-074 drop check
     exclude_ports: []
     error_columns: [RX_ERR, TX_ERR]         # TC-SWA-074 lifetime error check (max_err_absolute, default 0)
     traffic_window_s: 35                    # TC-SWA-075: long enough to include an LLDP interval

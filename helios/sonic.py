@@ -110,6 +110,11 @@ class SonicSwitch:
         rows = parse_table(self.sh(f"show interfaces status{_ns_flag(ns)} -d all"))
         return [r for r in rows if self.is_fabric_port(r.get("Interface", ""))]
 
+    def port_description(self, port: str, ns: str | None) -> str:
+        """CONFIG_DB PORT description, e.g. 'To ComputeTray Slot0/GPU0[0]/Port9' ('' if unset)."""
+        return self.run(f"sonic-db-cli{_ns_flag(ns)} CONFIG_DB hget {shlex.quote('PORT|' + port)} description",
+                        timeout=30).stdout.strip()
+
     def interfaces_counters(self, ns: str | None) -> dict[str, dict]:
         rows = parse_table(self.sh(f"show interfaces counters{_ns_flag(ns)} -d all"))
         return {r["IFACE"]: r for r in rows if self.is_fabric_port(r.get("IFACE", ""))}

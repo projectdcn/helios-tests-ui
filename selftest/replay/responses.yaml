@@ -371,6 +371,12 @@
   rc: 0
   host: ^sw
   stdout: ''
+- cmd: ^sonic-db-cli -n asic\d CONFIG_DB hget 'PORT\|Ethernet\d+' description$
+  rc: 0
+  host: ^sw
+  stdout: 'To ComputeTray Slot0/GPU0[0]/Port9
+
+    '
 - cmd: ^sonic\-installer\ list$
   rc: 0
   host: ^sw

@@ -57,6 +57,22 @@ def _rename_after_first_read(replay: Path):
     _edit_rule(replay, "ip\\ \\-o\\ link", files=["ip_link.txt", "ip_link_after.txt"])
 
 
+def _drops(replay: Path, port: str, live: bool):
+    """Give `port` a large RX_DRP in every asic1 counter snapshot; with live=True it also grows per read."""
+    for f in sorted(replay.glob("intf_counters_asic1_*.txt")):
+        step = int(f.stem.rsplit("_", 1)[1])
+        value = 5_000_000 + (step * 1_000_000 if live else 0)
+        # RX_DRP is the 8th whitespace token on a data row ("12.30 MB/s" is two tokens). Columns are
+        # right-aligned fixed width, so the new value must consume leading spaces, not shift later columns.
+        text = f.read_text()
+        m = re.search(rf"^(\s*{port}(?:\s+\S+){{6}})(\s+\d+)", text, flags=re.M)
+        assert m, f"{port} row not found in {f.name}"
+        cell = m.group(2)
+        new = f"{value:,}".rjust(len(cell))
+        assert len(new) == len(cell), f"value {value:,} too wide for column in {f.name}"
+        f.write_text(text[:m.start(2)] + new + text[m.end(2):])
+
+
 def _edit_rule(replay: Path, cmd_fragment: str, **changes):
     spec_path = replay / "responses.yaml"
     rules = yaml.safe_load(spec_path.read_text())
@@ -184,6 +200,9 @@ FAULTS = {
                        {"TC-AFM-001", "TC-HW-017"}),
     "ping_no_summary": (lambda d: _edit(d / "afmctl_ping.txt", r"Summary:(.|\n)*", "ERR - Failed to start ping test\n"),
                         {"TC-AFM-001", "TC-HW-017"}),
+    # MR3 failure mode: one plane silently drops a port's ingress while links/LLDP/VLAN look healthy
+    "port_dropping_lifetime": (lambda d: _drops(d, "Ethernet264", live=False), {"TC-SWA-074"}),
+    "port_still_dropping": (lambda d: _drops(d, "Ethernet272", live=True), {"TC-SWA-074"}),
     "thermalctld_down": (lambda d: _edit_rule(d, "thermalctld", stdout="thermalctld   EXITED\n"), {"TC-SWH-004"}),
 }
 

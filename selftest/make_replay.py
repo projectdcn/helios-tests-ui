@@ -125,8 +125,10 @@ for ns in NS:
         st_rows, right={0, 2, 3, 4}), name=f"intf_status_{ns}.txt", host=SW)
     def counters(step: int) -> str:
         rx, tx = 1_204_331 + step * 1_000, 1_198_002 + step * 1_000
-        rows = [[p, "U", f"{rx:,}", "12.30 MB/s", "0.02%", "0", "3", "0", f"{tx:,}", "11.90 MB/s", "0.02%", "0", "0", "0"]
-                for p in ports]
+        # drop columns padded to a realistic width (real MR3 counters reached 20M+), so fault injection
+        # can write large values without shifting the fixed-width layout
+        rows = [[p, "U", f"{rx:,}", "12.30 MB/s", "0.02%", "0", f"{3:>12}", "0", f"{tx:,}", "11.90 MB/s", "0.02%",
+                 "0", f"{0:>12}", "0"] for p in ports]
         return table(["IFACE", "STATE", "RX_OK", "RX_BPS", "RX_UTIL", "RX_ERR", "RX_DRP", "RX_OVR",
                       "TX_OK", "TX_BPS", "TX_UTIL", "TX_ERR", "TX_DRP", "TX_OVR"], rows, right=set(range(14)))
 
@@ -151,6 +153,8 @@ for ns in NS:
         "".join(f"VLAN_MEMBER|Vlan{100 + i % 2}|{p}\n" for i, p in enumerate(ports)), host=SW)
 
 add(r"^for i in \$\(seq \$\(nproc\)\)", "", host=SW, regex=True)
+add(r"^sonic-db-cli -n asic\d CONFIG_DB hget 'PORT\|Ethernet\d+' description$",
+    "To ComputeTray Slot0/GPU0[0]/Port9\n", host=SW, regex=True)
 IMG_CUR, IMG_OLD = "SONiC-OS-helios.202505.1", "SONiC-OS-helios.202411.3"
 add("sonic-installer list", f"Current: {IMG_CUR}\nNext: {IMG_CUR}\nAvailable:\n{IMG_CUR}\n{IMG_OLD}\n",
     name="sonic_installer_list.txt", host=SW)
