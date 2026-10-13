@@ -12,3 +12,5 @@ tools/RcclSmokeTest-*/
 tools/TransferBench/
 tools/rccl-tests/
 tools/*.rtf
+# Office lock files (workbook open in Excel)
+~$*
