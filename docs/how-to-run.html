@@ -85,6 +85,11 @@
   }
   .pill { display: inline-block; font-size: 12px; font-weight: 600; padding: 1px 8px; border-radius: 999px; background: var(--chip); border: 1px solid var(--border); }
   .pill.ok { color: var(--ok); }
+  .note.warn { border-left-color: #b45309; }
+  .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  @media (max-width: 700px) { .grid2 { grid-template-columns: 1fr; } }
+  .stage { border: 1px solid var(--border); border-radius: 10px; padding: 12px 14px; margin: 12px 0; }
+  .stage h3 { margin-top: 0; }
   footer { color: var(--muted); font-size: 13px; margin-top: 28px; text-align: center; }
   @media (max-width: 600px) {
     h1 { font-size: 26px; }
@@ -98,12 +103,13 @@
 <header>
   <div class="eyebrow">helios-tests</div>
   <h1>How to run the Helios rack tests</h1>
-  <p>pytest automation for the AMD Helios full-rack scale-up test plan:
-     6 SONiC switch trays (2 ASICs each), 18 compute trays (4 GPUs each), with the AFM controller and the IFoE fabric.</p>
+  <p>How to run on a mini rack (MR3: 1 switch tray, 2 compute trays) and on a full rack (6 switch trays, 18 compute trays),
+     based on the MR3 runs and the g02-g17 full-rack execution log.</p>
   <nav class="toc">
-    <a href="#setup">Setup</a>
+    <a href="#setup">Common setup</a>
     <a href="#selftest">Without a rack</a>
-    <a href="#rack">On a real rack</a>
+    <a href="#mini">Mini rack (MR3)</a>
+    <a href="#full">Full rack</a>
     <a href="#select">Specific cases</a>
     <a href="#results">Results</a>
     <a href="#coverage">Coverage</a>
@@ -111,109 +117,133 @@
 </header>
 
 <section id="setup">
-  <h2><span class="num">0</span>Setup</h2>
-  <p>Run everything from the repo root. The machine you run from needs SSH access to every switch and compute in the inventory.
-     On a new machine (for example a lab host), create the virtualenv once:</p>
-  <div class="cmd"><pre>cd ~/dev/helios-tests
-python3 -m venv .venv
-.venv/bin/pip install -e '.[tools]'</pre></div>
+  <h2><span class="num">0</span>Common setup (once per runner machine)</h2>
+  <p>The runner needs SSH access to every switch and compute. It also needs <code>ipmitool</code>, but only for the DC power-cycle test (<code>brew install ipmitool</code>).</p>
+  <div class="cmd"><pre>cd ~/dev/helios-tests</pre></div>
+  <div class="cmd"><pre>python3 -m venv .venv &amp;&amp; .venv/bin/pip install -e &#x27;.[tools]&#x27;</pre></div>
+  <h3>Node requirements</h3>
+  <ul>
+    <li><strong>Passwordless sudo</strong> on switches and computes. Tests use <code>sudo -n</code>, so a sudo password makes those checks fail with "a password is required".</li>
+    <li><strong>Same tool paths on every compute</strong>: TransferBench, rccl-tests and RcclSmokeTest.</li>
+    <li><strong>NTP synced.</strong> MR3 is currently unsynced (c1 is 131 s off). That fails TC-CTL-035 and makes AFM event timing unreliable.</li>
+  </ul>
+  <h3>Passwords: enter them yourself in each new terminal</h3>
+  <p><code>read -s</code> shows nothing as you type and keeps the password out of shell history. Inventories only name the environment variables; no password is stored in a file.</p>
+  <div class="cmd"><pre>read -s &quot;HELIOS_SWITCH_PASSWORD?Switch password: &quot; &amp;&amp; export HELIOS_SWITCH_PASSWORD &amp;&amp; echo</pre></div>
+  <div class="cmd"><pre>read -s &quot;HELIOS_COMPUTE_PASSWORD?Compute password: &quot; &amp;&amp; export HELIOS_COMPUTE_PASSWORD &amp;&amp; echo</pre></div>
+  <p class="muted">Only needed for the DC power-cycle test:</p>
+  <div class="cmd"><pre>read -s &quot;HELIOS_BMC_PASSWORD?BMC password: &quot; &amp;&amp; export HELIOS_BMC_PASSWORD &amp;&amp; echo</pre></div>
+  <div class="note">
+    <strong>Scope today:</strong> the suite automates 85 tests (83 plan cases plus 2 RCCL smoke tests). They cover switch hardware, the switch agent, datapath, scale-out RDMA, RAS reset, the metrics exporter and node platform checks, all over SSH.
+    The AFM REST tranche (failover, vPOD, switch and compute lifecycle, AggWatch, reconfigure) isn't automated yet.
+  </div>
 </section>
 
 <section id="selftest">
   <h2><span class="num">1</span>Without a rack: check the framework</h2>
   <p>These use recorded SONiC and GPU outputs from <code>selftest/replay</code>, so no hardware is needed.</p>
-  <h3>Unit tests and the 48 injected-fault checks</h3>
-  <div class="cmd"><pre>.venv/bin/pytest unit</pre></div>
-  <h3>The whole suite against the recorded outputs</h3>
-  <div class="cmd"><pre>.venv/bin/pytest tests --inventory selftest/inventory.yaml</pre></div>
-  <p class="muted">Expected: <span class="pill ok">116 passed</span> <span class="pill">18 skipped</span>. Disruptive tests skip unless you allow them; every skip prints its reason.</p>
-  <h3>Including the disruptive tests (restarts, resets, reboots)</h3>
-  <div class="cmd"><pre>.venv/bin/pytest tests --inventory selftest/inventory.yaml --allow-disruptive</pre></div>
-  <p class="muted">Expected: <span class="pill ok">129 passed</span> <span class="pill">5 skipped</span>.</p>
+  <div class="cmd"><pre>.venv/bin/pytest unit -q</pre></div>
+  <div class="cmd"><pre>.venv/bin/pytest tests --inventory selftest/inventory.yaml --allow-disruptive -q</pre></div>
 </section>
 
-<section id="rack">
-  <h2><span class="num">2</span>On a real rack</h2>
+<section id="mini">
+  <h2><span class="num">2</span>Mini rack (MR3: 1 switch, 2 computes)</h2>
+  <p>The inventory <code>inventory/mr3.local.yaml</code> is git-ignored and holds no passwords. It's already calibrated from the two MR3 runs and the full-rack log:</p>
+  <div class="table-wrap">
+  <table>
+    <thead><tr><th>Area</th><th>Setting</th></tr></thead>
+    <tbody>
+      <tr><td>L2 ping</td><td><code>mode: afmctl</code>: accelerator IDs and LINK_UP ports are discovered at run time with <code>afmctl show device/port --json</code>. Nothing is hard-coded.</td></tr>
+      <tr><td>TransferBench</td><td><code>TransferBench a2a 1G</code> per tray. Cross-domain runs socket multi-rank (<code>TB_RANK</code> / <code>TB_MASTER_ADDR</code>), so the trays don't need to SSH to each other.</td></tr>
+      <tr><td>RCCL</td><td>rccl-tests <code>*_perf</code>, 1K to 1G, per tray. Cross-domain goes through <code>mpirun</code> and needs passwordless SSH from c1 to c2.</td></tr>
+      <tr><td>RCCL smoke</td><td>RcclSmokeTest with <code>NCCL_IB_DISABLE=1 NCCL_CUMEM_ENABLE=0 LD_LIBRARY_PATH=/opt/rocm/lib:/opt/rocm/lib/rocm_sysdeps/lib</code>. The full rack failed without these.</td></tr>
+      <tr><td>Switch (QFX5252)</td><td>CPLDs are matched by description; the "PDB HSC" power entries are exempt from the FRU and load-share checks; Ethernet513/514 are 100G uplinks.</td></tr>
+    </tbody>
+  </table>
+  </div>
+  <p>Run it in stages, and only move on when the previous stage is clean.</p>
 
-  <h3>Before you start</h3>
-  <ul>
-    <li><strong>SSH:</strong> the machine you run from must reach every switch and compute on port 22. To check without logging in:
-      <div class="cmd"><pre>nc -z -G 3 &lt;host&gt; 22 &amp;&amp; echo open</pre></div></li>
-    <li><strong>Passwordless sudo:</strong> tests use <code>sudo -n</code>, so the SSH user on switches and computes needs sudo without a password. Otherwise those checks fail with "a password is required".</li>
-    <li><strong>ipmitool on the runner</strong> is needed only for the DC power-cycle case (TC-RAS-reset-008):
-      <div class="cmd"><pre>brew install ipmitool</pre></div></li>
-  </ul>
+  <div class="stage">
+    <h3>Stage 1: read-only health (changes nothing)</h3>
+    <div class="cmd"><pre>.venv/bin/pytest tests --inventory inventory/mr3.local.yaml -m &quot;not stress&quot; -v --log-file=results/mr3-health.log</pre></div>
+    <div class="note">
+      <strong>Expected MR3 failures right now:</strong>
+      <ul>
+        <li><strong>TC-CTL-035:</strong> NTP isn't synced.</li>
+        <li><strong>TC-CTL-139 to 148:</strong> the metrics exporter isn't running.</li>
+        <li><strong>TC-SWH-030:</strong> 227 ports are up but not cabled. Set <code>expected_up_ports</code> in the inventory to clear it.</li>
+        <li><strong>TC-E2E-118:</strong> the topology-log path isn't confirmed.</li>
+      </ul>
+    </div>
+  </div>
 
+  <div class="stage">
+    <h3>Stage 2: datapath (sends traffic, changes no configuration)</h3>
+    <div class="cmd"><pre>.venv/bin/pytest tests/l1/test_rccl_smoke.py tests/l1/test_afm_datapath.py tests/hw/test_hw.py --inventory inventory/mr3.local.yaml -v --log-file=results/mr3-datapath.log</pre></div>
+    <p class="muted">It runs the RCCL smoke gate first, then L2 ping (ring pairs, about 30 s per ping), TransferBench, and the RCCL sweeps up to 1G.</p>
+  </div>
+
+  <div class="stage">
+    <h3>Stage 3: disruptive tests, one case at a time</h3>
+    <div class="cmd"><pre>.venv/bin/pytest tests --inventory inventory/mr3.local.yaml --allow-disruptive --tc TC-SWA-140 -v --log-file=results/mr3-disruptive.log</pre></div>
+    <p>Suggested order, from least to most disruptive:</p>
+    <ol>
+      <li>Container restart: <code>TC-SWA-140</code>.</li>
+      <li>SWSS restart: <code>TC-SWA-141</code>.</li>
+      <li>Datapath reset: <code>TC-RAS-reset-001</code>, <code>003</code>.</li>
+      <li>OS reboot: <code>TC-RAS-reset-007</code>.</li>
+      <li>DC power cycle: <code>TC-RAS-reset-008</code>.</li>
+    </ol>
+    <p class="muted">The IFoE driver tests (TC-AFM-LU-001, TC-HW-017) skip until a module name is set. The full-rack log only shows <code>amdgpu</code>, so ask AMD whether there's a separate IFoE module.</p>
+  </div>
+</section>
+
+<section id="full">
+  <h2><span class="num">3</span>Full rack (6 switches, 18 computes)</h2>
   <ol class="steps">
     <li>
-      <strong>Make your inventory.</strong> Files named <code>*.local.yaml</code> are git-ignored, so hosts and usernames stay out of the repo.
-      <div class="cmd"><pre>cp inventory/example-fullrack.yaml inventory/rack1.local.yaml</pre></div>
+      <strong>Create the inventory from the example:</strong>
+      <div class="cmd"><pre>cp inventory/example-fullrack.yaml inventory/fullrack.local.yaml</pre></div>
     </li>
     <li>
-      <strong>Edit <code>inventory/rack1.local.yaml</code>.</strong>
+      <strong>Edit it, using <code>mr3.local.yaml</code> as the model:</strong>
       <ul>
-        <li>Under <code>switches:</code> and <code>computes:</code>, set each <code>host:</code> to the real hostname or IP.</li>
-        <li>Under <code>defaults:</code>, set the SSH user, and either <code>key_file</code> or <code>password_env</code> for each node type. Never put a password itself in the file.</li>
-        <li>Fill in the <code>VERIFY</code> items: <code>commands.l2ping.cmd</code>, <code>commands.transferbench.in_domain</code> / <code>cross_domain</code>, <code>commands.rccl.cross_domain</code>, <code>commands.perftest.*</code>, <code>commands.ras.*</code>, <code>commands.ifoe.*</code> and <code>commands.metrics_exporter.run</code>.</li>
-        <li>For the scale-out RDMA cases, add <code>rdma:</code> ports to the two computes named in <code>commands.perftest.nodes</code>. For DC/AC power cycles, add <code>bmc:</code> / <code>pdu_outlet:</code>.</li>
-        <li>Set your pass limits under <code>thresholds:</code>, such as <code>expected_fans</code>, <code>expected_psus</code>, <code>psu_capacity_w</code> and the bandwidth floors.</li>
+        <li><strong>Hosts:</strong> 6 switches. On the g02-g17 rack, <code>.51</code>, <code>.50</code> and <code>.49</code> run the AFM controllers. Add the computes and their <code>bmc:</code> addresses.</li>
+        <li><strong>Users:</strong> set the user per node type. If one tray needs different credentials (like CT14 on g02-g17), give it its own <code>user</code> / <code>password_env</code> on its entry.</li>
+        <li><strong>Commands:</strong> copy MR3's <code>commands:</code> blocks (<code>l2ping</code>, <code>transferbench</code>, <code>rccl</code>, <code>rccl_smoke</code>), adjusting tool paths if they differ.</li>
+        <li><strong>Thresholds,</strong> set from the full-rack log:
+          <ul>
+            <li><code>expected_up_ports</code> per switch: list each switch's known-down ports, such as <code>.48</code> Eth243/251 and <code>.51</code> Eth97/99.</li>
+            <li><code>datapath.parallel_computes: true</code>, <code>datapath.parallel_pairs: false</code>.</li>
+            <li><code>l2ping.pairs: ring</code>. A full mesh took about 10 minutes per compute when run serially.</li>
+          </ul>
+        </li>
       </ul>
-      <div class="note">Until a <code>VERIFY</code> command is set, the tests that need it skip and name the missing setting. They never guess a command.</div>
-      <p>A minimal inventory for a mini rack (1 switch tray, 2 compute trays) looks like this:</p>
-      <div class="cmd"><pre>rack: mini1
-transport: {kind: ssh}
-defaults:
-  switch:  {user: admin,     password_env: HELIOS_SWITCH_PASSWORD}
-  compute: {user: labadmin,  password_env: HELIOS_COMPUTE_PASSWORD, gpus: 4}
-switches:
-  - {name: st1, host: 10.0.0.83}
-computes:
-  - {name: c1, host: 10.0.0.81, bmc: 10.0.0.82}
-  - {name: c2, host: 10.0.0.86, bmc: 10.0.0.87}
-commands:
-  ras:
-    # -E makes ipmitool read $IPMI_PASSWORD, so the password never appears on a command line
-    dc_cycle: 'IPMI_PASSWORD="$HELIOS_BMC_PASSWORD" ipmitool -I lanplus -H {bmc} -U bmcuser -E chassis power cycle'
-thresholds:
-  switch: {expect_all_admin_up: false}</pre></div>
     </li>
     <li>
-      <strong>Enter the passwords in your own terminal.</strong> <code>read -s</code> (zsh) shows nothing as you type and keeps the password out of shell history. Set only the ones your inventory names.
-      <div class="cmd"><pre>read -s "HELIOS_SWITCH_PASSWORD?Switch password: " &amp;&amp; export HELIOS_SWITCH_PASSWORD &amp;&amp; echo</pre></div>
-      <div class="cmd"><pre>read -s "HELIOS_COMPUTE_PASSWORD?Compute password: " &amp;&amp; export HELIOS_COMPUTE_PASSWORD &amp;&amp; echo</pre></div>
-      <div class="cmd"><pre>read -s "HELIOS_BMC_PASSWORD?BMC password: " &amp;&amp; export HELIOS_BMC_PASSWORD &amp;&amp; echo</pre></div>
-      <p class="muted">In bash, use <code>read -s -p "Switch password: " HELIOS_SWITCH_PASSWORD</code> instead.</p>
+      <strong>Run the same three stages</strong> with <code>--inventory inventory/fullrack.local.yaml</code>. Try one switch and two computes before the whole rack:
+      <div class="cmd"><pre>.venv/bin/pytest tests --inventory inventory/fullrack.local.yaml --switches sw1 --computes c01,c02 -m &quot;not stress&quot; -v</pre></div>
     </li>
     <li>
-      <strong>First run: read-only.</strong> Disruptive tests skip by default, and <code>-m "not stress"</code> also leaves out the CPU-load test. Nothing on the rack changes.
-      <div class="cmd"><pre>.venv/bin/pytest tests --inventory inventory/rack1.local.yaml -m "not stress" -v --log-file=results/first-run.log</pre></div>
-      <p class="muted"><code>--log-file</code> records every SSH command, its output, exit code and duration. Passwords are never logged.</p>
-      <div class="note">
-        <strong>What to expect on a first run:</strong>
-        <ul>
-          <li><strong>Real results:</strong> switch hardware, switch agent, HW-002, NTP/DNS/log checks, and the metrics exporter if it's already running.</li>
-          <li><strong>Skips with a reason:</strong> anything whose <code>VERIFY</code> command isn't set yet (datapath, RDMA, IFoE, RAS).</li>
-          <li><strong>Calibration failures:</strong> expected counts (fans, PSUs, LLDP neighbours, ASIC namespaces) and output formats that differ on this rack. Fix them in the inventory, not in the tests.</li>
-        </ul>
+      <strong>Before the disruptive stage,</strong> keep in mind what the full-rack log showed:
+      <div class="table-wrap">
+      <table>
+        <thead><tr><th>Risk</th><th>What to do</th></tr></thead>
+        <tbody>
+          <tr><td>Compute trays CT15/CT16 hung during TransferBench ("Copy (D2D) (Remote Write)")</td><td>Run datapath on a subset first (<code>--computes</code>); have BMC access ready.</td></tr>
+          <tr><td>Shutting some switch ports also drops a neighbour (.48 Eth243/251, .50 Eth170/162)</td><td>Avoid those ports in link-flap tests.</td></tr>
+          <tr><td>Switch delete/readmit leaves vPOD planes stale</td><td>Expect TC-AFM-026/033-type failures until fixed; a vPOD Reconcile recovers.</td></tr>
+          <tr><td>After mass <code>afm-agent</code> restarts the vPOD is briefly <code>configurationfailed</code> and slots move between switches</td><td>Allow 1–2 min before judging; readmit can take 124–134 s (use at least 300 s).</td></tr>
+          <tr><td>Any failure</td><td>Collect evidence before recovering: the <code>--log-file</code> output, plus <code>/opt/amd/afm/{controller,agent}/logs</code> and techsupport. That's the policy the full-rack team followed.</td></tr>
+        </tbody>
+      </table>
       </div>
     </li>
-    <li>
-      <strong>Then widen the run.</strong> Start small with one switch and two computes, then the full L1 suite:
-      <div class="cmd"><pre>.venv/bin/pytest tests --inventory inventory/rack1.local.yaml --switches st1 --computes c1,c2 -v</pre></div>
-      <div class="cmd"><pre>.venv/bin/pytest tests -m l1 --inventory inventory/rack1.local.yaml --log-file=results/run.log</pre></div>
-    </li>
-    <li>
-      <strong>Disruptive tests last,</strong> once the read-only run is clean. These restart services, reset devices, reload drivers, reboot nodes or power-cycle them:
-      <div class="cmd"><pre>.venv/bin/pytest tests --inventory inventory/rack1.local.yaml --allow-disruptive --tc TC-SWA-140 -v</pre></div>
-      <p class="muted">Pick one case at a time with <code>--tc</code> at first; a power cycle takes a node away for several minutes.</p>
-    </li>
   </ol>
-  <h3>Skip passing <code>--inventory</code> every time</h3>
-  <div class="cmd"><pre>export HELIOS_INVENTORY=inventory/rack1.local.yaml</pre></div>
 </section>
 
 <section id="select">
-  <h2><span class="num">3</span>Running specific cases</h2>
+  <h2><span class="num">4</span>Running specific cases</h2>
   <div class="table-wrap">
   <table>
     <thead><tr><th>What you want</th><th>Add this</th></tr></thead>
@@ -221,21 +251,21 @@ thresholds:
       <tr><td>Specific plan IDs</td><td><code>--tc TC-SWH-002,TC-AFM-001</code></td></tr>
       <tr><td>Part of the rack</td><td><code>--switches sw1,sw2</code> / <code>--computes c01,c02</code></td></tr>
       <tr><td>Switch hardware tests only</td><td><code>tests/l1/test_switch_hw.py</code></td></tr>
-      <tr><td>Datapath tests only (ping, TransferBench, RCCL)</td><td><code>tests/l1/test_afm_datapath.py</code></td></tr>
-      <tr><td>Metrics exporter / platform / IFoE driver only</td><td><code>tests/telemetry</code> / <code>tests/platform</code> / <code>tests/ifoe</code></td></tr>
+      <tr><td>Datapath tests only (L2 ping, TransferBench, RCCL)</td><td><code>tests/l1/test_afm_datapath.py</code> and <code>tests/l1/test_rccl_smoke.py</code></td></tr>
       <tr><td>Switch agent / hardware / RDMA / RAS only</td><td><code>tests/switch</code> / <code>tests/hw</code> / <code>tests/scaleout</code> / <code>tests/ras</code></td></tr>
+      <tr><td>Metrics exporter / platform / IFoE driver only</td><td><code>tests/telemetry</code> / <code>tests/platform</code> / <code>tests/ifoe</code></td></tr>
       <tr><td>By level or marker</td><td><code>-m l1</code> / <code>-m "l1 and not stress"</code></td></tr>
       <tr><td>Tests that restart services, reset devices, reload drivers or reboot</td><td><code>--allow-disruptive</code></td></tr>
       <tr><td>Manual tests (e.g. the TC-SWH-009 heat test)</td><td><code>--run-manual</code></td></tr>
     </tbody>
   </table>
   </div>
-  <h3>Example: only the PSU checks on two switches</h3>
-  <div class="cmd"><pre>.venv/bin/pytest tests --tc TC-SWH-018,TC-SWH-019,TC-SWH-021 --switches sw1,sw2</pre></div>
+  <p class="muted">To avoid passing <code>--inventory</code> every time:</p>
+  <div class="cmd"><pre>export HELIOS_INVENTORY=inventory/mr3.local.yaml</pre></div>
 </section>
 
 <section id="results">
-  <h2><span class="num">4</span>Results</h2>
+  <h2><span class="num">5</span>Results (both racks)</h2>
   <p>Each run creates a folder <code>results/&lt;rack&gt;-&lt;timestamp&gt;/</code> with two files:</p>
   <div class="table-wrap">
   <table>
@@ -246,24 +276,16 @@ thresholds:
     </tbody>
   </table>
   </div>
+  <p>The <code>--log-file</code> records every command, its output, exit code and duration. Passwords are never logged.</p>
+  <p class="muted">Execution results also go into <code>testplan/HPE_AMD Helios Juniper ScaleUp TestPlan.xlsx</code>: Execution Status, SW Version and Execution Notes on the Testcases sheet, plus the Execution Summary sheet.</p>
+  <div class="note warn"><strong>Not runnable yet:</strong> the AFM L2 tranche. It needs the AFM endpoint and user for each rack, plus <code>HELIOS_AFM_PASSWORD</code> set the same way as the other passwords.</div>
 </section>
 
 <section id="coverage">
-  <h2><span class="num">5</span>Coverage: automated vs. missing</h2>
-  <h3>Per-category table</h3>
+  <h2><span class="num">6</span>Coverage: automated vs. missing</h2>
   <div class="cmd"><pre>.venv/bin/python tools/coverage.py</pre></div>
-  <h3>Plus every unautomated case, saved to a file</h3>
   <div class="cmd"><pre>.venv/bin/python tools/coverage.py --missing &gt; results/missing.txt</pre></div>
-  <div class="table-wrap">
-  <table>
-    <thead><tr><th>Column / output</th><th>Meaning</th></tr></thead>
-    <tbody>
-      <tr><td><code>automated</code></td><td>How many of that category's cases have a test (a <code>@pytest.mark.tc</code> tag).</td></tr>
-      <tr><td><code>total</code></td><td>How many cases the plan has in that category.</td></tr>
-      <tr><td>List after the table</td><td>Only with <code>--missing</code>: every case that has <strong>no test yet</strong>, with its ID, level and title.</td></tr>
-    </tbody>
-  </table>
-  </div>
+  <p class="muted"><code>automated</code> = cases with a <code>@pytest.mark.tc</code> test; <code>total</code> = cases in the plan; <code>--missing</code> lists every case with no test yet.</p>
 </section>
 
 <footer>helios-tests · see README.md for layout, calibration notes and how to add tests</footer>
