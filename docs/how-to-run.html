@@ -112,6 +112,7 @@
     <a href="#full">Full rack</a>
     <a href="#select">Specific cases</a>
     <a href="#results">Results</a>
+    <a href="#report">HTML report</a>
     <a href="#coverage">Coverage</a>
   </nav>
 </header>
@@ -147,6 +148,8 @@
   <p>These use recorded SONiC and GPU outputs from <code>selftest/replay</code>, so no hardware is needed.</p>
   <div class="cmd"><pre>.venv/bin/pytest unit -q</pre></div>
   <div class="cmd"><pre>.venv/bin/pytest tests --inventory selftest/inventory.yaml --allow-disruptive -q</pre></div>
+  <p class="muted">Expected: <span class="pill ok">90 unit tests</span>, including 67 injected-fault cases, and
+     <span class="pill ok">141 passed</span> <span class="pill">5 skipped</span> for the replayed suite.</p>
 </section>
 
 <section id="mini">
@@ -226,7 +229,7 @@
         <li><strong>Commands:</strong> copy MR3's <code>commands:</code> blocks (<code>l2ping</code>, <code>transferbench</code>, <code>rccl</code>, <code>rccl_smoke</code>), adjusting tool paths if they differ.</li>
         <li><strong>Thresholds,</strong> set from the full-rack log:
           <ul>
-            <li><code>expected_up_ports</code> per switch: list each switch's known-down ports, such as <code>.48</code> Eth243/251 and <code>.51</code> Eth97/99.</li>
+            <li><code>switch.expected_up_ports: described</code>: every port with a cabling description must be up. Then list accepted exceptions, such as the known-down <code>.48</code> Eth243/251 and <code>.51</code> Eth97/99, under <code>datapath.known_down_ports</code>, or fix them.</li>
             <li><code>datapath.parallel_computes: true</code>, <code>datapath.parallel_pairs: false</code>.</li>
             <li><code>l2ping.pairs: ring</code>. A full mesh took about 10 minutes per compute when run serially.</li>
           </ul>
@@ -267,6 +270,7 @@
       <tr><td>Datapath tests only (L2 ping, TransferBench, RCCL)</td><td><code>tests/l1/test_afm_datapath.py</code> and <code>tests/l1/test_rccl_smoke.py</code></td></tr>
       <tr><td>Switch agent / hardware / RDMA / RAS only</td><td><code>tests/switch</code> / <code>tests/hw</code> / <code>tests/scaleout</code> / <code>tests/ras</code></td></tr>
       <tr><td>Metrics exporter / platform / IFoE driver only</td><td><code>tests/telemetry</code> / <code>tests/platform</code> / <code>tests/ifoe</code></td></tr>
+      <tr><td>Sideband bring-up and IFCP (agents, sessions, cabling vs topology)</td><td><code>tests/sideband</code></td></tr>
       <tr><td>By level or marker</td><td><code>-m l1</code> / <code>-m "l1 and not stress"</code></td></tr>
       <tr><td>Tests that restart services, reset devices, reload drivers or reboot</td><td><code>--allow-disruptive</code></td></tr>
       <tr><td>Manual tests (e.g. the TC-SWH-009 heat test)</td><td><code>--run-manual</code></td></tr>
@@ -279,13 +283,14 @@
 
 <section id="results">
   <h2><span class="num">5</span>Results (both racks)</h2>
-  <p>Each run creates a folder <code>results/&lt;rack&gt;-&lt;timestamp&gt;/</code> with two files:</p>
+  <p>Each run creates a folder <code>results/&lt;rack&gt;-&lt;timestamp&gt;/</code> containing:</p>
   <div class="table-wrap">
   <table>
     <thead><tr><th>File</th><th>Contents</th></tr></thead>
     <tbody>
-      <tr><td><code>tc_summary.csv</code></td><td>One PASS / FAIL / SKIP / PARTIAL verdict per plan ID.</td></tr>
-      <tr><td><code>tc_results.csv</code></td><td>One row per test, with the failure message and measured values such as bandwidth and bus bandwidth.</td></tr>
+      <tr><td><code>tc_summary.csv</code></td><td>One PASS / FAIL / BLOCKED / SKIP / PARTIAL verdict per plan ID. BLOCKED means the datapath pre-flight refused to start traffic.</td></tr>
+      <tr><td><code>tc_results.csv</code></td><td>One row per test item: suite, test, description, outcome, duration, start time, failure message, measured values, and the path to its log.</td></tr>
+      <tr><td><code>logs/NNN_&lt;test&gt;.log</code></td><td>The command trace of that one test: every command, its output, exit code and timing.</td></tr>
     </tbody>
   </table>
   </div>
@@ -294,8 +299,26 @@
   <div class="note warn"><strong>Not runnable yet:</strong> the AFM L2 tranche. It needs the AFM endpoint and user for each rack, plus <code>HELIOS_AFM_PASSWORD</code> set the same way as the other passwords.</div>
 </section>
 
+<section id="report">
+  <h2><span class="num">6</span>HTML report (summary + per-test logs)</h2>
+  <p>Build one self-contained HTML page from one or more runs. When runs are merged, a test that actually ran wins over one that was skipped:</p>
+  <div class="cmd"><pre>.venv/bin/python tools/html_report.py results/&lt;run-A&gt; results/&lt;run-B&gt; -o results/report.html --title &quot;Helios MR3 Test Report&quot; --subtitle &quot;rack, versions&quot; --notes results/findings.txt</pre></div>
+  <div class="table-wrap">
+  <table>
+    <thead><tr><th>Part of the page</th><th>Contents</th></tr></thead>
+    <tbody>
+      <tr><td>Dashboard</td><td>Banner (rack, runs, times, executed result), counts (cases, passed, failed, blocked, skipped, items), result doughnut, per-suite bar chart</td></tr>
+      <tr><td>Key findings</td><td>From <code>--notes</code>: one finding per line. Start a line with <code>!</code> for a problem or <code>+</code> for good news.</td></tr>
+      <tr><td>Run summary</td><td>One row per suite with counts, duration and result, linking to its section, plus expand/collapse-all buttons</td></tr>
+      <tr><td>Suite sections</td><td>One row per test: plan ID, test, description, duration, status. Each has a collapsible log with the failure message, measurements and the full colour-coded command trace.</td></tr>
+    </tbody>
+  </table>
+  </div>
+  <p class="muted">The charts load Chart.js from a public CDN, so they need internet access. Reports contain lab hostnames and IPs, so keep them in the git-ignored <code>results/</code> folder.</p>
+</section>
+
 <section id="coverage">
-  <h2><span class="num">6</span>Coverage: automated vs. missing</h2>
+  <h2><span class="num">7</span>Coverage: automated vs. missing</h2>
   <div class="cmd"><pre>.venv/bin/python tools/coverage.py</pre></div>
   <div class="cmd"><pre>.venv/bin/python tools/coverage.py --missing &gt; results/missing.txt</pre></div>
   <p class="muted"><code>automated</code> = cases with a <code>@pytest.mark.tc</code> test; <code>total</code> = cases in the plan; <code>--missing</code> lists every case with no test yet.</p>
