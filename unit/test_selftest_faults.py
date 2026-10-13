@@ -85,7 +85,7 @@ def _edit_rule(replay: Path, cmd_fragment: str, **changes):
 
 def test_healthy_rack_passes(tmp_path):
     verdicts = _run(tmp_path)
-    failed = {k: v for k, v in verdicts.items() if v in ("FAIL", "PARTIAL")}
+    failed = {k: v for k, v in verdicts.items() if v in ("FAIL", "PARTIAL", "BLOCKED")}
     assert not failed, failed
     assert verdicts["TC-SWH-002"] == "PASS"
     assert verdicts["TC-AFM-004"] == "PASS"
@@ -239,7 +239,7 @@ FAULTS = {
 def test_fault_is_detected(tmp_path, fault):
     mutate, must_fail = FAULTS[fault]
     verdicts = _run(tmp_path, mutate)
-    failed = {k for k, v in verdicts.items() if v in ("FAIL", "PARTIAL")}
+    failed = {k for k, v in verdicts.items() if v in ("FAIL", "PARTIAL", "BLOCKED")}
     assert must_fail <= failed, f"{fault}: expected {sorted(must_fail)} to fail, failed={sorted(failed)}"
     unexpected = failed - must_fail
     assert not unexpected, f"{fault}: collateral failures {sorted(unexpected)}"

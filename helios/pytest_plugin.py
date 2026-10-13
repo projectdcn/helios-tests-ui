@@ -154,10 +154,14 @@ def pytest_runtest_makereport(item, call):
             msg = rep.longreprtext.strip()[:2000]
         elif rep.skipped and isinstance(rep.longrepr, tuple):
             msg = rep.longrepr[2]
+        outcome = rep.outcome
+        if rep.when == "setup" and rep.failed:
+            # the datapath pre-flight refused to start traffic: not a test failure, the fabric is broken
+            outcome = "blocked" if "datapath pre-flight failed" in (rep.longreprtext or "") else "error"
         item.config._helios_reports.append({
             "tc_id": tc_id(item) or "",
             "nodeid": item.nodeid,
-            "outcome": "error" if rep.when == "setup" and rep.failed else rep.outcome,
+            "outcome": outcome,
             "duration_s": round(rep.duration, 2),
             "properties": json.dumps(dict(item.user_properties)) if item.user_properties else "",
             "message": msg,
@@ -181,13 +185,14 @@ def pytest_sessionfinish(session):
         by_tc[r["tc_id"] or "(untagged)"].append(r["outcome"])
     with open(out / "tc_summary.csv", "w", newline="") as f:
         w = csv.writer(f)
-        w.writerow(["tc_id", "verdict", "passed", "failed", "skipped", "error"])
+        w.writerow(["tc_id", "verdict", "passed", "failed", "skipped", "error", "blocked"])
         for tc, outs in sorted(by_tc.items()):
-            n = {k: outs.count(k) for k in ("passed", "failed", "skipped", "error")}
+            n = {k: outs.count(k) for k in ("passed", "failed", "skipped", "error", "blocked")}
             verdict = ("FAIL" if n["failed"] or n["error"] else
+                       "BLOCKED" if n["blocked"] else
                        "PASS" if n["passed"] and not n["skipped"] else
                        "SKIP" if not n["passed"] else "PARTIAL")
-            w.writerow([tc, verdict, n["passed"], n["failed"], n["skipped"], n["error"]])
+            w.writerow([tc, verdict, n["passed"], n["failed"], n["skipped"], n["error"], n["blocked"]])
     session.config._helios_results_dir = out
 
 
