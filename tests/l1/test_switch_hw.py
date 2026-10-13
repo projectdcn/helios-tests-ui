@@ -498,12 +498,17 @@ def test_multi_asic_namespaces(switch, inventory, checks):
 # ------------------------------------------------------------- interfaces
 
 def _expected_up(inventory, switch):
-    """``switch.expected_up_ports``: list of port names, or a regex string, for the ports that
-    are actually cabled (a mini rack leaves most fabric ports admin-up but unconnected).
+    """``switch.expected_up_ports``: "described" (ports with a cabling description), a list of port
+    names, or a regex string, for the ports that are actually cabled (a mini rack leaves most fabric ports admin-up but unconnected).
     Per-switch override: ``expected_up_ports`` on the switch's inventory entry."""
     spec = switch.host.extra.get("expected_up_ports", inventory.th("switch.expected_up_ports"))
     if spec is None:
         return None
+    if spec == "described":
+        # a port with a CONFIG_DB cabling description ('To ComputeTray Slot../GPU..[..]/Port..') is cabled;
+        # on MR3 these are exactly the GPU-facing ports, unused ports carry no description
+        described = {p for ns in switch.namespaces() for p, d in switch.port_descriptions(ns).items() if d}
+        return lambda port: port in described
     if isinstance(spec, str):
         rx = re.compile(spec)
         return lambda port: bool(rx.fullmatch(port))

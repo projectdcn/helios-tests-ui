@@ -1,3 +1,3 @@
-1760000000.5 20480 /var/log/pensando/toposvc.log
-1759990000.1 1048576 /var/log/pensando/toposvc.log.1
+1760000000.5 20480 /opt/amd/afm/controller/logs/pen-afm-core-pod-1/toposvc.log
+1759990000.1 1048576 /opt/amd/afm/controller/logs/pen-afm-core-pod-1/toposvc-2026-10-12T19-11-22.142.log.gz
 1760003600

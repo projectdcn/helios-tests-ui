@@ -313,8 +313,8 @@ add("cat /etc/logrotate.conf /etc/logrotate.d/* 2>/dev/null",
 add("systemctl is-active logrotate.timer", "active\n", host=SW)
 add("ls /etc/cron.d /etc/cron.daily /etc/cron.hourly 2>/dev/null", "/etc/cron.d:\n", host=SW)
 add("df --output=pcent /var/log | tail -1", " 23%\n", host=SW)
-add(r"^find /var/log/pensando ", "1760000000.5 20480 /var/log/pensando/toposvc.log\n"
-    "1759990000.1 1048576 /var/log/pensando/toposvc.log.1\n1760003600\n", name="topo_find.txt", host=SW, regex=True)
+add(r"^find /opt/amd/afm/controller/logs ", "1760000000.5 20480 /opt/amd/afm/controller/logs/pen-afm-core-pod-1/toposvc.log\n"
+    "1759990000.1 1048576 /opt/amd/afm/controller/logs/pen-afm-core-pod-1/toposvc-2026-10-12T19-11-22.142.log.gz\n1760003600\n", name="topo_find.txt", host=SW, regex=True)
 add("ip -o link show", """1: lo: <LOOPBACK,UP,LOWER_UP> mtu 65536 qdisc noqueue state UNKNOWN mode DEFAULT group default qlen 1000\\    link/loopback 00:00:00:00:00:00 brd 00:00:00:00:00:00
 2: eth0: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc mq state UP mode DEFAULT group default qlen 1000\\    link/ether aa:bb:cc:00:11:22 brd ff:ff:ff:ff:ff:ff
 3: eth1: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc mq state UP mode DEFAULT group default qlen 1000\\    link/ether aa:bb:cc:00:11:23 brd ff:ff:ff:ff:ff:ff

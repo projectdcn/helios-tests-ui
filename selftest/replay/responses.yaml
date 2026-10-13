@@ -607,7 +607,7 @@
   stdout: ' 23%
 
     '
-- cmd: '^find /var/log/pensando '
+- cmd: '^find /opt/amd/afm/controller/logs '
   rc: 0
   host: ^sw
   file: topo_find.txt

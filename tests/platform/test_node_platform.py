@@ -99,14 +99,18 @@ def test_switch_log_rotation(switch, inventory, checks):
 
 @pytest.mark.tc("TC-E2E-118")
 def test_topology_logs_present_and_fresh(rack, inventory, checks):
-    """Topology-service logs exist under ``platform.topo_log_dir`` (default /var/log/pensando)
-    on the controller nodes, and the newest was written within ``platform.topo_log_max_age_h``."""
-    d = inventory.th("platform.topo_log_dir", "/var/log/pensando")
+    """Topology-service logs exist on the controller nodes and the newest was written within
+    ``platform.topo_log_max_age_h``. Searched under ``platform.topo_log_dir`` (str or list); default:
+    the AFM controller log dir (current builds: .../pen-afm-core-pod-1/toposvc.log) and the
+    /var/log/pensando path named in the plan."""
+    dirs = inventory.th("platform.topo_log_dir") or ["/opt/amd/afm/controller/logs", "/var/log/pensando"]
+    dirs = [dirs] if isinstance(dirs, str) else list(dirs)
+    d = " ".join(shlex.quote(x) for x in dirs)
     pattern = inventory.th("platform.topo_log_glob", "*topo*")
     max_age = float(inventory.th("platform.topo_log_max_age_h", 24)) * 3600
 
     def probe(n):
-        out = n.run(f"find {shlex.quote(d)} -maxdepth 2 -type f -name {shlex.quote(pattern)} -printf '%T@ %s %p\\n'; date +%s",
+        out = n.run(f"find {d} -maxdepth 2 -type f -name {shlex.quote(pattern)} -printf '%T@ %s %p\\n' 2>/dev/null; date +%s",
                     sudo=True).stdout.split("\n")
         now = float(out[-2] if out[-1] == "" else out[-1])
         files = [ln.split(" ", 2) for ln in out if ln.count(" ") >= 2]
@@ -117,7 +121,7 @@ def test_topology_logs_present_and_fresh(rack, inventory, checks):
             checks.fail(f"{n.name}: {exc}")
             continue
         now, files = res
-        if not checks.check(files, f"{n.name}: no {pattern} files under {d}"):
+        if not checks.check(files, f"{n.name}: no {pattern} files under {', '.join(dirs)}"):
             continue
         newest = max(files)
         checks.check(now - newest[0] <= max_age, f"{n.name}: newest topo log {newest[2]} is "

@@ -169,7 +169,7 @@ thresholds:
     psu_input_type: null                    # AC | DC
     cpu_stress_s: 60
     expect_all_admin_up: false              # MCH racks leave unused ports disabled
-    expected_up_ports: null                 # TC-SWH-030: list or regex of cabled ports (mini racks); per-switch override allowed
+    expected_up_ports: null                 # TC-SWH-030: "described" (recommended), a list, or a regex of cabled ports
     psu_identity_exempt_re: null            # e.g. "^PDB HSC" on busbar-fed trays (no FRU model/serial)
     psu_load_balance: true                  # false where supplies don't load-share (busbar main/standby HSC)
     expected_lldp_neighbors: null
@@ -195,7 +195,7 @@ thresholds:
     max_clock_skew_s: 2                     # TC-CTL-035
     dns_names: []                           # TC-CTL-059 (default: the afm.url hostname)
     var_log_max_used_pct: 80                # TC-BUG-022
-    topo_log_dir: /var/log/pensando         # TC-E2E-118
+    topo_log_dir: null                      # TC-E2E-118 (default: /opt/amd/afm/controller/logs, /var/log/pensando)
     topo_log_glob: "*topo*"
     topo_log_max_age_h: 24
     reboot_switch: null                     # TC-BUG-021 (default: first switch)
