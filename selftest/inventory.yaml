@@ -31,6 +31,14 @@ computes:
 
 afm:
   url: https://helios-afm.lab.example
+  fake: true            # tests/afm run against selftest/fake_afm.py (in-process HTTPS + WebSocket)
+  fake_faults: []
+  verify_tls: false
+  auth:
+    kind: session
+    username: admin
+    password: selftest-admin-pw   # fake controller only
+    tenant: default
 
 commands:
   ifoe:
@@ -63,6 +71,9 @@ commands:
     ac_cycle: "pdu-ctl cycle {pdu_outlet}"
 
 thresholds:
+  afm:                  # short timings for the fake controller
+    quorum_members: 1
+    aggwatch: {event_wait_s: 5, settle_s: 0.5, quiet_s: 2, idle_s: 3, cycles: 5, burst: 10, concurrent: 3, no_options_s: 5}
   switch:
     expected_fans: 4
     expected_psus: 2

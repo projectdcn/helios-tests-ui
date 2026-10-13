@@ -12,7 +12,7 @@ helios/                 framework
   transport.py          SSH (paramiko) + replay transport (canned outputs)
   sonic.py              SONiC switch driver (multi-ASIC: -n asicN, sonic-db-cli)
   compute.py            compute-tray driver + command-template rendering
-  afm.py                AFM REST client (endpoint map comes from inventory)
+  afm.py                AFM REST + AggWatch WebSocket client, request log (secrets redacted), rack_health()
   parsers.py            SONiC tables, sonic-db-cli, rccl-tests, TransferBench, perftest, Prometheus
   datapath.py           shared workloads: L2 ping (afmctl discovery), TransferBench (multi-rank), RCCL
   afmctl.py             afmctl JSON/ping parsers (device, port, IFCP, accelerator-addr)
@@ -31,8 +31,10 @@ tests/                  rack tests, each tagged @pytest.mark.tc("TC-...")
   platform/             NTP, DNS, log rotation, topo logs, OOB names across reboot
   ifoe/                 IFoE driver unload/reload (TC-AFM-LU-001, TC-HW-017)
   sideband/             sideband bring-up + IFCP (TC-BU, TC-SEQ-006, TC-SBM-062, TC-E2E-062)
+  afm/                  AFM controller API: auth, cluster/objects, policies, RBAC, audit, metrics,
+                        techsupport, AggWatch, compute Reconfigure (TC-AFM-*, TC-CTL-*, TC-AFM-AGGW-*)
 unit/                   offline tests + fault-injection self-test (no rack needed)
-selftest/               replay inventory + canned outputs (make_replay.py)
+selftest/               replay inventory + canned outputs (make_replay.py); fake_afm.py (HTTPS+WS AFM)
 inventory/              example-fullrack.yaml (copy to *.local.yaml)
 testplan/manifest.yaml  all 542 plan cases, normalized (tools/import_testplan.py)
 tools/coverage.py       automated vs. total, per category
@@ -55,9 +57,9 @@ These use recorded SONiC and GPU outputs from `selftest/replay`, so no hardware
 is needed.
 
 ```bash
-.venv/bin/pytest unit                                                       # unit tests + 67 injected-fault checks
-.venv/bin/pytest tests --inventory selftest/inventory.yaml                  # 128 pass, 18 skip (disruptive skipped)
-.venv/bin/pytest tests --inventory selftest/inventory.yaml --allow-disruptive   # 141 pass, 5 skip
+.venv/bin/pytest unit                                                       # unit tests + 67 L1 + 16 AFM injected-fault checks
+.venv/bin/pytest tests --inventory selftest/inventory.yaml                  # 187 pass, 23 skip (disruptive skipped)
+.venv/bin/pytest tests --inventory selftest/inventory.yaml --allow-disruptive   # 205 pass, 5 skip
 ```
 
 ### 2. On a real rack
@@ -116,6 +118,20 @@ To avoid passing `--inventory` every time, set it once:
 export HELIOS_INVENTORY=inventory/rack1.local.yaml
 ```
 
+**AFM controller API (`tests/afm`).** Set the `afm:` section of the inventory
+(`url`, `auth.username`, `auth.password_env`, `tenant`), then export the password
+in the same terminal:
+
+```bash
+read -s HELIOS_AFM_PASSWORD && export HELIOS_AFM_PASSWORD
+.venv/bin/pytest tests/afm --inventory inventory/mr3.local.yaml -v
+```
+
+Without the password, only the unauthenticated cases run; the rest SKIP. The
+tests create throw-away `helios-*` objects and delete them afterwards.
+Reconfigure and switch drain/decommission cases are `disruptive`, and each
+first checks AFM health (BLOCKED if AFM is unhealthy).
+
 ### 3. Running specific cases
 
 | What you want | Add this |
@@ -126,6 +142,7 @@ export HELIOS_INVENTORY=inventory/rack1.local.yaml
 | Datapath tests only (ping, TransferBench, RCCL) | `tests/l1/test_afm_datapath.py` |
 | Switch agent / hardware / RDMA / RAS only | `tests/switch` / `tests/hw` / `tests/scaleout` / `tests/ras` |
 | Metrics exporter / platform / IFoE driver only | `tests/telemetry` / `tests/platform` / `tests/ifoe` |
+| AFM controller API only | `tests/afm` |
 | By level or marker | `-m l1` / `-m "l1 and not stress"` |
 | Tests that restart services, reset devices, reload drivers or reboot | `--allow-disruptive` |
 | Manual tests (e.g. the TC-SWH-009 heat test) | `--run-manual` |
@@ -176,7 +193,7 @@ The table has one row per category:
 `--missing` also lists every case that has **no test yet**, with its ID, level
 and title.
 
-## Coverage (92 of 542 cases)
+## Coverage (156 of 542 cases)
 
 * **TC-SWH-001…036, switch hardware.** Firmware, fans, PSUs, platform/EEPROM,
   multi-ASIC namespaces, interface state/speed/MTU, error-counter deltas,
@@ -232,6 +249,22 @@ and title.
     healthy, every config request applied.
   * **TC-BU-003 / TC-SBM-062 / TC-E2E-062 IFCP:** IFCP sessions up and bidirectional;
     each GPU port's IFCP-discovered switch peer matches the registered cabling.
+
+* **AFM controller API (`tests/afm`).**
+  * **Auth.** Login, cookie flags (Secure, HttpOnly, SameSite=Strict), 401 without a session, invalid-request envelopes.
+  * **Cluster and objects.** Quorum health, switch and compute specs (GPUs Ready, unique acc-ids, ports),
+    pod and vPOD specs.
+  * **Failover policies.** System policy defaults, CRUD, and the missing-threshold and non-existent cases.
+  * **vPOD name rules.** `.system` names and duplicate names are rejected.
+  * **RBAC.** Cluster, auth, monitoring and workload roles; bad-login counting; read-only users get 403 on Reconfigure.
+  * **Audit, metrics, techsupport.** Audit events for CRUD and login, Cluster and SwitchPortStats metrics,
+    and techsupport bundles.
+  * **AggWatch WebSocket (28 cases).** Auth and expired sessions, single and multi-kind watches,
+    Created/Updated/Deleted events, RBAC filtering and a role revoked mid-stream, CSWSH origin,
+    no or malformed watch options, idle, concurrent connections, reconnect, 50 connect cycles, and a burst of 100 events.
+  * **Disruptive.** Compute Reconfigure (single, sequential, parallel, back-to-back) and the mini-rack switch guards.
+  * **Offline proof.** `selftest/fake_afm.py` is an in-process HTTPS + WebSocket AFM. `unit/test_afm_selftest.py`
+    injects 16 controller faults and checks that each one fails exactly the cases that should catch it.
 
 Some cases can't be fully checked on generic SONiC:
 * TC-SWH-004 is passive: thermalctld must be running, and fans must ramp when

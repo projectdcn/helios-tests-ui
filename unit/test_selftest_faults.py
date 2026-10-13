@@ -26,7 +26,9 @@ def _run(tmp_path: Path, mutate=None, extra_args=("--allow-disruptive",)) -> dic
         mutate(work / "replay")
     results = tmp_path / "results"
     proc = subprocess.run(
-        [sys.executable, "-m", "pytest", str(ROOT / "tests"), "--inventory", str(work / "inventory.yaml"),
+        # tests/afm has its own fake-controller harness (unit/test_afm_selftest.py)
+        [sys.executable, "-m", "pytest", str(ROOT / "tests"), "--ignore", str(ROOT / "tests" / "afm"),
+         "--inventory", str(work / "inventory.yaml"),
          "--results-dir", str(results), "-q", "-p", "no:cacheprovider", *extra_args],
         cwd=ROOT, capture_output=True, text=True, timeout=300,
     )

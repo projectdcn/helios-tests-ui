@@ -208,8 +208,8 @@ def pytest_runtest_makereport(item, call):
             msg = rep.longrepr[2]
         outcome = rep.outcome
         if rep.when == "setup" and rep.failed:
-            # the datapath pre-flight refused to start traffic: not a test failure, the fabric is broken
-            outcome = "blocked" if "datapath pre-flight failed" in (rep.longreprtext or "") else "error"
+            # a pre-flight (datapath / RDMA / AFM rack health) refused to start: not a test failure
+            outcome = "blocked" if "pre-flight failed" in (rep.longreprtext or "") else "error"
         suite, test, desc = _describe(item)
         item.config._helios_reports.append({
             "tc_id": tc_id(item) or "",

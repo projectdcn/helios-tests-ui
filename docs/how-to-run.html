@@ -148,8 +148,8 @@
   <p>These use recorded SONiC and GPU outputs from <code>selftest/replay</code>, so no hardware is needed.</p>
   <div class="cmd"><pre>.venv/bin/pytest unit -q</pre></div>
   <div class="cmd"><pre>.venv/bin/pytest tests --inventory selftest/inventory.yaml --allow-disruptive -q</pre></div>
-  <p class="muted">Expected: <span class="pill ok">90 unit tests</span>, including 67 injected-fault cases, and
-     <span class="pill ok">141 passed</span> <span class="pill">5 skipped</span> for the replayed suite.</p>
+  <p class="muted">Expected: <span class="pill ok">109 unit tests</span>, including 67 L1 and 16 AFM injected-fault cases, and
+     <span class="pill ok">205 passed</span> <span class="pill">5 skipped</span> for the replayed suite (the AFM tests run against the in-process fake controller).</p>
 </section>
 
 <section id="mini">
@@ -211,6 +211,22 @@
       <li>DC power cycle: <code>TC-RAS-reset-008</code>.</li>
     </ol>
     <p class="muted">The IFoE driver tests (TC-AFM-LU-001, TC-HW-017) skip until a module name is set. The full-rack log only shows <code>amdgpu</code>, so ask AMD whether there's a separate IFoE module.</p>
+  </div>
+
+  <div class="stage">
+    <h3>Stage 4: AFM controller API (REST + AggWatch)</h3>
+    <p>The AFM controller runs on the switch tray (<code>https://10.153.80.83</code>, API guide at <code>/docs/</code>). The <code>afm:</code> section of the inventory names the admin user; the password comes from <code>HELIOS_AFM_PASSWORD</code>, which you export yourself in the same terminal. Without it, only the unauthenticated cases run (RC-021, CTL-089, AGGW-003/004, CTL-004) and the rest SKIP.</p>
+    <div class="cmd"><pre>read -s HELIOS_AFM_PASSWORD &amp;&amp; export HELIOS_AFM_PASSWORD
+.venv/bin/pytest tests/afm --inventory inventory/mr3.local.yaml -v --log-file=results/mr3-afm.log</pre></div>
+    <p>Non-disruptive: reads, plus throw-away objects named <code>helios-&lt;tc&gt;-*</code> (failover policies, alert policies, test users / roles / role-bindings, empty vPODs). These are deleted after every test, even a failing one. No GPU, link or vPOD membership is touched. The run takes about 10 minutes; the AggWatch idle, no-options and burst cases are the slow ones.</p>
+    <p>Disruptive (needs <code>--allow-disruptive</code>; each one first checks AFM health and reports BLOCKED if AFM is unhealthy):</p>
+    <ul>
+      <li><code>TC-AFM-RC-001</code> / <code>004</code>: Reconfigure one compute tray (GPU reset), or reconfigure it twice back-to-back.</li>
+      <li><code>TC-AFM-RC-002</code> / <code>003</code>: Reconfigure every tray, sequentially or in parallel.</li>
+      <li><code>TC-AFM-035A</code>: Drain, decommission and delete of the only switch must all be rejected with 412.</li>
+    </ul>
+    <div class="cmd"><pre>.venv/bin/pytest tests/afm --inventory inventory/mr3.local.yaml --allow-disruptive --tc TC-AFM-035A -v</pre></div>
+    <p class="muted">Every request and response goes into the per-test log, so it shows up in the HTML report. Passwords and session ids are redacted. Tune the mini-rack expectations under <code>thresholds.afm</code>: <code>quorum_members</code>, <code>build_version</code>, <code>system_policy</code>, <code>max_not_ready_ports_per_compute</code>, <code>metrics.known_no_series</code>, <code>reconfigure_timeout_s</code> and <code>aggwatch.*</code> timings.</p>
   </div>
 </section>
 
