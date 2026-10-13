@@ -220,6 +220,10 @@ FAULTS = {
                                           r'\{\s*"accelerator_id": "3",\s*"mac_addr": "[^"]+",\s*"ip_addr": "[^"]+"\s*\},?', ""),
                           {"TC-HW-013"}),
     "fdb_mac_on_wrong_port": (lambda d: _edit(d / "fdb_asic0.txt", r"Ethernet1000 ", "Ethernet1001 "), {"TC-HW-013"}),
+    "agent_disconnected": (lambda d: _edit(d / "agent_health_13001.json", r'"is-connected": true', '"is-connected": false'),
+                           {"TC-SEQ-006"}),
+    "agent_config_not_applied": (lambda d: _edit(d / "agent_requests_13000.json", r'"state": 1, "reason": ""',
+                                                 '"state": 2, "reason": "apply failed"'), {"TC-SEQ-006"}),
     "thermalctld_down": (lambda d: _edit_rule(d, "thermalctld", stdout="thermalctld   EXITED\n"), {"TC-SWH-004"}),
 }
 

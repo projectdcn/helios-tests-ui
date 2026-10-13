@@ -96,3 +96,43 @@ def test_compute_ifoe_interfaces_active(computes, inventory, checks, record_prop
             checks.check(not bad, f"{c.name}/{d.bdf}: ports not enabled+LINK_UP: {bad[:10]}")
     record_property("ports_up", summary)
     checks.assert_all()
+
+
+def _check_agent(tag, health, requests, checks):
+    if not checks.check(health is not None, f"{tag}: /api/health not answering"):
+        return None
+    checks.check(health.get("is-connected") is True, f"{tag}: is-connected={health.get('is-connected')}")
+    cfg, cur = set(health.get("configured-controllers") or []), set(health.get("current-controllers") or [])
+    checks.check(cfg and cfg == cur, f"{tag}: configured controllers {sorted(cfg)} != current {sorted(cur)}")
+    checks.check(not health.get("unhealthy-services"), f"{tag}: unhealthy services {health.get('unhealthy-services')}")
+    checks.check(not health.get("restart-required"), f"{tag}: restart-required")
+    checks.check(not health.get("health-conditions"), f"{tag}: health conditions {health.get('health-conditions')}")
+    if requests:
+        # state 1 = applied; a `reason` alone is informational (e.g. 'station-enabled-ports-already-in-sync')
+        bad = [r for r in requests if (r.get("config-status") or {}).get("state") != 1 or not r.get("completed-by-agent-at")]
+        checks.check(not bad, f"{tag}: {len(bad)} config request(s) not applied/completed, e.g. "
+                              f"{[(r.get('created-at', '')[:19], r.get('config-status')) for r in bad[:3]]}")
+    return health.get("git-version")
+
+
+@pytest.mark.tc("TC-SEQ-006")
+def test_node_agent_control_channel(rack, inventory, checks, record_property):
+    """Every sb-node-agent (REST 13000+slot) and the switch-agent (first answering port in 13018..13035)
+    is connected to its configured controllers, healthy, and has applied every config request it received;
+    all agents run the same build."""
+    versions = {}
+    for sw in rack.switches.values():
+        for slot in sw.sb_node_agent_slots():
+            tag = f"{sw.name} sb-node-agent slot {slot}"
+            versions[tag] = _check_agent(tag, sw.agent_api(13000 + slot, "/api/health"),
+                                         sw.agent_api(13000 + slot, "/api/runtime/requests"), checks)
+        lo, hi = inventory.th("sideband.switch_agent_ports", [13018, 13035])
+        port = next((p for p in range(int(lo), int(hi) + 1) if sw.agent_api(p, "/api/health") is not None), None)
+        if checks.check(port, f"{sw.name}: no switch-agent health endpoint on ports {lo}-{hi}"):
+            tag = f"{sw.name} switch-agent :{port}"
+            versions[tag] = _check_agent(tag, sw.agent_api(port, "/api/health"), None, checks)
+    builds = {v for v in versions.values() if v}
+    checks.check(len(builds) <= 1, f"agents run different builds: {versions}")
+    record_property("agent_versions", versions)
+    checks.check(versions, "no AFM agents found")
+    checks.assert_all()

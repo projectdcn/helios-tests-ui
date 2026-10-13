@@ -541,6 +541,30 @@
   stdout: 'active
 
     '
+- cmd: ^docker\ exec\ afm\-agent\ curl\ \-s\ \-m\ 5\ localhost:13000/api/health$
+  rc: 0
+  host: ^sw
+  file: agent_health_13000.json
+- cmd: ^docker\ exec\ afm\-agent\ curl\ \-s\ \-m\ 5\ localhost:13000/api/runtime/requests$
+  rc: 0
+  host: ^sw
+  file: agent_requests_13000.json
+- cmd: ^docker\ exec\ afm\-agent\ curl\ \-s\ \-m\ 5\ localhost:13001/api/health$
+  rc: 0
+  host: ^sw
+  file: agent_health_13001.json
+- cmd: ^docker\ exec\ afm\-agent\ curl\ \-s\ \-m\ 5\ localhost:13001/api/runtime/requests$
+  rc: 0
+  host: ^sw
+  file: agent_requests_13001.json
+- cmd: ^docker\ exec\ afm\-agent\ curl\ \-s\ \-m\ 5\ localhost:13018/api/health$
+  rc: 0
+  host: ^sw
+  file: agent_health_13018.json
+- cmd: ^docker\ exec\ afm\-agent\ curl\ \-s\ \-m\ 5\ localhost:13018/api/runtime/requests$
+  rc: 0
+  host: ^sw
+  file: agent_requests_13018.json
 - cmd: ^ps\ \-eo\ comm,args$
   rc: 0
   host: ^c

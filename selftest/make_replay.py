@@ -249,6 +249,20 @@ add("docker exec afm-agent ps -eo args", "/usr/bin/afm_agent.sh\n/switch-agent\n
     "".join(f"/sb-node-agent -slot-id {slot} -controllers 10.0.0.83\n" for slot, _ in SLOTS.values()),
     name="afm_agent_ps.txt", host=SW)
 add("systemctl is-active afm-agent", "active\n", host=SW)
+AGENT_HEALTH = _json.dumps({"status": "", "configured-controllers": ["10.0.0.83"], "current-controllers": ["10.0.0.83"],
+                            "is-connected": True, "unhealthy-services": [], "restart-required": False,
+                            "health-conditions": [], "git-version": "0.1.0-AICC-797"})
+AGENT_REQS = _json.dumps([{"id": f"r{i}", "created-at": f"2026-10-13T06:46:{50 + i}Z",
+                           "completed-by-agent-at": f"2026-10-13T06:46:{51 + i}Z",
+                           "config-status": {"config-type": 5, "state": 1,
+                                             "reason": "station-enabled-ports-already-in-sync" if i else ""},
+                           "version": 1, "device-reset": False} for i in range(3)])
+# sb-node-agent slot 0 -> 13000, slot 1 -> 13001; switch-agent answers on 13018
+for port in (13000, 13001, 13018):
+    add(f"docker exec afm-agent curl -s -m 5 localhost:{port}/api/health", AGENT_HEALTH,
+        name=f"agent_health_{port}.json", host=SW)
+    add(f"docker exec afm-agent curl -s -m 5 localhost:{port}/api/runtime/requests", AGENT_REQS,
+        name=f"agent_requests_{port}.json", host=SW)
 add("ps -eo comm,args", "COMMAND         COMMAND\nsystemd         /sbin/init\nsshd            sshd: /usr/sbin/sshd -D\n"
     "amd-smi         /opt/rocm/bin/amd-smi\n", name="compute_ps.txt", host="^c")
 add(r"^timeout \d+ afmctl test ping ", """PING test 0001:01:00.1 -> accelerator 1, count 1

@@ -136,6 +136,19 @@ class SonicSwitch:
         r = self.run("docker exec afm-agent ps -eo args", sudo=True, timeout=60)
         return [int(m.group(1)) for m in re.finditer(r"sb-node-agent\s+-slot-id\s+(\d+)", r.stdout)]
 
+    def agent_api(self, port: int, path: str):
+        """GET an AFM agent REST endpoint inside the afm-agent container (sb-node-agent: 13000+slot,
+        switch-agent: 13018+). Returns parsed JSON, or None when nothing answers."""
+        import json
+
+        r = self.run(f"docker exec afm-agent curl -s -m 5 localhost:{port}{path}", sudo=True, timeout=30)
+        if not r.ok or not r.stdout.strip():
+            return None
+        try:
+            return json.loads(r.stdout)
+        except ValueError:
+            return None
+
     def interfaces_counters(self, ns: str | None) -> dict[str, dict]:
         rows = parse_table(self.sh(f"show interfaces counters{_ns_flag(ns)} -d all"))
         return {r["IFACE"]: r for r in rows if self.is_fabric_port(r.get("IFACE", ""))}
