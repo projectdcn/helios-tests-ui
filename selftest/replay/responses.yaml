@@ -497,16 +497,36 @@
   file: afmctl_device_c2.json
 - cmd: ^afmctl\ show\ port\ \-b\ 0001:01:00\.1\ \-\-json\ 2>/dev/null$
   rc: 0
-  file: afmctl_port_0001.json
+  host: ^c1$
+  file: afmctl_port_c1_0001.json
 - cmd: ^afmctl\ show\ port\ \-b\ 0002:01:00\.1\ \-\-json\ 2>/dev/null$
   rc: 0
-  file: afmctl_port_0002.json
+  host: ^c1$
+  file: afmctl_port_c1_0002.json
 - cmd: ^afmctl\ show\ port\ \-b\ 0003:01:00\.1\ \-\-json\ 2>/dev/null$
   rc: 0
-  file: afmctl_port_0003.json
+  host: ^c1$
+  file: afmctl_port_c1_0003.json
 - cmd: ^afmctl\ show\ port\ \-b\ 0004:01:00\.1\ \-\-json\ 2>/dev/null$
   rc: 0
-  file: afmctl_port_0004.json
+  host: ^c1$
+  file: afmctl_port_c1_0004.json
+- cmd: ^afmctl\ show\ port\ \-b\ 0001:01:00\.1\ \-\-json\ 2>/dev/null$
+  rc: 0
+  host: ^c2$
+  file: afmctl_port_c2_0001.json
+- cmd: ^afmctl\ show\ port\ \-b\ 0002:01:00\.1\ \-\-json\ 2>/dev/null$
+  rc: 0
+  host: ^c2$
+  file: afmctl_port_c2_0002.json
+- cmd: ^afmctl\ show\ port\ \-b\ 0003:01:00\.1\ \-\-json\ 2>/dev/null$
+  rc: 0
+  host: ^c2$
+  file: afmctl_port_c2_0003.json
+- cmd: ^afmctl\ show\ port\ \-b\ 0004:01:00\.1\ \-\-json\ 2>/dev/null$
+  rc: 0
+  host: ^c2$
+  file: afmctl_port_c2_0004.json
 - cmd: ^afmctl\ show\ port\ accelerator\-addr\ \-\-json\ 2>/dev/null$
   rc: 0
   host: ^c1$

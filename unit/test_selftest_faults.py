@@ -119,7 +119,7 @@ FAULTS = {
                      {"TC-SWH-001", "TC-SWH-015"}),
     # losing an ASIC namespace also loses its LLDP neighbours (expected_lldp_neighbors: 8)
     "asic1_missing": (lambda d: _edit_rule(d, "ip\\ netns\\ list", stdout="asic0 (id: 0)\n"),
-                      {"TC-SWH-016", "TC-SWH-031", "TC-HW-013"}),  # asic1 FDB unreadable -> MACs missing
+                      {"TC-SWH-016", "TC-SWH-031", "TC-HW-013", "TC-E2E-062"}),  # asic1 FDB/descriptions unreadable
     "vlan_no_members": (lambda d: _edit_rule(d, "-n\\ asic1\\ CONFIG_DB\\ keys\\ 'VLAN_MEMBER", stdout=""),
                         {"TC-SWH-036", "TC-SWA-079"}),  # also breaks member symmetry
     "ping_loss": (lambda d: _edit(d / "afmctl_ping.txt", r"IFoE Request    : 35/35 PASS, 0/35 fail",
@@ -213,8 +213,8 @@ FAULTS = {
                          {"TC-BU-006"}),
     "afm_agent_inactive": (lambda d: _edit_rule(d, "systemctl\\ is\\-active\\ afm\\-agent", stdout="inactive\n"),
                            {"TC-BU-002"}),
-    "gpu_port_no_link": (lambda d: _edit(d / "afmctl_port_0003.json",
-                                         r'("id": "12", "spec": \{"admin_state": "enabled"\}, "status": \{"link_status": ")LINK_UP',
+    "gpu_port_no_link": (lambda d: _edit(d / "afmctl_port_c2_0003.json",
+                                         r'("id": "12", "spec": \{"admin_state": "enabled", "station_id": "6"\}, "status": \{"link_status": ")LINK_UP',
                                          r"\1NONE"), {"TC-BU-011"}),
     "dst_accel_missing": (lambda d: _edit(d / "afmctl_accel_addr_c2.json",
                                           r'\{\s*"accelerator_id": "3",\s*"mac_addr": "[^"]+",\s*"ip_addr": "[^"]+"\s*\},?', ""),
@@ -224,6 +224,13 @@ FAULTS = {
                            {"TC-SEQ-006"}),
     "agent_config_not_applied": (lambda d: _edit(d / "agent_requests_13000.json", r'"state": 1, "reason": ""',
                                                  '"state": 2, "reason": "apply failed"'), {"TC-SEQ-006"}),
+    # ---- IFCP
+    "ifcp_session_down": (lambda d: _edit(d / "afmctl_port_c1_0002.json",
+                                          r'("id": "5", .*?"ifcp": \{"port_id": "5", "link_up": ")yes', r"\1no"), {"TC-BU-003"}),
+    "ifcp_ll_one_way": (lambda d: _edit(d / "afmctl_port_c2_0001.json",
+                                        r'("id": "20", .*?"ll_up": ")yes', r"\1no"), {"TC-SBM-062"}),
+    "cabling_mismatch": (lambda d: _edit(d / "afmctl_port_c1_0001.json",
+                                         r'("id": "3", .*?"peer_port_id": ")1003"', r'\g<1>1004"'), {"TC-E2E-062"}),
     "thermalctld_down": (lambda d: _edit_rule(d, "thermalctld", stdout="thermalctld   EXITED\n"), {"TC-SWH-004"}),
 }
 

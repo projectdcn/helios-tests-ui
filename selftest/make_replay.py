@@ -217,11 +217,27 @@ for cname, base in (("c1", 0), ("c2", 8)):
                             "local_accelerators": [str(base + i) for i in range(4)],
                             "vpod_accelerators": [str(a) for a in ALL_ACCS]}} for g, b in enumerate(BDFS)]}),
         name=f"afmctl_device_{cname}.json", host=f"^{cname}$")
-for b in BDFS:  # port 7 is physically down everywhere; the rest LINK_UP
-    add(f"afmctl show port -b {b} --json 2>/dev/null", _json.dumps({"device": [{"bdf": b, "port": [
-        {"id": str(p), "spec": {"admin_state": "enabled"},
-         "status": {"link_status": "NO_PHY_LINK, PCS_NO_BLOCK_LOCK" if p == 7 else "LINK_UP"}} for p in range(36)]}]}),
-        name=f"afmctl_port_{b.split(':')[0]}.json")
+def port_json(cname: str, g: int) -> str:
+    """afmctl show port -b <bdf> --json for one GPU: port 7 physically down, the rest LINK_UP with IFCP up and
+    the IFCP peer = the switch port cabled to (acc, port) (peer_port_id is switch-global, device id 1)."""
+    slot, base = SLOTS[cname]
+    acc = base + g
+    ports = []
+    for p in range(36):
+        up = p != 7
+        ports.append({"id": str(p), "spec": {"admin_state": "enabled", "station_id": str(p // 2)},
+                      "status": {"link_status": "LINK_UP" if up else "NO_PHY_LINK, PCS_NO_BLOCK_LOCK",
+                                 "ifcp": {"port_id": str(p), "link_up": "yes" if up else "no", "in_error": "no",
+                                          "ll_up": "yes" if up else "no", "peer_device_id": "1",
+                                          "peer_port_id": fabric_port(acc, p)[1].removeprefix("Ethernet"),
+                                          "peer_enabled": "yes", "peer_in_error": "no", "peer_mtu": "4096"}}})
+    return _json.dumps({"device": [{"bdf": BDFS[g], "port": ports}]})
+
+
+for cname in SLOTS:
+    for g, b in enumerate(BDFS):
+        add(f"afmctl show port -b {b} --json 2>/dev/null", port_json(cname, g),
+            name=f"afmctl_port_{cname}_{b.split(':')[0]}.json", host=f"^{cname}$")
 # accelerator destination tables (TC-HW-013): every port lists all other vPOD accelerators, MAC ...:<port>
 for cname, (slot, base) in SLOTS.items():
     add("afmctl show port accelerator-addr --json 2>/dev/null", _json.dumps({"device": [

@@ -145,6 +145,11 @@ class Afmctl:
     def vpod_accels(self) -> dict[str, tuple[str, set[str]]]:
         return parse_vpod_accels(self._json("show device --json"))
 
+    def ports_raw(self, bdf: str) -> list[dict]:
+        """Raw `afmctl show port -b <bdf> --json` port objects (spec, status, status.ifcp.*)."""
+        doc = json.loads(self._json(f"show port -b {bdf} --json"))
+        return next((d.get("port") or [] for d in _devices(doc) if str(d.get("bdf")) == bdf), [])
+
     def ports(self, bdf: str) -> list[Port]:
         return parse_show_port(self._json(f"show port -b {bdf} --json")).get(bdf, [])
 
