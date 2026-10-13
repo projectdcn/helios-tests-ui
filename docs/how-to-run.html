@@ -127,6 +127,9 @@
     <li><strong>Same tool paths on every compute</strong>: TransferBench, rccl-tests and RcclSmokeTest.</li>
     <li><strong>NTP synced.</strong> MR3 is currently unsynced (c1 is 131 s off). That fails TC-CTL-035 and makes AFM event timing unreliable.</li>
   </ul>
+  <h3>Login: SSH keys (recommended) or passwords</h3>
+  <p>Install your key once per node with <code>ssh-copy-id</code> and set <code>key_file</code> in the inventory (MR3 does this); then no passwords are needed.
+     Otherwise use <code>password_env</code> and enter the passwords as below.</p>
   <h3>Passwords: enter them yourself in each new terminal</h3>
   <p><code>read -s</code> shows nothing as you type and keeps the password out of shell history. Inventories only name the environment variables; no password is stored in a file.</p>
   <div class="cmd"><pre>read -s &quot;HELIOS_SWITCH_PASSWORD?Switch password: &quot; &amp;&amp; export HELIOS_SWITCH_PASSWORD &amp;&amp; echo</pre></div>
@@ -167,16 +170,26 @@
     <h3>Stage 1: read-only health (changes nothing)</h3>
     <div class="cmd"><pre>.venv/bin/pytest tests --inventory inventory/mr3.local.yaml -m &quot;not stress&quot; -v --log-file=results/mr3-health.log</pre></div>
     <div class="note">
-      <strong>Expected MR3 failures right now:</strong>
+      <strong>MR3 state as of 2026-10-13 (real rack issues, not test problems):</strong>
       <ul>
+        <li><strong>Switching plane 9 (VLAN 1000, asic1):</strong> black-holes port 9 on all 8 GPUs, so every datapath test is BLOCKED. TC-SWA-074 shows the drops.</li>
+        <li><strong>TC-BU-011 / TC-SWH-030:</strong> c2 GPU <code>0003</code> ports 12, 32 and 33 are down.</li>
         <li><strong>TC-CTL-035:</strong> NTP isn't synced.</li>
         <li><strong>TC-CTL-139 to 148:</strong> the metrics exporter isn't running.</li>
-        <li><strong>TC-SWH-030:</strong> 227 ports are up but not cabled. Set <code>expected_up_ports</code> in the inventory to clear it.</li>
-        <li><strong>TC-E2E-118:</strong> the topology-log path isn't confirmed.</li>
       </ul>
     </div>
   </div>
 
+  <div class="note">
+    <strong>Datapath pre-flight gate.</strong> Every IFoE traffic test first checks, once per run:
+    <ul>
+      <li>every compute answers SSH and all GPUs are <code>ACTIVE</code></li>
+      <li>one <code>afmctl</code> L2 ping per GPU over every LINK_UP port</li>
+      <li>no cabled switch port is dropping more than 100 frames/s</li>
+    </ul>
+    If anything fails, those tests report <strong>BLOCKED</strong> with the reason, instead of hanging.
+    This exists because of MR3's broken switching plane.
+  </div>
   <div class="stage">
     <h3>Stage 2: datapath (sends traffic, changes no configuration)</h3>
     <div class="cmd"><pre>.venv/bin/pytest tests/l1/test_rccl_smoke.py tests/l1/test_afm_datapath.py tests/hw/test_hw.py --inventory inventory/mr3.local.yaml -v --log-file=results/mr3-datapath.log</pre></div>

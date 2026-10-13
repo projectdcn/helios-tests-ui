@@ -14,7 +14,9 @@ helios/                 framework
   compute.py            compute-tray driver + command-template rendering
   afm.py                AFM REST client (endpoint map comes from inventory)
   parsers.py            SONiC tables, sonic-db-cli, rccl-tests, TransferBench, perftest, Prometheus
-  datapath.py           shared workloads: L2 ping, TransferBench, RCCL
+  datapath.py           shared workloads: L2 ping (afmctl discovery), TransferBench (multi-rank), RCCL
+  afmctl.py             afmctl JSON/ping parsers (device, port, IFCP, accelerator-addr)
+  preflight.py          datapath gate: reachability, GPUs ACTIVE, per-plane ping probe, live drops
   perftest.py           ib_*_bw server/client pairs for scale-out RDMA
   wait.py               polling helpers (recovery, reboot / SSH return)
   rack.py               Rack, fan_out(), Checks (soft asserts)
@@ -28,6 +30,7 @@ tests/                  rack tests, each tagged @pytest.mark.tc("TC-...")
   telemetry/            AMD device-metrics-exporter (TC-CTL-139..150)
   platform/             NTP, DNS, log rotation, topo logs, OOB names across reboot
   ifoe/                 IFoE driver unload/reload (TC-AFM-LU-001, TC-HW-017)
+  sideband/             sideband bring-up + IFCP (TC-BU, TC-SEQ-006, TC-SBM-062, TC-E2E-062)
 unit/                   offline tests + fault-injection self-test (no rack needed)
 selftest/               replay inventory + canned outputs (make_replay.py)
 inventory/              example-fullrack.yaml (copy to *.local.yaml)
@@ -52,9 +55,9 @@ These use recorded SONiC and GPU outputs from `selftest/replay`, so no hardware
 is needed.
 
 ```bash
-.venv/bin/pytest unit                                                       # unit tests + 48 injected-fault checks
-.venv/bin/pytest tests --inventory selftest/inventory.yaml                  # 116 pass, 18 skip (disruptive skipped)
-.venv/bin/pytest tests --inventory selftest/inventory.yaml --allow-disruptive   # 129 pass, 5 skip
+.venv/bin/pytest unit                                                       # unit tests + 67 injected-fault checks
+.venv/bin/pytest tests --inventory selftest/inventory.yaml                  # 128 pass, 18 skip (disruptive skipped)
+.venv/bin/pytest tests --inventory selftest/inventory.yaml --allow-disruptive   # 141 pass, 5 skip
 ```
 
 ### 2. On a real rack
@@ -67,8 +70,10 @@ cp inventory/example-fullrack.yaml inventory/rack1.local.yaml
 
 **Step 2: edit `inventory/rack1.local.yaml`.**
 - Under `switches:` and `computes:`, set each `host:` to the real hostname or IP.
-- Under `defaults:`, set the SSH user, and either `key_file` or `password_env`
-  for each node type.
+- Under `defaults:`, set the SSH user, and either `key_file` (recommended: install your
+  key with `ssh-copy-id`, then no passwords are needed) or `password_env` for each node type.
+- The SSH users need **passwordless sudo** on switches and computes (`afmctl`, `dmesg`,
+  `docker` and resets run under `sudo -n`).
 - Fill in the `VERIFY` items (see [Calibrate on the first rack run](#calibrate-on-the-first-rack-run)).
   Until these are set, those tests skip and name the missing setting.
 - For the scale-out RDMA cases, add `rdma:` ports to the two computes named in
@@ -90,7 +95,21 @@ full L1 suite:
 .venv/bin/pytest tests -m l1 --inventory inventory/rack1.local.yaml --log-file=results/run.log
 ```
 
-`--log-file` records every SSH command, its exit code and how long it took.
+`--log-file` records every SSH command, its output, exit code and duration. The
+terminal shows live progress (start, 30 s heartbeat, finish) for long commands, and
+every remote command runs under `timeout -k` on the node, so a hung tool is killed.
+
+**Datapath pre-flight.** Every IFoE traffic test (RCCL smoke, TC-AFM-001..005A,
+TC-HW-008/017, RAS, IFoE driver) first passes a gate, once per run:
+- every selected compute answers SSH and all GPUs are `ACTIVE`
+- one `afmctl` L2 ping per GPU over every LINK_UP port, so each switching plane
+  carries a frame first
+- no switch port cabled to the tested GPUs is dropping more than 100 frames/s
+
+If the gate fails, those tests report **BLOCKED** with the reason, instead of hanging.
+On MR3 this caught a switching plane that silently black-holes port 9 on every GPU,
+which otherwise hung the first RCCL collective. Tune or disable it under
+`thresholds.datapath.preflight`.
 To avoid passing `--inventory` every time, set it once:
 
 ```bash
@@ -120,7 +139,8 @@ For example, to run only the PSU checks on `sw1` and `sw2`:
 ### 4. Results
 
 Each run creates a folder `results/<rack>-<timestamp>/` with two files:
-- `tc_summary.csv`: one PASS / FAIL / SKIP / PARTIAL verdict per plan ID.
+- `tc_summary.csv`: one PASS / FAIL / BLOCKED / SKIP / PARTIAL verdict per plan ID
+  (BLOCKED = the datapath pre-flight refused to start traffic).
 - `tc_results.csv`: one row per test, with the failure message and measured
   values such as bandwidth and bus bandwidth.
 
@@ -139,7 +159,7 @@ The table has one row per category:
 `--missing` also lists every case that has **no test yet**, with its ID, level
 and title.
 
-## Coverage (83 of 542 cases)
+## Coverage (92 of 542 cases)
 
 * **TC-SWH-001…036, switch hardware.** Firmware, fans, PSUs, platform/EEPROM,
   multi-ASIC namespaces, interface state/speed/MTU, error-counter deltas,
@@ -183,6 +203,19 @@ and title.
   health after each and a TransferBench before/after regression check; one
   remove/re-add followed by L2 ping and TransferBench (both disruptive).
 
+* **Added after the first MR3 runs:**
+  * **TC-SWA-074 drop check:** lifetime drop ratio plus live drop rate per fabric port,
+    reported with the tray/GPU/port the switch port is cabled to.
+  * **TC-HW-013 destination MACs:** each GPU's per-port destination table is complete;
+    every MAC is a static FDB entry on the switch port cabled to that accelerator/port.
+  * **TC-BU-002/006/009/011 sideband bring-up:** afm-agent running, no agents on
+    computes, exactly one sb-node-agent per compute slot, GPUs ACTIVE with all IFoE
+    ports up.
+  * **TC-SEQ-006 node-agent control channel:** agent REST `/api/health` connected and
+    healthy, every config request applied.
+  * **TC-BU-003 / TC-SBM-062 / TC-E2E-062 IFCP:** IFCP sessions up and bidirectional;
+    each GPU port's IFCP-discovered switch peer matches the registered cabling.
+
 Some cases can't be fully checked on generic SONiC:
 * TC-SWH-004 is passive: thermalctld must be running, and fans must ramp when
   a sensor is over its high threshold.
@@ -211,6 +244,11 @@ is unset skips with the key name; it never guesses:
   `thresholds.metrics.families` if your exporter's metric names differ
 * `thresholds.switch.expected_fans`, `expected_psus`, `psu_capacity_w`, and the
   bandwidth floors (`datapath.*`, including `perftest.min_gbps`)
+* `thresholds.switch.expected_up_ports: described`: only ports with a cabling
+  description must be up (mini racks leave most ports admin-up but uncabled)
+* `thresholds.switch.port_speed_overrides` (e.g. 100G uplinks),
+  `psu_identity_exempt_re` / `psu_load_balance` (busbar-fed trays)
+
 
 ## Plan ID fixes
 
