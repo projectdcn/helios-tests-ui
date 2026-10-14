@@ -80,7 +80,9 @@ def _distribution(ops, checks, record_property):
     p = _placement(ops)
     per = _per_switch(p)
     record_property("agents_per_switch", dict(per))
-    checks.check(_one_each(ops), f"slots without exactly one agent: { {s: h for s, h in p.items() if len(h) != 1} }")
+    missing = sorted(_slots(ops) - set(p))
+    checks.check(_one_each(ops), f"slots without exactly one agent: missing {missing}, "
+                                 f"on several switches { {s: h for s, h in p.items() if len(h) > 1} }")
     n_sw, n_slots = len(ops.rack.switches), len(_slots(ops))
     if n_slots >= n_sw:
         unused = [s.name for s in ops.rack.switches.values() if per.get(s.name, 0) == 0]
