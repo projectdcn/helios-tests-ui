@@ -1,0 +1,182 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Helios Test Inputs for AMD</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Sans+Condensed:wght@600;700&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+/* layout: single reading column, section per request type, case lists folded under each ask */
+:root {
+  --bg:#f6f7f9; --surface:#ffffff; --fg:#1b2129; --muted:#5b6574; --line:#d9dee6;
+  --accent:#0f6e7a; --accent-soft:#e1f0f2; --warn:#9a5b00; --warn-soft:#fbf0dc;
+  --f-display:"IBM Plex Sans Condensed","Arial Narrow",system-ui,sans-serif;
+  --f-body:"IBM Plex Sans",system-ui,-apple-system,"Segoe UI",sans-serif;
+  --f-mono:"IBM Plex Mono",ui-monospace,SFMono-Regular,Menlo,monospace;
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+  --bg:#12161c; --surface:#1a2028; --fg:#e4e8ee; --muted:#9aa5b4; --line:#2e3744;
+  --accent:#5cc3cf; --accent-soft:#163a40; --warn:#e5ad55; --warn-soft:#3a2c14; color-scheme:dark } }
+:root[data-theme="dark"] {
+  --bg:#12161c; --surface:#1a2028; --fg:#e4e8ee; --muted:#9aa5b4; --line:#2e3744;
+  --accent:#5cc3cf; --accent-soft:#163a40; --warn:#e5ad55; --warn-soft:#3a2c14; color-scheme:dark }
+body { background:var(--bg); color:var(--fg); font:15px/1.6 var(--f-body); }
+.wrap { max-width:860px; margin:0 auto; padding-inline:20px; padding-block:40px 64px; display:grid; gap:36px; }
+header { display:grid; gap:10px; }
+.eyebrow { font:600 12px/1 var(--f-mono); letter-spacing:.08em; text-transform:uppercase; color:var(--accent); }
+h1 { font:700 34px/1.15 var(--f-display); margin:0; text-wrap:balance; }
+h2 { font:700 22px/1.25 var(--f-display); margin:0; text-wrap:balance; }
+h3 { font:600 15px/1.4 var(--f-body); margin:0; }
+p { margin:0; max-width:68ch; }
+.muted { color:var(--muted); }
+.lede { font-size:16px; color:var(--muted); }
+.stats { display:flex; flex-wrap:wrap; gap:10px; }
+.stat { background:var(--surface); border:1px solid var(--line); border-radius:8px; padding:10px 14px; min-width:120px; }
+.stat b { display:block; font:600 22px/1.2 var(--f-mono); font-variant-numeric:tabular-nums; }
+.stat span { font-size:12px; color:var(--muted); }
+section { display:grid; gap:14px; }
+.tag { font:500 12px/1 var(--f-mono); color:var(--accent); background:var(--accent-soft); padding:4px 7px; border-radius:4px; justify-self:start; }
+ol.asks, ul.asks { margin:0; padding-left:22px; display:grid; gap:8px; max-width:70ch; }
+details { border:1px solid var(--line); border-radius:8px; background:var(--surface); }
+summary { cursor:pointer; padding:10px 14px; font-weight:500; color:var(--accent); }
+summary:focus-visible { outline:2px solid var(--accent); outline-offset:2px; }
+.tw { overflow-x:auto; padding:0 14px 12px; }
+table { border-collapse:collapse; width:100%; font-size:14px; }
+th { text-align:left; font:600 11px/1.3 var(--f-mono); letter-spacing:.06em; text-transform:uppercase; color:var(--muted); padding:8px 10px; border-bottom:1px solid var(--line); }
+td { padding:7px 10px; border-bottom:1px solid var(--line); vertical-align:top; }
+tr:last-child td { border-bottom:0; }
+td.id { font-family:var(--f-mono); white-space:nowrap; font-size:13px; }
+td.num { font:500 14px var(--f-mono); font-variant-numeric:tabular-nums; text-align:right; white-space:nowrap; }
+.env { background:var(--surface); border:1px solid var(--line); border-radius:8px; overflow-x:auto; }
+.env table { min-width:560px; }
+.env details { border:0; background:none; } .env summary { padding:0; font-size:13px; }
+.ids { font:13px/1.6 var(--f-mono); margin-top:6px; max-width:none; }
+.note { background:var(--warn-soft); border-left:3px solid var(--warn); padding:12px 14px; border-radius:0 8px 8px 0; display:grid; gap:6px; }
+.note strong { color:var(--warn); }
+code { font:13px var(--f-mono); background:var(--accent-soft); padding:1px 5px; border-radius:4px; }
+footer { font-size:13px; color:var(--muted); border-top:1px solid var(--line); padding-top:16px; }
+@media (max-width:480px) { h1 { font-size:28px; } }
+</style>
+</head>
+<body>
+<div class="wrap">
+<header>
+  <div class="eyebrow">Helios ScaleUp test plan · BKC-26.12</div>
+  <h1>Test inputs we need from AMD</h1>
+  <p class="lede">We automated what can be observed through the AFM API, afmctl and SONiC. These are the remaining plan cases and what would let us run them. Each group says exactly what we need; the case lists are folded underneath.</p>
+  <div class="stats">
+    <div class="stat"><b>542</b><span>plan cases</span></div>
+    <div class="stat"><b>325</b><span>automated</span></div>
+    <div class="stat"><b>194</b><span>need AMD input or setup</span></div>
+    <div class="stat"><b>23</b><span>we automate next, no input needed</span></div>
+  </div>
+</header>
+
+<section id="sessions">
+  <span class="tag">A · 34 cases</span>
+  <h2>A way to read sideband control-session state</h2>
+  <p>These cases assert facts about SPDM/IFCP control sessions: how many exist, which switch and ASIC terminate them, which link is the SelectedLink, and the control port. We found no way to read that. The node-agent REST API on the switch exposes only <code>/api/health</code> and <code>/api/runtime/requests</code>, and <code>afmctl show port statistics ifcp</code> reports only <code>tx_errors</code> (rx/tx counts stay 0).</p>
+  <ol class="asks">
+    <li>A command or API that lists every control session per GPU: GPU / accelerator id, terminating switch and ASIC, SelectedLink, standby links, control port, state, SPDM encryption on/off, IFCP version, sequence number.</li>
+    <li>The per-switch view of the same sessions (for the per-switch count and load-balance cases).</li>
+    <li>How to tell which of a GPU's links is currently the active control link, so we can flap that specific link (TRG-002/003).</li>
+    <li>Whether IFCP rx/tx packet counters exist somewhere other than <code>afmctl show port statistics ifcp</code>.</li>
+    <li>The Sideband / Node Manager view: registration, compatibility result and GPU reachability per compute.</li>
+  </ol>
+  <details><summary>The cases (34)</summary><div class='tw'><table><thead><tr><th>Plan ID</th><th>Title</th></tr></thead><tbody><tr><td class='id'>TC-BU-004</td><td>Each session has 6 links with one active (SelectedLink)</td></tr><tr><td class='id'>TC-BU-005</td><td>Each switch has expected session count (load balanced)</td></tr><tr><td class='id'>TC-BU-008</td><td>First discovered link used as SelectedLink</td></tr><tr><td class='id'>TC-BU-010</td><td>Each GPU session has a control port selected</td></tr><tr><td class='id'>TC-BU-012</td><td>All GPU sessions per compute node served by one node agent</td></tr><tr><td class='id'>TC-CTL-137</td><td>SPDM session is established between switch and GPU and communication is encrypted</td></tr><tr><td class='id'>TC-SBM-001</td><td>Sideband Topology and Session-Count Formulas</td></tr><tr><td class='id'>TC-SBM-003</td><td>SPDM Session Link Selection and Query API</td></tr><tr><td class='id'>TC-SBM-004</td><td>IFCP Packet/Session Stats API (Host and Switch Side)</td></tr><tr><td class='id'>TC-SBM-010</td><td>ASIC-Level SPDM Session Failover (Single ASIC Down)</td></tr><tr><td class='id'>TC-SBM-012</td><td>Switch-to-Controller Link Isolation -- SPDM/IFCP Sessions Remain Local</td></tr><tr><td class='id'>TC-SBM-015</td><td>vPod Compute Add/Remove -- Untouched Computes&#x27; CP Sessions Stay Stable</td></tr><tr><td class='id'>TC-SBM-017</td><td>VLAN/FDB Churn Does Not Disrupt IFCP Control-Plane Sessions</td></tr><tr><td class='id'>TC-SBM-019</td><td>Sb-node-agent Reconciliation of Config/Link Delta After Restart</td></tr><tr><td class='id'>TC-SBM-041</td><td>Compute Readmit via afm-agent Restart Landing Admitted but With IFCP Sessions Down</td></tr><tr><td class='id'>TC-SBM-052</td><td>All 72 GPUs form a total of 72 SPDM control sessions</td></tr><tr><td class='id'>TC-SBM-053</td><td>Every switch has 12 control sessions terminated on it</td></tr><tr><td class='id'>TC-SBM-056</td><td>The first discovered link is used to establish the session</td></tr><tr><td class='id'>TC-SBM-059</td><td>All GPUs of one compute node must form session with one node agent</td></tr><tr><td class='id'>TC-SBM-080</td><td>The sequence number is retained when the session fails over to a new switch</td></tr><tr><td class='id'>TC-SBM-088</td><td>GPU uses same link to send control packet from which it got the control message</td></tr><tr><td class='id'>TC-SBM-093</td><td>Event packets can use a different link than the control session link</td></tr><tr><td class='id'>TC-SBM-127</td><td>Active standby switch election</td></tr><tr><td class='id'>TC-SBM-130</td><td>Bring down the AISC over which the SPDM session is established</td></tr><tr><td class='id'>TC-SBM-147</td><td>Discovery flow initiated and responded</td></tr><tr><td class='id'>TC-SBM-149</td><td>GPU mapping creation in Sideband Agent</td></tr><tr><td class='id'>TC-SBM-152</td><td>Node Agent triggers control channel setup via Switch IFCP</td></tr><tr><td class='id'>TC-SBM-155</td><td>Compatibility set from Switch IFCP lib</td></tr><tr><td class='id'>TC-SEQ-004</td><td>GPU reachability reported to Sideband Manager</td></tr><tr><td class='id'>TC-SEQ-008</td><td>Compatibility check completed</td></tr><tr><td class='id'>TC-TRG-002</td><td>Flap active link — CP disrupted then recovers</td></tr><tr><td class='id'>TC-TRG-003</td><td>Bring down all 6 CP links — sessions drop then recover</td></tr><tr><td class='id'>TC-CTRL-009</td><td>Major version consistent across all sessions</td></tr><tr><td class='id'>TC-CTRL-011</td><td>Minor version mismatch tolerated</td></tr></tbody></table></div></details>
+</section>
+
+<section id="packets">
+  <span class="tag">B · 29 cases</span>
+  <h2>IFCP packet capture and drop injection</h2>
+  <p>These cases check frame formats, header flags, priorities, retransmits and behaviour when specific IFCP messages are dropped. The plan mentions OVS and <code>tc u32</code> filters (for example on <code>eth330</code> in the asic1 namespace), so AMD appears to have a working setup.</p>
+  <ol class="asks">
+    <li>The supported capture point for IFCP frames on the switch (netdev and namespace) and on the compute tray, with the ethertype or filter to use.</li>
+    <li>The OVS / tc filter scripts used for TC-009…015 and TC-040…043, or the exact filter definitions.</li>
+    <li>The IFCP frame and header specification (outer header flags, reserved bits, PCP, capability TLVs, datagram format) we should assert against.</li>
+    <li>How to produce a minor-version mismatch (TC-CTRL-011, SBM-086): a test build or a packet-rewrite filter.</li>
+  </ol>
+  <details><summary>The cases (29)</summary><div class='tw'><table><thead><tr><th>Plan ID</th><th>Title</th></tr></thead><tbody><tr><td class='id'>TC-009</td><td>Keepalive Drop — SONiC to Compute (OVS Filter)</td></tr><tr><td class='id'>TC-010</td><td>Keepalive Drop — Compute to SONiC (OVS Filter)</td></tr><tr><td class='id'>TC-011</td><td>LL-Discovery Drop — SONiC to Compute (OVS Filter)</td></tr><tr><td class='id'>TC-012</td><td>LL-Discovery Drop — Compute to SONiC (OVS Filter)</td></tr><tr><td class='id'>TC-013</td><td>CapReq Drop — SONiC to Compute (OVS Filter, Timing-Based)</td></tr><tr><td class='id'>TC-014</td><td>CapResp Drop — Compute to SONiC (OVS Filter, Timing-Based)</td></tr><tr><td class='id'>TC-015</td><td>CapSet Drop — SONiC to Compute (tc u32 egress on eth330, asic1 netns)</td></tr><tr><td class='id'>TC-040</td><td>IFCP Egress Frame Direction — SONiC→compute (tc Counter Filter)</td></tr><tr><td class='id'>TC-041</td><td>IFCP Ingress Frame Direction — compute→SONiC (tc Counter Filter)</td></tr><tr><td class='id'>TC-042</td><td>IFCP Bidirectional Frame Direction — Full Negotiation Flow</td></tr><tr><td class='id'>TC-043</td><td>IFCP Steady-State Keepalive — Bidirectional (tc Counter Filter)</td></tr><tr><td class='id'>TC-SBM-063</td><td>The ethernet frame format of IFCP packet</td></tr><tr><td class='id'>TC-SBM-065</td><td>The IFCP outer header flag for the packet type is valid</td></tr><tr><td class='id'>TC-SBM-066</td><td>The reserved flags are not used in IFP outer header</td></tr><tr><td class='id'>TC-SBM-067</td><td>IFCP packets must have the highest priority set in the (PCP) header</td></tr><tr><td class='id'>TC-SBM-071</td><td>The discovery message has number of capabilities and capability type-length-value set</td></tr><tr><td class='id'>TC-SBM-075</td><td>When the link discovery handshake is completed, discover packets must be used for keepalive</td></tr><tr><td class='id'>TC-SBM-081</td><td>The encryption bit is set when the message is encrypted by SPDM</td></tr><tr><td class='id'>TC-SBM-083</td><td>The capabilities request and response packet format</td></tr><tr><td class='id'>TC-SBM-085</td><td>The major version must match, must minor version can vary</td></tr><tr><td class='id'>TC-SBM-086</td><td>Manipulate packet to mismatch the minor version</td></tr><tr><td class='id'>TC-SBM-091</td><td>Format of packet datagram unit with multiple events</td></tr><tr><td class='id'>TC-SBM-113</td><td>CP vs DP priority (can CP messages be starved)</td></tr><tr><td class='id'>TC-SBM-117</td><td>Starve all links with data path traffic, and ensure CP is intact or failovers to standby</td></tr><tr><td class='id'>TC-SBM-164</td><td>Drop ACK packets and verify retransmit</td></tr><tr><td class='id'>TC-SBM-172</td><td>IFCP sequence -&gt; Inject failure in every message path</td></tr><tr><td class='id'>TC-SBM-173</td><td>Events and control packet loss and retransmits</td></tr><tr><td class='id'>TC-SBM-174</td><td>Other control packets Rx starving IFCP (LLDP etc)</td></tr><tr><td class='id'>TC-SBM-175</td><td>Merics, events, other IFCP priorities marking</td></tr></tbody></table></div></details>
+</section>
+
+<section id="internals">
+  <span class="tag">C · 26 cases</span>
+  <h2>Controller internals: event hub, topology service, NMD</h2>
+  <p>These cases check behaviour inside the controller that the public AFM API does not show: event coalescing windows, priority bypass, action trees, the topology service, NMD admission and heartbeats.</p>
+  <ol class="asks">
+    <li>Where the event hub's configuration and state can be read or set: batch interval, the 2-second coalescing window, high-priority bypass, handler mode, action trees per vPOD.</li>
+    <li>Container or process names to restart or stop the switch manager, compute manager, node manager and topology service individually.</li>
+    <li>A way to observe NMD admission decisions and heartbeats (logs, API or metrics).</li>
+  </ol>
+  <details><summary>The cases (26)</summary><div class='tw'><table><thead><tr><th>Plan ID</th><th>Title</th></tr></thead><tbody><tr><td class='id'>TC-CTL-102</td><td>NMD rejects admission if the agent does not have a valid controller-coordinates</td></tr><tr><td class='id'>TC-CTL-103</td><td>Once admitted, NMD periodically sends heartbeat and system stats</td></tr><tr><td class='id'>TC-SWA-185</td><td>CMD &lt;-&gt; Switch Manager &lt;-&gt; Switch Agent NMD</td></tr><tr><td class='id'>TC-SBM-138</td><td>Switch agent thread comes up first in the agent container</td></tr><tr><td class='id'>TC-SBM-139</td><td>Three node agent threads are started by the node manager</td></tr><tr><td class='id'>TC-SBM-157</td><td>Node Manager sends operational API requests</td></tr><tr><td class='id'>TC-SEQ-015</td><td>Node Agent response propagated to Node Manager</td></tr><tr><td class='id'>TC-E2E-114</td><td>Bring down node manager, validate topo change gets reflected after it comes back up</td></tr><tr><td class='id'>TC-E2E-115</td><td>Bring down all the services/agents one by one/parallely and validate topo service in unaffected</td></tr><tr><td class='id'>TC-STR-012</td><td>Toposervice responsiveness during concurrent topology changes</td></tr><tr><td class='id'>TC-EVT-018</td><td>Move the Event Handler Mode to Auto Mode and verify warning and update status along with…</td></tr><tr><td class='id'>TC-EVT-022</td><td>Try flapping of connection between topo service and event hub</td></tr><tr><td class='id'>TC-EVT-027</td><td>Normal event coming follows the time window of 2 secs then coleased</td></tr><tr><td class='id'>TC-EVT-028</td><td>High priority Event bypasses the time window and straightaway goes for processing</td></tr><tr><td class='id'>TC-EVT-006</td><td>Event Hub with North Bound operation</td></tr><tr><td class='id'>TC-EVT-012</td><td>Event Hub when topology excel sheet with connectivity detail is changed ?</td></tr><tr><td class='id'>TC-EVT-013</td><td>Events hub validation with restarting component like switch manager/compute manager (All…</td></tr><tr><td class='id'>TC-EVT-014</td><td>Topo services manages the proper state of the component and these are communicated to events…</td></tr><tr><td class='id'>TC-EVT-033</td><td>If there is an action mapping tree mapped uniquely to a vpod</td></tr><tr><td class='id'>TC-EVT-032</td><td>If Events on different GPU ports but same sw-plane results in same GPUPortEvent node stores…</td></tr><tr><td class='id'>TC-EVT-035</td><td>Multiple independent actions at the same level</td></tr><tr><td class='id'>TC-EVT-008</td><td>If policies and workflow can be modified ?</td></tr><tr><td class='id'>TC-EVT-020</td><td>Event handler with API server is not responding ( Link between API server and Events hub is…</td></tr><tr><td class='id'>TC-EVT-030</td><td>If different events like GPU Events are coalesced and resolving top events will fix the…</td></tr><tr><td class='id'>TC-EVT-034</td><td>At end of time window these action trees are scanned and actions are taken</td></tr><tr><td class='id'>TC-EVT-010</td><td>Modify the batch interval in unified controller while bring-up of aifm</td></tr></tbody></table></div></details>
+</section>
+
+<section id="faults">
+  <span class="tag">D · 8 cases</span>
+  <h2>GPU fault injection</h2>
+  <p>These need a GPU in a specific failed state: a sysfs write failure, a programming error, an unhealthy GPU, an incompatible library, or partial GPU failure at admission.</p>
+  <ul class="asks">
+    <li>A supported way to inject each fault (debug knob, test build, sysfs override), and how to clear it afterwards.</li>
+  </ul>
+  <details><summary>The cases (8)</summary><div class='tw'><table><thead><tr><th>Plan ID</th><th>Title</th></tr></thead><tbody><tr><td class='id'>TC-BUG-012</td><td>GPU ready state ordering during bringup</td></tr><tr><td class='id'>TC-BUG-013</td><td>GPU programming errors are reported to controller</td></tr><tr><td class='id'>TC-BUG-015</td><td>Nodeagent handles graceful exit on incompatible libraries</td></tr><tr><td class='id'>TC-BUG-029</td><td>vPOD state correctness when sysfs writes fail on GPU</td></tr><tr><td class='id'>TC-TRG-008</td><td>DP traffic during GPU fault</td></tr><tr><td class='id'>TC-TRG-011</td><td>GPU unhealthy — CP sessions remain active</td></tr><tr><td class='id'>TC-TRG-012</td><td>GPU fault injection — IFCP CP unaffected on other GPUs</td></tr><tr><td class='id'>TC-STR-003</td><td>Node admission with partial GPU failures across multiple nodes</td></tr></tbody></table></div></details>
+</section>
+
+<section id="environment">
+  <span class="tag">E · 74 cases</span>
+  <h2>Equipment and lab setup</h2>
+  <p>No AMD tooling is needed for these, but each one needs a specific setup.</p>
+  <div class="env"><table><thead><tr><th>What we need</th><th>Cases</th><th>Plan IDs</th></tr></thead><tbody><tr><td><strong>An MCH rack (heliosmch / heliosmchmini, 18-link topology)</strong><br><span class='muted'>Neither MR3 nor g02-g17 is MCH. When can we get time on one, and which of the 39 cases does AMD already run?</span></td><td class='num'>39</td><td><details><summary>IDs</summary><p class='ids'>TC-MCH-021 TC-MCH-024 TC-MCH-030 TC-MCH-053 TC-MCH-025 TC-MCH-044 TC-MCH-054 TC-MCH-018 TC-MCH-004 TC-MCH-033 TC-MCH-040 TC-MCH-032 TC-MCH-063 TC-MCH-050 TC-MCH-045 TC-MCH-028 TC-MCH-060 TC-MCH-009 TC-MCH-031 TC-MCH-023 TC-MCH-026 TC-MCH-034 TC-MCH-019 TC-MCH-006 TC-MCH-043 TC-MCH-022 TC-MCH-012 TC-MCH-008 TC-MCH-015 TC-MCH-002 TC-MCH-014 TC-MCH-055 TC-MCH-011 TC-MCH-058 TC-MCH-062 TC-MCH-039 TC-MCH-007 TC-MCH-048 TC-MCH-047</p></details></td></tr><tr><td><strong>LDAP and RADIUS servers</strong><br><span class='muted'>Server addresses, a test account and the authn-policy settings AFM expects.</span></td><td class='num'>3</td><td><details><summary>IDs</summary><p class='ids'>TC-AFM-044 TC-CTL-042 TC-CTL-119</p></details></td></tr><tr><td><strong>An external syslog server</strong><br><span class='muted'>Address and port the AFM audit export should target.</span></td><td class='num'>1</td><td><details><summary>IDs</summary><p class='ids'>TC-CTL-101</p></details></td></tr><tr><td><strong>Certificates / PKI</strong><br><span class='muted'>The procedure and test CA to upload a custom controller certificate, and to present an untrusted client certificate.</span></td><td class='num'>6</td><td><details><summary>IDs</summary><p class='ids'>TC-CTL-128 TC-CTL-129 TC-CTL-130 TC-CTL-135 TC-CTL-136 TC-SWA-186</p></details></td></tr><tr><td><strong>Upgrade images and rollback</strong><br><span class='muted'>N-1 and N controller and agent images, a SONiC image for the ONIE/local install, and how to trigger a failed upgrade for the rollback case.</span></td><td class='num'>7</td><td><details><summary>IDs</summary><p class='ids'>TC-CTL-054 TC-CTL-078 TC-CTL-127 TC-SWA-128 TC-SWA-164 TC-HW-022 TC-AFM-UPGRADE-004</p></details></td></tr><tr><td><strong>Password recovery</strong><br><span class='muted'>The supported admin password-recovery procedure.</span></td><td class='num'>2</td><td><details><summary>IDs</summary><p class='ids'>TC-BUG-031 TC-BUG-032</p></details></td></tr><tr><td><strong>Management-network control</strong><br><span class='muted'>How you cut a node&#x27;s management connectivity in your lab (switch port, ACL, OOB console). Doing it over SSH cuts our own access.</span></td><td class='num'>4</td><td><details><summary>IDs</summary><p class='ids'>TC-AFM-008 TC-BUG-003 TC-CTL-050 TC-E2E-093</p></details></td></tr><tr><td><strong>Fresh install / topology import</strong><br><span class='muted'>A rack we may reinstall, the bootstrap file, the topology CSV format and the SONiC VM with bcmsim.</span></td><td class='num'>5</td><td><details><summary>IDs</summary><p class='ids'>TC-CTL-057 TC-CTL-060 TC-SWA-170 TC-SWA-195 TC-SWA-175</p></details></td></tr><tr><td><strong>An Fboss switch</strong><br><span class='muted'>Only one case; is Fboss still in scope for Helios?</span></td><td class='num'>1</td><td><details><summary>IDs</summary><p class='ids'>TC-BUG-006</p></details></td></tr><tr><td><strong>AFM web UI checks</strong><br><span class='muted'>These are manual by nature (layout, tooltips, page-load time, time zone). We plan to run them by hand unless AMD has UI automation.</span></td><td class='num'>6</td><td><details><summary>IDs</summary><p class='ids'>TC-CTL-106 TC-CTL-108 TC-CTL-109 TC-CTL-110 TC-CTL-111 TC-CTL-121</p></details></td></tr></tbody></table></div>
+</section>
+
+<section id="procedures">
+  <span class="tag">F · 23 cases</span>
+  <h2>Procedures and pass criteria</h2>
+  <p>The plan gives a title only for these, and the title leaves the procedure or pass criteria open. Steps and expected results would let us automate them. Some specific questions:</p>
+  <ul class="asks">
+    <li><strong>AGGW-031:</strong> which role field restricts a user to individual objects within a kind?</li>
+    <li><strong>E2E-064 / SWA-202:</strong> which AFM fields hold port speed, FEC, auto-negotiation and duplex? How does an AFM ASIC port id map to a SONiC port name?</li>
+    <li><strong>BUG-018:</strong> the same port-id mapping (the full-rack scripts assumed <code>Ethernet{asic*256+port+1}</code>; is that right?).</li>
+    <li><strong>BUG-011:</strong> where the lane bitmask is read on the compute tray (the 12 Oct runbook used a <code>station_lane_en_bitmap</code> sysfs value).</li>
+    <li><strong>SBM-087:</strong> where the global encryption knob lives.</li>
+    <li><strong>E2E-067 / E2E-083 / SBM-203:</strong> is deleting the physical pod, or the maximum number of switch deletes, something we may do on the shared full rack?</li>
+    <li><strong>STR-*:</strong> durations, scale targets and pass thresholds for the stress cases.</li>
+  </ul>
+  <details><summary>The cases (23)</summary><div class='tw'><table><thead><tr><th>Plan ID</th><th>Title</th></tr></thead><tbody><tr><td class='id'>TC-AFM-AGGW-031</td><td>Per-object RBAC — user sees only permitted objects within a kind</td></tr><tr><td class='id'>TC-CTL-112</td><td>The horizontal and vertical scaling of compute nodes - in case of techsupport collection</td></tr><tr><td class='id'>TC-CTL-123</td><td>Logs related to triggers are updating</td></tr><tr><td class='id'>TC-E2E-064</td><td>AIFM displays correct status of GPU/Switch ports/links (speed, AN enable/disable etc)</td></tr><tr><td class='id'>TC-E2E-067</td><td>Complete POD removal/deletion</td></tr><tr><td class='id'>TC-E2E-083</td><td>vPODs limited to number of switching planes</td></tr><tr><td class='id'>TC-STR-001</td><td>Full rack parallel node admission — all 18 computes join simultaneously</td></tr><tr><td class='id'>TC-STR-004</td><td>All 6 switch trays admitted in parallel — port discovery completeness</td></tr><tr><td class='id'>TC-STR-006</td><td>Port drain lane mask update time at full rack scale</td></tr><tr><td class='id'>TC-STR-008</td><td>Node join + node leave during vPOD reconfiguration</td></tr><tr><td class='id'>TC-STR-009</td><td>Decommission all 18 nodes in parallel — controller survives</td></tr><tr><td class='id'>TC-STR-014</td><td>Config field churn — port flap only reprograms DF mask, not full config</td></tr><tr><td class='id'>TC-STR-015</td><td>Controller log rotation under sustained full-rack activity (2 hours)</td></tr><tr><td class='id'>TC-STR-021</td><td>Repeated full rack teardown and rebuild — 3 cycles</td></tr><tr><td class='id'>TC-STR-022</td><td>Simultaneous port failures across 6 compute nodes — single reconfigure</td></tr><tr><td class='id'>TC-SWA-173</td><td>Switch Manager must assign switching plane and update the topology</td></tr><tr><td class='id'>TC-SWA-202</td><td>Switch port details (Speed, FEC, duplex, vlan) updated</td></tr><tr><td class='id'>TC-SWA-208</td><td>Switch manager maintains the configuration of the switches</td></tr><tr><td class='id'>TC-SWA-210</td><td>How to get port in training or unknown state</td></tr><tr><td class='id'>TC-SBM-203</td><td>Max switch delete possible for every rack</td></tr><tr><td class='id'>TC-SBM-087</td><td>Encryption can be enabled/disabled by a global knob</td></tr><tr><td class='id'>TC-BUG-018</td><td>Port oper-status correctly reflects actual link state</td></tr><tr><td class='id'>TC-BUG-011</td><td>Lanebitmask is set correctly on node readmission</td></tr></tbody></table></div></details>
+</section>
+
+<section id="confirm">
+  <span class="tag">Observed on MR3</span>
+  <h2>Behaviour to confirm</h2>
+  <p>From the first automated AFM run on the MR3 mini rack (13 Oct, AFM 0.1.0-AICC-797, 46 pass, 13 fail). Please tell us whether each is intended.</p>
+  <div class="note">
+    <p><strong>Read access is open to every authenticated user.</strong> A user whose role grants only the cluster group can read auth users and monitoring alerts (HTTP 200). Writes outside the granted groups are refused (403). Is read RBAC enforced by design?</p>
+  </div>
+  <div class="note">
+    <p><strong>An idle AggWatch stream closes after about 32 seconds</strong> with <code>{"type":"Error", ... "stream error: EOF"}</code>. Is there an idle timeout, and should clients send keepalive pings? (Plan case AGGW-020 expects an idle connection to stay open.)</p>
+  </div>
+  <div class="note">
+    <p><strong>Telemetry queries are rate-limited.</strong> About 30 queries in a few seconds returned HTTP 413 "query rate limit exceeded". What is the documented limit?</p>
+  </div>
+  <div class="note">
+    <p><strong>Empty or malformed watch options return a code 500 Error event</strong> before the stream closes. Should that be a 4xx-style error?</p>
+  </div>
+  <div class="note">
+    <p><strong>Audit records for AggWatch connections (AGGW-017/018):</strong> what action name and fields does the audit record of a watch use?</p>
+  </div>
+</section>
+
+<section id="next">
+  <span class="tag">H · 23 cases</span>
+  <h2>No input needed: we automate these next</h2>
+  <p>Observable through switch process lists, AFM events and the AFM API: node-agent distribution and redistribution across switches, readmission with ports down, event trails, switch force-decommission, MTU changes and agent start-up checks.</p>
+  <details><summary>The cases (23)</summary><div class='tw'><table><thead><tr><th>Plan ID</th><th>Title</th></tr></thead><tbody><tr><td class='id'>TC-SBM-006</td><td>Concurrent Pairwise Process Restart Matrix</td></tr><tr><td class='id'>TC-SBM-008</td><td>Sb-node-agent Redistribution and Load-Balance on Switch Failure/Recovery</td></tr><tr><td class='id'>TC-SBM-009</td><td>Repeated Switch Flap -- No Role/Assignment Thrashing</td></tr><tr><td class='id'>TC-SBM-011</td><td>Compute GPU-Set Migration Consistency (No Split Across Switches)</td></tr><tr><td class='id'>TC-SBM-023</td><td>Switch Port MTU Lowered Below Negotiated IFCP MTU</td></tr><tr><td class='id'>TC-SBM-030</td><td>No Stale Events Reference a Switch After Removal</td></tr><tr><td class='id'>TC-SBM-038</td><td>Compute Readmit With a GPU/Datapath Port Already Down</td></tr><tr><td class='id'>TC-SBM-042</td><td>Full Event Trail Across Compute Decommission, Delete, and Readmit</td></tr><tr><td class='id'>TC-SBM-043</td><td>Switch-Side GPU Ports Show Down (API) When Compute Is Deleted</td></tr><tr><td class='id'>TC-SBM-045</td><td>Delete the Switch Assigned as a New Compute&#x27;s Node-Agent Host Mid-Admission</td></tr><tr><td class='id'>TC-SBM-050</td><td>Sideband agent come up on the switch along with node agent proxy</td></tr><tr><td class='id'>TC-SBM-097</td><td>Bring down the non-sideband link b/w switch and GPU</td></tr><tr><td class='id'>TC-SBM-099</td><td>Flap connectivity b/w node agent and afm controller (controller hosted on different and same…</td></tr><tr><td class='id'>TC-SBM-111</td><td>Bring down CP switch while vPOD CRUD is going on</td></tr><tr><td class='id'>TC-SBM-114</td><td>Creation of vlan and forwarding table does not affect cp traffic</td></tr><tr><td class='id'>TC-SBM-135</td><td>Sideband Manager should distribute the agents among the 6 available switches</td></tr><tr><td class='id'>TC-SBM-136</td><td>Node agent are distributed among all switches</td></tr><tr><td class='id'>TC-SBM-137</td><td>On switch failure, Sideband manager must redistribute the node agents from the failed switch</td></tr><tr><td class='id'>TC-SBM-178</td><td>Admitted switch can be force decomissioned</td></tr><tr><td class='id'>TC-SBM-198</td><td>Once a switch is readded, load balancing has to be done</td></tr><tr><td class='id'>TC-SBM-207</td><td>Control path must be terminated on compute decommission</td></tr><tr><td class='id'>TC-BUG-019</td><td>Switch agent starts correctly with mgmt IP on non-default interface (eth1)</td></tr><tr><td class='id'>TC-BUG-020</td><td>Switch agent rejects invalid fru.json and does not start</td></tr></tbody></table></div></details>
+</section>
+
+<footer>
+  Prepared from the helios-tests automation of the HPE/AMD Helios Juniper ScaleUp test plan (542 cases), 13 Oct 2026.
+  Case titles are quoted from the plan. Counts reflect the automation as of commit fbe442a.
+</footer>
+</div>
+</body>
+</html>
