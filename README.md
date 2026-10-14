@@ -183,6 +183,11 @@ special rack or server, or manual work.
 .venv/bin/python tools/access_needed.py testplan/full_rack_testplan.xlsx [--dry-run]
 ```
 
+Add `--automation results/mr3-2026101*` to also rewrite column D (Automaton Yes/No/Inprogress) from the code:
+- **Yes:** automated, and executed (PASS or FAIL) on a rack in the given result folders.
+- **Inprogress:** automated, not yet run on a rack.
+- **No:** not automated.
+
 ### Record results in the test-plan workbook
 
 ```bash
