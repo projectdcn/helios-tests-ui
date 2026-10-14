@@ -231,6 +231,28 @@ def automation_values(validated: set[str]) -> dict[str, str]:
     return {c["id"]: ("Yes" if c["id"] in validated else "Inprogress") if c["id"] in auto else "No" for c in cases}
 
 
+# not automated: a title that names one of these actions changes rack state (estimate, marked "(est.)")
+DISRUPTIVE_RX = re.compile(r"restart|reboot|power|cycl|flap|shut|bring down|brought down|down the|decommission|delet|"
+                           r"remov|upgrade|downgrade|rollback|drain|failover|fail over|kill|stop|reload|reset|inject|drop|"
+                           r"disconnect|re-?add|readmit|teardown|tear down|disable|install|move|churn|parallel|storm|"
+                           r"crash|unplug|pull|isolat|partition|disrupt|flood|starv|manipulat", re.I)
+
+
+def disruptive_table() -> dict[str, str]:
+    """Disruptive column: from the test's marker when automated, else estimated from the plan title."""
+    auto = automated()
+    out = {}
+    for c in load_cases():
+        if c["id"] in auto:
+            out[c["id"]] = "Disruptive" if auto[c["id"]][1] else "Non-disruptive"
+        else:
+            out[c["id"]] = ("Disruptive" if DISRUPTIVE_RX.search(c.get("title") or "") else "Non-disruptive") + " (est.)"
+    for test_id, (tid, _) in ROW_ALIASES.items():       # rows that share a TID (e.g. TC-AFM-005A on the 005 row)
+        if test_id in auto:
+            out[test_id] = "Disruptive" if auto[test_id][1] else "Non-disruptive"
+    return out
+
+
 def write(wb_path: Path, access: dict[str, str], dry: bool, automation: dict[str, str] | None = None) -> None:
     lock = wb_path.with_name("~$" + wb_path.name)
     if lock.exists() and not dry:
@@ -241,6 +263,7 @@ def write(wb_path: Path, access: dict[str, str], dry: bool, automation: dict[str
     for test_id, (tid, frag) in ROW_ALIASES.items():
         alias_of[(tid, frag)] = test_id
     counts, missing = Counter(), []
+    disr = disruptive_table()
     for sheet, col, hdr_ref in (("Testcases", 9, 8), ("mortaro", 8, 7)):
         if sheet not in wb.sheetnames:
             continue
@@ -248,6 +271,10 @@ def write(wb_path: Path, access: dict[str, str], dry: bool, automation: dict[str
         ws.cell(2, col).value = "Access needed"
         ws.cell(2, col)._style = copy.copy(ws.cell(2, hdr_ref)._style)
         ws.column_dimensions[openpyxl.utils.get_column_letter(col)].width = 42
+        dcol = 12 if sheet == "Testcases" else 10      # after Scope (J) / Origin (K); mortaro: after Scope (I)
+        ws.cell(2, dcol).value = "Disruptive"
+        ws.cell(2, dcol)._style = copy.copy(ws.cell(2, hdr_ref)._style)
+        ws.column_dimensions[openpyxl.utils.get_column_letter(dcol)].width = 22
         for r in range(3, ws.max_row + 1):
             tid = ws.cell(r, 1).value
             tid = tid.strip() if isinstance(tid, str) else tid
@@ -268,11 +295,17 @@ def write(wb_path: Path, access: dict[str, str], dry: bool, automation: dict[str
                     counts[f"Automation={av}"] += 1
                     if not dry:
                         ws.cell(r, 4).value = av
+            dv = disr.get(key) or disr.get(tid)
+            if dv:
+                counts[f"Disruptive={dv}"] += 1
             if not dry:
                 ws.cell(r, col).value = val
                 ws.cell(r, col)._style = copy.copy(ws.cell(r, hdr_ref)._style)
                 ws.cell(r, col).alignment = Alignment(wrap_text=True, vertical="top")
-    print(f"{wb_path.name}: {sum(v for k, v in counts.items() if not k.startswith('Automation='))} rows "
+                if dv:
+                    ws.cell(r, dcol).value = dv
+                    ws.cell(r, dcol)._style = copy.copy(ws.cell(r, hdr_ref)._style)
+    print(f"{wb_path.name}: {sum(v for k, v in counts.items() if not k.startswith(('Automation=', 'Disruptive=')))} rows "
           f"{'would get' if dry else 'got'} an access value")
     for k, n in counts.most_common():
         print(f"  {n:>4}  {k}")

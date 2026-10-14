@@ -499,6 +499,7 @@ defaults:
       <tr><td>I Access needed</td><td>What a run needs (<code>tools/access_needed.py</code>).</td></tr>
       <tr><td>J Scope</td><td>Where the case runs: Switch, Compute, Switch + Compute, or Switch (AFM API) (the controller runs on the switch trays).</td></tr>
       <tr><td>K Origin</td><td>"BKC-26.12 plan", or "Added - helios-tests (&lt;date&gt;)" for cases we added (listed in <code>testplan/added.yaml</code>). Filter on it to show only the added cases.</td></tr>
+      <tr><td>L Disruptive</td><td><strong>Disruptive</strong> / <strong>Non-disruptive</strong>: from the test's <code>disruptive</code> marker for automated cases (needs <code>--allow-disruptive</code>, changes rack state); for cases not automated yet, estimated from the title and marked "(est.)". Filled by <code>tools/access_needed.py</code> (mortaro: column J).</td></tr>
     </tbody>
   </table>
   </div>
