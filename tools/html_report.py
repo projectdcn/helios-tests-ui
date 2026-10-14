@@ -276,10 +276,12 @@ def build(items: list[dict], args) -> str:
     if plan_rows is not None:      # whole test plan: counts follow the workbook rows, not only what ran
         kp = Counter(r["status"] for r in plan_rows)
     n_cases = len(plan_rows) if plan_rows is not None else len(verdicts) - len(extra)
-    not_run_txt = (f" &middot; {kp['NOT RUN']} not run &middot; {kp['NOT AUTOMATED']} not automated"
+    not_run_txt = (f" &middot; {kp['NOT RUN']} automated but not run &middot; {kp['NOT AUTOMATED']} not automated"
                    if plan_rows is not None else "")
-    not_run_card = (f'<div class="kpi-card"><div class="num" style="color:var(--skip);">{kp["NOT RUN"] + kp["NOT AUTOMATED"]}'
-                    f'</div><div class="label">Not run / not automated</div></div>' if plan_rows is not None else "")
+    not_run_card = (f'<div class="kpi-card"><div class="num" style="color:#94a3b8;">{kp["NOT RUN"]}</div>'
+                    f'<div class="label">Automated, not run yet</div></div>'
+                    f'<div class="kpi-card"><div class="num" style="color:#64748b;">{kp["NOT AUTOMATED"]}</div>'
+                    f'<div class="label">Not automated</div></div>' if plan_rows is not None else "")
     executed = kp["PASS"] + kp["FAIL"]
     rate = (100.0 * kp["PASS"] / executed) if executed else 0.0
     auto_pill = auto_card = ""
@@ -456,8 +458,8 @@ pre.logpre .lvl-note {{ color: #9aa7b4; font-style: italic; }}
   Chart.defaults.font.family = "'Segoe UI', system-ui, sans-serif";
   var P='#22c55e', F='#ef4444', B='#f97316', S='#f59e0b';
   new Chart(document.getElementById('vizDoughnut'), {{ type: 'doughnut',
-    data: {{ labels: ['Pass','Fail','Pending / blocked','Skipped / N/A','Not run / not automated'], datasets: [{{ data: {json.dumps([kp['PASS'], kp['FAIL'], kp['PENDING'] + kp['BLOCKED'], kp['SKIP'] + kp['N/A'], kp['NOT RUN'] + kp['NOT AUTOMATED']])},
-      backgroundColor: [P,F,B,S,'#64748b'], borderWidth: 0, hoverOffset: 8 }}] }},
+    data: {{ labels: ['Pass','Fail','Pending / blocked','Skipped / N/A','Automated, not run','Not automated'], datasets: [{{ data: {json.dumps([kp['PASS'], kp['FAIL'], kp['PENDING'] + kp['BLOCKED'], kp['SKIP'] + kp['N/A'], kp['NOT RUN'], kp['NOT AUTOMATED']])},
+      backgroundColor: [P,F,B,S,'#94a3b8','#475569'], borderWidth: 0, hoverOffset: 8 }}] }},
     options: {{ responsive: true, maintainAspectRatio: false, cutout: '70%', plugins: {{ legend: {{ position: 'bottom', labels: {{ boxWidth: 12 }} }} }} }},
     plugins: [{{ id: 'ct', beforeDraw: function (c) {{ var a=c.chartArea, x=(a.left+a.right)/2, y=(a.top+a.bottom)/2, ctx=c.ctx;
       ctx.save(); ctx.font='bold 24px Segoe UI'; ctx.fillStyle='#e2e8f0'; ctx.textAlign='center'; ctx.textBaseline='middle';
