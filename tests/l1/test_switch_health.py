@@ -309,7 +309,8 @@ def test_no_new_syslog_errors(switch, inventory, checks, record_property):
             continue
         if sev != "ERR" or re.search(r"syncd|orchagent|sai|afm|swss", ln, re.I):
             bad.append(ln)
-    by_src = Counter(re.sub(r"\[\d+\]", "", (ln.split()[5] if len(ln.split()) > 5 else "?")).rstrip(":") for ln in bad)
+    # '2026 Oct 14 16:15:24.474622 st1 ERR swss0#orchagent: ...' -> source 'swss0#orchagent'
+    by_src = Counter(re.sub(r"\[\d+\]", "", (ln.split()[6] if len(ln.split()) > 6 else "?")).rstrip(":") for ln in bad)
     record_property("syslog", {"errors": len(bad), "ignored_known_noise": ignored, "by_source": dict(by_src.most_common(8))})
     checks.check(not bad, f"{switch.name}: {len(bad)} new ERR/CRIT message(s) in the last "
                           f"{inventory.th('switch.log_window_h', 24)} h by source {dict(by_src.most_common(5))}; "
