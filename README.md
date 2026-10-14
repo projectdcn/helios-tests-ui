@@ -215,12 +215,23 @@ own collapsible command log.
 .venv/bin/python tools/html_report.py results/<run-folder> [more run folders] -o results/report.html --title "..." --subtitle "..." --notes results/findings.txt
 ```
 
-- **Run folders:** list them newest first with `ls -td results/*-2*/`. When several
-  folders contain the same test, a run that executed it wins over one that skipped it.
+- **Run folders:** find them with `ls -td results/*-2*/` and pass them oldest first. When
+  several folders contain the same test, a run that executed it wins over one that skipped
+  or blocked it; otherwise the later run wins.
 - **`--notes`:** an optional file with one finding per line. Start a line with `!`
   for a problem or `+` for good news.
+- **`--workbook testplan/full_rack_testplan.xlsx`:** counts and tables follow the reviewed
+  status in the workbook (raw verdict shown where it differs), with Level, Scope, Origin and
+  Disruptive per case and status-by-scope / status-by-origin tables.
+- **`--all-cases`** (with `--workbook`): the overall report - every workbook case (executed,
+  not run, not automated), automation coverage from `tools/coverage.py`, a filterable table.
+- **`--tz RUN=HOURS`:** UTC offset for run folders recorded before 14 Oct evening (runner-local
+  `started`; Mac = -7, jump host = 0). Newer runs record UTC.
+- **Size:** each embedded command log is clipped to its first and last 75,000 characters
+  (full log in `results/<run>/logs/`), so reports stay under the 16 MB artifact limit.
 - **Where to keep reports:** in `results/`, which is git-ignored. Reports contain lab
-  hostnames and IPs. The charts load Chart.js from a CDN.
+  hostnames and IPs; check that every password value reads `<REDACTED>` before sharing.
+  The charts load Chart.js from a CDN.
 
 ### 6. Coverage: automated vs. missing
 
@@ -237,7 +248,7 @@ The table has one row per category:
 `--missing` also lists every case that has **no test yet**, with its ID, level
 and title.
 
-## Coverage (406 of 548 cases: 542 plan + 6 added)
+## Coverage (423 of 565 cases: 542 plan + 23 added, TC-SWH-037…059)
 
 * **TC-SWH-001…036, switch hardware.** Firmware, fans, PSUs, platform/EEPROM,
   multi-ASIC namespaces, interface state/speed/MTU, error-counter deltas,

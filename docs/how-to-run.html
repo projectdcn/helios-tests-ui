@@ -142,7 +142,7 @@
   <p class="muted">Only needed for the AFM controller API tests (<code>tests/afm</code>):</p>
   <div class="cmd"><pre>read -s &quot;HELIOS_AFM_PASSWORD?AFM admin password: &quot; &amp;&amp; export HELIOS_AFM_PASSWORD &amp;&amp; echo</pre></div>
   <div class="note">
-    <strong>Scope today:</strong> 406 of 548 cases are automated (the 542 plan cases plus 6 switch cases added on 14 Oct, TC-SWH-037…042), plus 2 RCCL smoke tests used as evidence. 52 of them (MCH rack, LDAP/RADIUS, syslog, upgrade images, management-network control) skip until the equipment is in the inventory.
+    <strong>Scope today:</strong> 423 of 565 cases are automated (the 542 plan cases plus 23 switch-tray cases added on 14 Oct, TC-SWH-037…059), plus 2 RCCL smoke tests used as evidence. <code>tools/coverage.py</code> gives the current numbers. 52 of them (MCH rack, LDAP/RADIUS, syslog, upgrade images, management-network control) skip until the equipment is in the inventory.
     <ul>
       <li><strong>Over SSH:</strong> switch hardware, switch agent, datapath, scale-out RDMA, RAS reset, metrics exporter, node platform, sideband and IFCP.</li>
       <li><strong>Over the AFM REST API and AggWatch WebSocket (<code>tests/afm</code>, 233 cases):</strong> auth, cluster and object specs, failover policies, RBAC, audit, metrics, techsupport and AggWatch. Plus 149 disruptive cases, built from the full-rack procedures: compute Reconfigure, agent/controller restarts, vPOD/compute/switch lifecycle, fabric-link failover (TC-AFM-006…047, RC-001…026), the FO failover scenarios and vPOD operations (TC-E2E), controller resilience, snapshot/restore, bug regressions, stress, compute-side afmctl checks, IFCP recovery, switch-agent cases and traffic with AFM operations.</li>
@@ -381,7 +381,7 @@ defaults:
 </section>
 
 <section id="afm">
-  <h2><span class="num">5</span>AFM controller API (both racks)</h2>
+  <h2 id="afm"><span class="num">5</span>AFM controller API (both racks)</h2>
   <p>The <code>tests/afm</code> suite talks to the AFM controller over HTTPS: REST and the AggWatch WebSocket. It doesn't SSH to any tray, so it only needs the controller URL, the admin user and <code>HELIOS_AFM_PASSWORD</code> exported in the same terminal.</p>
   <div class="table-wrap">
   <table>
@@ -411,6 +411,11 @@ defaults:
   <p class="muted">Delete the session cookie when you're done:</p>
   <div class="cmd"><pre>rm -f /tmp/afm.jar</pre></div>
 
+  <h3>Alternative for the full rack: run the AFM suite on the jump host</h3>
+  <p>The jump host reaches the controller directly (<code>https://10.255.4.71</code>, no tunnel) and the trays without the 2-session limit, so AFM cases that also SSH to trays (TC-001, TC-SEQ-010, TC-E2E-009, the disruptive cases) are much faster there. Its inventory <code>~/helios/fullrack-jump-afm.yaml</code> is <code>fullrack-jump-ip.yaml</code> with <code>afm.url: https://10.255.4.71</code> (<code>verify_tls: false</code>). Put the pytest command in a small script on the jump host that starts with <code>read -s -p &quot;AFM admin password: &quot; HELIOS_AFM_PASSWORD &amp;&amp; export HELIOS_AFM_PASSWORD</code> and ends with <code>unset HELIOS_AFM_PASSWORD</code>, then run it from a terminal and type the password there:</p>
+  <div class="cmd"><pre>ssh -t -p 8059 tenant-hpe@165.204.38.103 &#x27;bash ~/helios/run-afm-rerun.sh&#x27;</pre></div>
+  <p class="muted">Quote the remote path: unquoted, <code>~</code> expands on your Mac. The jump host throttles rapid SSH logins ("Connection timed out during banner exchange"); wait a minute and retry. The 14 Oct techsupport run (TC-AFM-048) passed from the Mac through the tunnel as well.</p>
+
   <h3>3. Run the suite</h3>
   <p>MR3:</p>
   <div class="cmd"><pre>.venv/bin/pytest tests/afm --inventory inventory/mr3.local.yaml -v --log-file=results/mr3-afm.log</pre></div>
@@ -437,7 +442,7 @@ defaults:
     <tbody>
       <tr><td>Specific plan IDs</td><td><code>--tc TC-SWH-002,TC-AFM-001</code></td></tr>
       <tr><td>Part of the rack</td><td><code>--switches sw1,sw2</code> / <code>--computes c01,c02</code></td></tr>
-      <tr><td>Switch hardware tests only</td><td><code>tests/l1/test_switch_hw.py</code> (plan TC-SWH-001…036) and <code>tests/l1/test_switch_health.py</code> (added TC-SWH-037…042: port config vs cabling, consistency across switches, optics/DOM, FEC, containers, reboot cause and core files)</td></tr>
+      <tr><td>Switch hardware tests only</td><td><code>tests/l1/test_switch_hw.py</code> (plan TC-SWH-001…036) and <code>tests/l1/test_switch_health.py</code> (added TC-SWH-037…059: port config vs cabling, consistency across switches, optics/DOM, FEC, containers, reboot cause and core files, kernel log, daemon errors, link stability, PFC/QoS, saved vs running config, port state, vPOD isolation, queues, CRM, management interface, sensors, disk/memory, critical processes, watchdog/SSD, firmware); <code>tests/afm/test_afm_switch_fabric.py</code> (TC-SWH-048/050: switch fabric vs AFM)</td></tr>
       <tr><td>Datapath tests only (L2 ping, TransferBench, RCCL)</td><td><code>tests/l1/test_afm_datapath.py</code> and <code>tests/l1/test_rccl_smoke.py</code></td></tr>
       <tr><td>Switch agent / hardware / RDMA / RAS only</td><td><code>tests/switch</code> / <code>tests/hw</code> / <code>tests/scaleout</code> / <code>tests/ras</code></td></tr>
       <tr><td>Metrics exporter / platform / IFoE driver only</td><td><code>tests/telemetry</code> / <code>tests/platform</code> / <code>tests/ifoe</code></td></tr>
@@ -457,6 +462,7 @@ defaults:
   <div class="cmd"><pre>.venv/bin/pytest tests/afm --inventory inventory/fullrack.local.yaml --tc &quot;$(cat results/afm-nondisruptive-tcs.txt)&quot; --deselect tests/afm/test_afm_rbac_audit.py::test_techsupport -v --log-file=results/fullrack-afm-nd.log</pre></div>
   <p>The SSH part (52 cases), on the jump host in <code>tmux</code> (copy the list file there first):</p>
   <div class="cmd"><pre>../venv/bin/python -m pytest tests --ignore=tests/afm --inventory ../fullrack-jump.yaml --tc &quot;$(cat switch-nondisruptive-tcs.txt)&quot; -v</pre></div>
+  <p>The compute and switch + compute part (<code>--scope &quot;Compute,Switch + Compute&quot;</code>): its SSH cases on the jump host the same way; its few AFM cases (TC-001, TC-SEQ-010, TC-E2E-009 and TC-AFM-048 techsupport) on the jump host with AFM reached directly - see <a href="#afm">section 5</a>. MCH cases are N/A on g02-g17 (not an MCH rack). The 14 Oct run: 29 cases in about 15 minutes from the jump host.</p>
   <p class="muted">Other selections the same way, e.g. all L2 AFM cases: <code>--level L2 --suite afm</code>; only the cases we added: <code>--origin &quot;Added - helios-tests (14 Oct 2026)&quot;</code>.</p>
   <p class="muted">To avoid passing <code>--inventory</code> every time:</p>
   <div class="cmd"><pre>export HELIOS_INVENTORY=inventory/mr3.local.yaml</pre></div>
@@ -506,7 +512,7 @@ defaults:
     <thead><tr><th>Column</th><th>Meaning</th></tr></thead>
     <tbody>
       <tr><td>D Automation</td><td><strong>Yes</strong> = automated and run on a rack (any result, Skipped included); <strong>Inprogress</strong> = automated, never run on a rack; <strong>No</strong> = not automated.</td></tr>
-      <tr><td>F Execution Status</td><td>PASS, FAIL, PARTIAL, Pending (blocked or environment), Skipped, or <strong>N/A</strong> (set by hand when the check does not apply to the platform, e.g. PSU cases on busbar-fed QFX5252 switches, optics on backplane links).</td></tr>
+      <tr><td>F Execution Status</td><td>PASS, FAIL, PARTIAL (passed on every reachable tray / every tray the pre-flight kept), Pending (blocked or environment), Skipped, or <strong>N/A</strong> (set by hand when the check does not apply to the platform, e.g. PSU cases on busbar-fed QFX5252 switches, optics on backplane links, MCH cases on a non-MCH rack).</td></tr>
       <tr><td>I Access needed</td><td>What a run needs (<code>tools/access_needed.py</code>).</td></tr>
       <tr><td>J Scope</td><td>Where the case runs: Switch, Compute, Switch + Compute, or Switch (AFM API) (the controller runs on the switch trays).</td></tr>
       <tr><td>K Origin</td><td>"BKC-26.12 plan", or "Added - helios-tests (&lt;date&gt;)" for cases we added (listed in <code>testplan/added.yaml</code>). Filter on it to show only the added cases.</td></tr>
@@ -514,7 +520,7 @@ defaults:
     </tbody>
   </table>
   </div>
-  <div class="note"><strong>Updating the workbook:</strong> close it in Excel first. A script writing the file while Excel has it open loses its changes when Excel saves. The g02-g17 full-rack results (10–12 Oct: AFM L2 batch and the 18-tray traffic validation) are already recorded in it.</div>
+  <div class="note"><strong>Updating the workbook:</strong> close it in Excel first. A script writing the file while Excel has it open loses its changes when Excel saves. The g02-g17 full-rack results (10–12 Oct: AFM L2 batch and the 18-tray traffic validation; 13–14 Oct: all L1 and every automated non-disruptive case) are already recorded in it. Check for Excel's lock file first: <code>ls testplan/ | grep &#x27;^~\$&#x27;</code> must print nothing.</div>
 </section>
 
 <section id="report">
@@ -535,7 +541,9 @@ Not run: RAS power-cycle tests (disruptive)</pre></div>
     <li>
       <strong>Generate the report:</strong>
       <div class="cmd"><pre>.venv/bin/python tools/html_report.py results/&lt;run-folder&gt; [more run folders] -o results/report.html --title &quot;...&quot; --subtitle &quot;...&quot; --notes results/findings.txt</pre></div>
-      <p class="muted">For example, today's MR3 report merges the full read-only run, the stage-3 run and the RDMA run:</p>
+      <p class="muted">The g02-g17 overall report (all runs of 13–14 Oct, whole plan, coverage):</p>
+      <div class="cmd"><pre>.venv/bin/python tools/html_report.py $(cat results/fullrack-overall-runs.txt) $(cat results/fullrack-tz-args.txt) --workbook testplan/full_rack_testplan.xlsx --all-cases --title &quot;Helios g02-g17 Full Rack - Overall Test Report&quot; --notes results/fullrack-overall-findings.txt -o results/Fullrack-Overall-Report.html</pre></div>
+      <p class="muted"><code>results/fullrack-overall-runs.txt</code> lists the run folders that count (superseded runs, e.g. the L1 compute run before sudo, are left out). List run folders oldest first: when two runs have the same test, the later one wins (unless it only skipped or blocked). For example, today's MR3 report merges the full read-only run, the stage-3 run and the RDMA run:</p>
       <div class="cmd"><pre>.venv/bin/python tools/html_report.py results/mr3-20261013-071856 results/mr3-20261013-072136 results/mr3-20261013-075720 -o results/MR3-Test-Report.html --title &quot;Helios MR3 Test Report&quot; --subtitle &quot;QFX5252 st1 + 2 compute trays&quot; --notes results/mr3-findings.txt</pre></div>
     </li>
     <li>
@@ -551,7 +559,9 @@ Not run: RAS power-cycle tests (disruptive)</pre></div>
       <tr><td><code>-o</code></td><td>Output HTML file (required).</td></tr>
       <tr><td><code>--title</code> / <code>--subtitle</code></td><td>Page title, and the line under it (rack, versions, etc.).</td></tr>
       <tr><td><code>--notes</code></td><td>Key-findings file shown in the dashboard (optional).</td></tr>
-      <tr><td><code>--workbook</code></td><td>Show the reviewed status of each plan case from the test-plan workbook (column F and its latest note) in the counts, the chart and a "Test plan status" table, so the report matches the workbook. The raw test verdict is shown next to it where they differ.</td></tr>
+      <tr><td><code>--workbook</code></td><td>Show the reviewed status of each plan case from the test-plan workbook (column F and its latest note) in the counts, the chart and a "Test plan status" table, so the report matches the workbook. The raw test verdict is shown next to it where they differ. The table also has Level, Scope, Origin and Disruptive, plus status-by-scope and status-by-origin tables.</td></tr>
+      <tr><td><code>--all-cases</code></td><td>With <code>--workbook</code>: the overall report. Covers every case row of the workbook, not only what ran: executed / not run / not automated, automation coverage from <code>tools/coverage.py</code> by level and category, a level × status matrix, status by scope and by origin, and a filterable table of all cases. Not-run rows that only carry notes from the 10–12 Oct runs (earlier build) are marked "earlier notes only".</td></tr>
+      <tr><td><code>--tz RUN=HOURS</code></td><td>UTC offset of a run folder recorded before 14 Oct evening, when <code>started</code> was the runner's local clock (repeatable). Runs from the Mac were PDT (<code>-7</code>), runs on the jump host UTC (<code>0</code>). Newer runs record UTC and need nothing. The 14 Oct list is in <code>results/fullrack-tz-args.txt</code>.</td></tr>
     </tbody>
   </table>
   </div>
@@ -559,21 +569,21 @@ Not run: RAS power-cycle tests (disruptive)</pre></div>
   <table>
     <thead><tr><th>Part of the page</th><th>Contents</th></tr></thead>
     <tbody>
-      <tr><td>Dashboard</td><td>Banner (rack, runs, times, executed result), counts of plan cases (passed, failed, pending/blocked, skipped/N/A) and executions, result doughnut, per-suite bar chart. Tests that are not plan cases (e.g. the RCCL smoke tests) are listed separately as extra evidence.</td></tr>
+      <tr><td>Dashboard</td><td>Banner (rack, runs, execution window in UTC, executed result), counts of plan cases (passed, failed, partial, pending/blocked, skipped/N/A) and executions, result doughnut, per-suite bar chart. With <code>--all-cases</code>: executed vs. not run vs. not automated and the automation percentage instead of the outcome cards. PARTIAL = passed on every tray the pre-flight or reachability kept. Tests that are not plan cases (e.g. the RCCL smoke tests) are listed separately as extra evidence.</td></tr>
       <tr><td>Key findings</td><td>The lines from <code>--notes</code></td></tr>
-      <tr><td>Run summary</td><td>One row per suite with counts, duration and result, linking to its section, plus expand/collapse-all buttons</td></tr>
-      <tr><td>Suite sections</td><td>One row per test: plan ID, test, description, duration, status. Each has a collapsible log with the failure message, measurements and the full colour-coded command trace (commands, output, exit codes, timings).</td></tr>
+      <tr><td>Run summary</td><td>One row per suite with counts of test items (one per switch / tray / parameter, raw pytest verdicts; Pass includes PARTIAL), duration and result, linking to its section, plus expand/collapse-all buttons</td></tr>
+      <tr><td>Suite sections</td><td>One row per test: plan ID, test, description, scope, origin, duration, status. Each has a collapsible log with the failure message, measurements and the colour-coded command trace (commands, output, exit codes, timings). Logs longer than 150,000 characters show their first and last 75,000 with a pointer to the full file in <code>results/&lt;run&gt;/logs/</code>, so the page stays under the 16 MB artifact limit.</td></tr>
     </tbody>
   </table>
   </div>
-  <p class="muted">Logs per test exist for runs made from 2026-10-13 onward. The charts load Chart.js from a public CDN, so they need internet access. Reports contain lab hostnames and IPs, so keep them in the git-ignored <code>results/</code> folder.</p>
+  <p class="muted">Logs per test exist for runs made from 2026-10-13 onward. The charts load Chart.js from a public CDN, so they need internet access. Reports contain lab hostnames and IPs, so keep them in the git-ignored <code>results/</code> folder. Before sharing one, check that every password value reads <code>&lt;REDACTED&gt;</code>.</p>
 </section>
 
 <section id="coverage">
   <h2><span class="num">9</span>Coverage: automated vs. missing</h2>
   <div class="cmd"><pre>.venv/bin/python tools/coverage.py</pre></div>
   <div class="cmd"><pre>.venv/bin/python tools/coverage.py --missing &gt; results/missing.txt</pre></div>
-  <p class="muted"><code>automated</code> = cases with a <code>@pytest.mark.tc</code> test; <code>total</code> = cases in the plan plus the cases in <code>testplan/added.yaml</code>; <code>--missing</code> lists every case with no test yet.</p>
+  <p class="muted">14 Oct: 423 of 565 automated (L1 59/59, L2 123/127, L3 241/379). <code>automated</code> = cases with a <code>@pytest.mark.tc</code> test; <code>total</code> = cases in the plan plus the cases in <code>testplan/added.yaml</code>; <code>--missing</code> lists every case with no test yet.</p>
 </section>
 
 <footer>helios-tests · see README.md for layout, calibration notes and how to add tests</footer>
