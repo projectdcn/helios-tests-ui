@@ -40,7 +40,7 @@ def afm_cfg(inventory):
 
 @pytest.fixture(scope="session")
 def rack(inventory, afm_cfg):
-    """The plugin's Rack; against the fake controller its switch transports drive the simulated rack."""
+    """The plugin's Rack; against the fake controller its switch and compute transports drive the simulated rack."""
     from helios.rack import Rack
 
     r = Rack(inventory)
@@ -51,6 +51,10 @@ def rack(inventory, afm_cfg):
         for n, (name, sw) in enumerate(r.switches.items()):
             idx = st.sim.switch_ips.index(sw.host.host) if sw.host.host in st.sim.switch_ips else n
             sw.t = FakeSwitchTransport(sw.host, st, idx, sw.t)
+        from fake_rack import FakeComputeTransport
+
+        for slot, c in enumerate(r.computes.values()):    # inventory order = compute slot in the fake
+            c.t = FakeComputeTransport(c.host, st, slot, c.t)
     yield r
     r.close()
 

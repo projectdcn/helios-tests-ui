@@ -9,6 +9,7 @@ broken form so the self-test proves each test catches it.
 from __future__ import annotations
 
 import itertools
+import json
 import logging
 import re
 import time
@@ -66,6 +67,12 @@ class Sim:
         self.configdone: set[str] = set()
         self.zero_reads: dict[str, int] = {}
         self.ws_refuse = False
+        self.cmp_admin_down: set[tuple] = set()   # (slot, gpu, port) set idle with afmctl update port
+        self.flapped: set[tuple] = set()
+        self.ifcp_stuck: set[tuple] = set()
+        self.journal: dict[int, list[float]] = {}  # slot -> afmctl reset times
+        self.user_vlans: dict[int, set[int]] = {}
+        self.readmit_at: dict[int, float] = {}
         self.ack: dict[str, set] = {}          # vPOD -> failed links acknowledged by ReconfigureDataFabric
         self.n_ct = n_computes
         self.events: list[dict] = []
@@ -86,6 +93,10 @@ class Sim:
         for i, ip in enumerate(self.switch_ips):
             switches[self.sname(i)] = _obj("SwitchNode", self.sname(i), {"ip-address": ip, "slot-id": i},
                                            {"admission-phase": "admitted", "conditions": []})
+        early = (datetime.now(timezone.utc) - __import__("datetime").timedelta(minutes=5)).strftime("%Y-%m-%dT%H:%M:%S.%fZ")
+        if "computes_before_switches" not in self.f:
+            for o in switches.values():          # bring-up order: switches are admitted first
+                o["meta"]["creation-time"] = early
         self.computes, self.switches = computes, switches
 
     # ------------------------------------------------------------ naming / topology
@@ -134,7 +145,15 @@ class Sim:
     def admin(self, i, ns, port):
         return "down" if (self.links_down.get((i, ns, port)) or {}).get("admin") else "up"
 
-    def set_link(self, i, ns, port, up: bool):
+    def stick_slot_ports(self, slots):
+        """Fault ifcp_no_recover: IFCP sessions of these slots' ports never come back."""
+        if "ifcp_no_recover" in self.f:
+            for s in slots:
+                for g in range(4):
+                    for pid in range(2 * self.n_sw):
+                        self.ifcp_stuck.add((s, g, pid))
+
+    def set_link(self, i, ns, port, up: bool, quiet: bool = False):
         key = (i, ns, port)
         ports = self.ports(i, ns)
         if port not in ports:
@@ -146,7 +165,12 @@ class Sim:
         for k in ([key] if up else keys):   # a coupled neighbour does not come back with the target
             if up:
                 d = self.links_down.pop(k, None)
-                if d is not None:
+                if k[2] in self.ports(i, k[1]):
+                    s_, g_, _, pid_ = self.ports(i, k[1])[k[2]]
+                    self.flapped.add((s_, g_, pid_))
+                    if "ifcp_no_recover" in self.f:
+                        self.ifcp_stuck.add((s_, g_, pid_))
+                if d is not None and not quiet:
                     self.event("link_up", f"PortName {k[2]} asic {k[1]} switch {self.sname(i)} is UP")
                     had_failed = k in self.failed_evt
                     if ("flap_counts_as_failure" in self.f and not had_failed) or \
@@ -155,7 +179,7 @@ class Sim:
                 self.failed_evt.discard(k)
             elif k not in self.links_down:
                 self.links_down[k] = {"since": time.monotonic(), "known": self.agent_up[i], "admin": k == key}
-                if self.agent_up[i]:
+                if self.agent_up[i] and not quiet:
                     self.event("link_down", f"PortName {k[2]} asic {k[1]} switch {self.sname(i)} is DOWN")
         return True
 
@@ -225,7 +249,7 @@ class Sim:
             sysv = name.endswith(".system")
             failed = self.failed_links(objs, vp)
             pol = objs["FailoverPolicy"].get(vp["spec"].get("failover-policy") or "system-failover-policy") or {}
-            manual = (pol.get("spec") or {}).get("datafabric-reconfig") == "manual"
+            manual = (pol.get("spec") or {}).get("datafabric-reconfig") == "manual" or "auto_needs_manual" in self.f
             for k in failed:
                 if k not in self.failed_evt:
                     self.failed_evt.add(k)
@@ -300,6 +324,7 @@ class Sim:
             return
         was_down = not self.agent_up[i] or i in self.sw_stopped
         self.agent_up[i] = True
+        self.stick_slot_ports([s for s in self.sb_pid if self.slot_host(s) == i])
         self.sw_stopped.discard(i)
         if "controller_unstable" in self.f:
             j = self.switch_ips.index(self.leader)
@@ -336,11 +361,13 @@ class Sim:
                     self.sb_pid[slot] = next(_pids)
                 self.stopped.discard(slot)
                 if self.cname(slot) not in self.computes:   # readmit a deleted compute
-                    gi = {u: {"index": g, "acc-id": slot * 4 + g, "oper-state": "Ready", "vpod-membership": "",
+                    gi = {u: {"index": g, "acc-id": slot * 4 + g + (200 if "accid_new_on_readmit" in self.f else 0),
+                              "oper-state": "Ready", "vpod-membership": "",
                               "ports": [{"id": p, "oper-state": "PortReady"} for p in range(36)],
                               "ifoe-stations": list(range(18))} for g, u in enumerate(self.gpus[slot])}
                     if "no_readmit" not in self.f:
                         self.computes[self.cname(slot)] = self._compute_obj(slot, gi)
+                        self.readmit_at[slot] = time.monotonic()
 
     def controller(self, i, action):
         """docker stop|start|restart afm-controller on switch i."""
@@ -369,16 +396,18 @@ class Sim:
 
     def restart_controller(self, i):
         self.controller(i, "restart")
+        self.stick_slot_ports(list(self.sb_pid))
         if "vlan_wipe" in self.f:
             self.wiped |= {j for j in range(self.n_sw) if self.phase_sw(j) == "drained"}
 
     def vlans(self, i) -> list[str]:
+        user = [f"Vlan{v}" for v in sorted(self.user_vlans.get(i, set()))]
         if self.phase_sw(i) not in ("admitted", "drained") or i in self.wiped:
-            return []
+            return [] if "decommission_wipes_user_vlans" in self.f else user
         users = [] if "no_vlan_for_vpod" in self.f else sorted(
             v["meta"]["name"] for v in self.st.objs["VPod"].values()
             if not v["meta"]["name"].endswith(".system") and v["spec"].get("GPUs"))
-        return ["Vlan100", "Vlan200", "Vlan300"] + [f"Vlan{1000 + n}" for n in range(len(users))]
+        return ["Vlan100", "Vlan200", "Vlan300"] + [f"Vlan{1000 + n}" for n in range(len(users))] + user
 
     def vpod_event(self, etype, name, msg):
         if "no_vpod_events" not in self.f:
@@ -406,7 +435,8 @@ class FakeSwitchTransport:
             if cmd == "docker exec afm-agent ps -eo pid,args":
                 lines = ["    1 /usr/bin/afm_agent.sh", "   20 /switch-agent"] if sim.agent_up[i] else []
                 lines += [f" {sim.sb_pid[s]} /sb-node-agent -slot-id {s} -controllers {sim.leader}"
-                          for s in sorted(sim.sb_pid) if sim.slot_host(s) == i]
+                          for s in sorted(sim.sb_pid) if sim.slot_host(s) == i
+                          or ("duplicate_node_agent" in st.f and s == 0 and i == (sim.slot_host(0) or 0) + 1)]
                 res = self._res(cmd, "\n".join(lines) + "\n")
             elif m := re.fullmatch(r"systemctl (stop|start|restart) afm-agent", cmd):
                 sim.agent(i, m.group(1))
@@ -440,6 +470,7 @@ class FakeSwitchTransport:
                         sim.stopped.add(slot)
                     elif slot in sim.stopped:
                         sim.stopped.discard(slot)
+                        sim.stick_slot_ports([slot])
                         if "no_healthy_event" not in st.f:
                             sim.event("computenode_healthy", f"compute {sim.cname(slot)} healthy")
                     res = self._res(cmd)
@@ -469,12 +500,208 @@ class FakeSwitchTransport:
                 ns = re.search(r"-n (asic\d+)", cmd).group(1)
                 res = self._res(cmd, "".join(f"{p}|To ComputeTray Slot{s}/GPU{g}[{acc}]/Port{pid}\n"
                                              for p, (s, g, acc, pid) in sim.ports(i, ns).items()))
+            elif m := re.fullmatch(r"docker exec afm-agent curl -s -m 5 localhost:(\d+)/api/runtime/requests", cmd):
+                slot = int(m.group(1)) - 13000
+                ok = sim.agent_up[i] and sim.slot_host(slot) == i and "no_agent_requests" not in st.f
+                res = self._res(cmd, json.dumps([{"id": f"req-{slot}", "created-at": now(), "status": "applied"}]) if ok else "",
+                                0 if ok else 7)
+            elif m := re.fullmatch(r"config vlan (add|del) -n (asic\d+) (\d+)", cmd):
+                (sim.user_vlans.setdefault(i, set()).add if m.group(1) == "add" else sim.user_vlans.setdefault(i, set()).discard)(int(m.group(3)))
+                res = self._res(cmd)
             elif m := re.fullmatch(r"docker exec afm-agent curl -s -m 5 localhost:(\d+)/api/health", cmd):
                 res = self._res(cmd, '{"is-connected": true, "healthy": true}' if sim.agent_up[i] else "", 0 if sim.agent_up[i] else 7)
         if res is None:
             return self.fallback.run(cmd, timeout=timeout, sudo=sudo, env=env)
         log.debug("[%s] $ %s", self.host.name, build_command(cmd, sudo, env))
         log.debug("[%s] rc=%s 0.00s (sim)%s", self.host.name, res.rc, ("\n" + res.stdout.rstrip()) if res.stdout else "")
+        return res
+
+    def close(self):
+        pass
+
+    reset = close
+
+
+class FakeComputeTransport:
+    """Compute-tray 'SSH' bound to the simulated rack: afmctl (devices, ports + IFCP, accelerator-addr,
+    stations, update port, reset), clock and journal. Traffic tools fall back to the replay rules."""
+
+    def __init__(self, host, st, slot: int, fallback):
+        self.host, self.st, self.slot, self.fallback = host, st, slot, fallback
+
+    # ---------------------------------------------------------------- model
+    def _gpu(self, g):
+        sim = self.st.sim
+        c = sim.computes.get(sim.cname(self.slot))
+        gi = next((x for x in ((c or {}).get("status", {}).get("scale-up-info", {}).get("gpu-info") or {}).values()
+                   if x["index"] == g), None)
+        return gi
+
+    def _acc(self, g) -> int:
+        gi = self._gpu(g)
+        return gi["acc-id"] if gi else self.slot * 4 + g
+
+    def _vpod_of(self, g):
+        for v in self.st.objs["VPod"].values():
+            if any(x.get("slot-id") == self.slot and x.get("index") == g for x in v["spec"].get("GPUs") or []):
+                return v
+        return None
+
+    def _peers(self, g) -> list[int]:
+        v = self._vpod_of(g)
+        if not v:
+            return []
+        out = []
+        for x in v["spec"].get("GPUs") or []:
+            if (x.get("slot-id"), x.get("index")) != (self.slot, g):
+                c = self.st.sim.computes.get(self.st.sim.cname(x.get("slot-id")))
+                gi = next((y for y in ((c or {}).get("status", {}).get("scale-up-info", {}).get("gpu-info") or {}).values()
+                           if y["index"] == x.get("index")), None)
+                out.append(gi["acc-id"] if gi else x.get("slot-id") * 4 + x.get("index"))
+        return sorted(out)
+
+    def _phase(self, g) -> str:
+        v = self._vpod_of(g)
+        if not v:
+            return "PROVIDER"
+        if v["meta"]["name"] in self.st.sim.configfailed and "phase_active_when_failed" not in self.st.f:
+            return "CONFIG_FAILED"
+        return "ACTIVE"
+
+    def _link(self, g, pid):
+        """(switch idx, ns, switch port) cabled to GPU g port pid, or None."""
+        sim = self.st.sim
+        i, a = divmod(pid, 2)
+        if i >= sim.n_sw:
+            return None
+        ns = f"asic{a}"
+        port = next((p for p, (s, gg, _, q) in sim.ports(i, ns).items() if s == self.slot and gg == g and q == pid), None)
+        return (i, ns, port) if port else None
+
+    def _port_up(self, g, pid) -> bool:
+        k = self._link(g, pid)
+        return bool(k) and k not in self.st.sim.links_down and (self.slot, g, pid) not in self.st.sim.cmp_admin_down
+
+    def _ports(self, g) -> list[dict]:
+        sim = self.st.sim
+        out = []
+        for pid in range(2 * sim.n_sw):
+            k = self._link(g, pid)
+            up = self._port_up(g, pid)
+            ll = up and not ((self.slot, g, pid) in sim.ifcp_stuck) and \
+                not ("ifcp_baseline_down" in self.st.f and (self.slot, g, pid) == (0, 0, 0))
+            out.append({"id": str(pid), "spec": {"station_id": str(pid // 2),
+                                                  "admin_state": "idle" if (self.slot, g, pid) in sim.cmp_admin_down else "enabled"},
+                        "status": {"name": f"netport{pid}", "link_status": "LINK_UP" if up else "LINK_DOWN",
+                                   "ifcp": {"port_id": str(pid), "link_up": "yes" if up else "no",
+                                            "ll_up": "yes" if ll else "no", "in_error": "no",
+                                            "peer_device_id": str(k[0]) if k else "", "peer_port_id": k[2][8:] if k else "",
+                                            "peer_enabled": "yes" if ll else "no", "peer_in_error": "no"}}})
+        return out
+
+    @staticmethod
+    def bdf(g):
+        return f"000{g + 1}:01:00.1"
+
+    def _gpus(self, bdfs=None):
+        gs = range(4)
+        if bdfs:
+            want = set(bdfs.split(","))
+            gs = [g for g in gs if self.bdf(g) in want]
+        return gs
+
+    # ---------------------------------------------------------------- commands
+    def run(self, cmd: str, *, timeout: float = 120, sudo: bool = False, env=None) -> CmdResult:
+        st, sim = self.st, self.st.sim
+        c = re.sub(r"\s+2>(/dev/null|&1)$", "", cmd.strip())
+        out, rc = None, 0
+        with st.lock:
+            st.sim.refresh(st.objs)
+            if c == "afmctl show device --json":
+                local = [str(self._acc(g)) for g in range(4)]
+                out = json.dumps({"device": [{"bdf": self.bdf(g), "spec": {
+                    "accelerator_id": str(self._acc(g)), "config_phase": self._phase(g), "local_accelerators": local,
+                    "vpod_accelerators": sorted({str(self._acc(g))} | {str(p) for p in self._peers(g)}, key=int)}}
+                    for g in range(4)]})
+            elif m := re.fullmatch(r"afmctl show port -b (\S+) --json", c):
+                out = json.dumps({"device": [{"bdf": self.bdf(g), "port": self._ports(g)} for g in self._gpus(m.group(1))]})
+            elif c == "afmctl show port accelerator-addr --json":
+                devs = []
+                for g in range(4):
+                    ports = []
+                    for pid in range(2 * sim.n_sw):
+                        stale = (self.slot, g, pid) in sim.flapped and "stale_fwd_table" in st.f
+                        peers = [] if (not self._port_up(g, pid) or stale) else self._peers(g)
+                        if "fwd_table_incomplete" in st.f and peers:
+                            peers = peers[1:]
+                        ports.append({"port_id": str(pid), "accelerator_addr": [
+                            {"accelerator_id": str(a), "mac_addr": f"02:00:00:{a:02x}:{pid:02x}:00"} for a in peers]})
+                    devs.append({"bdf": self.bdf(g), "port": ports})
+                out = json.dumps({"device": devs})
+            elif m := re.fullmatch(r"afmctl show station(?: -b (\S+))? --json", c):
+                devs = []
+                for g in self._gpus(m.group(1)):
+                    stations = []
+                    for k in range(sim.n_sw):
+                        ports = [p for p in (2 * k, 2 * k + 1)]
+                        c = sim.computes.get(sim.cname(self.slot)) or {}
+                        drained = {(x.get("gpu-id"), x.get("port-id")) for x in (c.get("spec") or {}).get("drained-ports") or []}
+                        live = ports if "station_map_stale" in st.f else \
+                            [p for p in ports if self._port_up(g, p) and (g, p) not in drained]
+                        pm = lambda ps: [{"accelerator_id": str(a), "path_to_port_map": [  # noqa: E731
+                            {"path": str(n), "port": str(p)} for n, p in enumerate(ps)]} for a in self._peers(g)]
+                        stations.append({"id": str(k), "spec": {"device_bdf": self.bdf(g), "admin_state": "active",
+                                                                "accel_path_map": pm(ports)},
+                                         "status": {"oper_state": "up" if live else "down", "accel_path_map": pm(live)}})
+                    devs.append({"bdf": self.bdf(g), "station": stations})
+                out = json.dumps({"device": devs})
+            elif m := re.fullmatch(r"env AFMCTL_FORCE_UPDATE=1 afmctl update port -b (\S+) -s (\d+) -p (\S+) --admin-state (idle|enabled)", c):
+                g = [g for g in range(4) if self.bdf(g) == m.group(1)][0]
+                for pid in map(int, m.group(3).split(",")):
+                    key = (self.slot, g, pid)
+                    k = self._link(g, pid)
+                    if m.group(4) == "idle":
+                        sim.cmp_admin_down.add(key)
+                        quiet = "no_compute_port_events" in st.f
+                        if k:
+                            sim.set_link(k[0], k[1], k[2], up=False, quiet=quiet)
+                            if not quiet:
+                                sim.event("ifoe_netport_link_down", f"Port (acc-id: {self._acc(g)}, port-id: {pid}) link down")
+                    else:
+                        sim.cmp_admin_down.discard(key)
+                        sim.flapped.add(key)
+                        if "ifcp_no_recover" in st.f:
+                            sim.ifcp_stuck.add(key)
+                        quiet = "no_compute_port_events" in st.f
+                        if k:
+                            sim.set_link(k[0], k[1], k[2], up=True, quiet=quiet)
+                            if not quiet:
+                                sim.event("ifoe_netport_link_up", f"Port (acc-id: {self._acc(g)}, port-id: {pid}) link up")
+                out = f"({m.group(1)}) : port admin state updated\n"
+            elif m := re.fullmatch(r"afmctl reset device (?:-b (\S+)|--datapath)", c):
+                gs = self._gpus(m.group(1)) if m.group(1) else range(4)
+                if "reset_not_logged" not in st.f:
+                    sim.journal.setdefault(self.slot, []).append(time.time())
+                out = "".join(f"Device {self.bdf(g)} reset successfully\n" for g in gs)
+            elif m := re.fullmatch(r"afmctl show port statistics mac(?: -b (\S+))? --json", c):
+                sim.stat_reads = getattr(sim, "stat_reads", 0) + (0 if "stats_frozen" in st.f else 1)
+                n = sim.stat_reads * 1000
+                out = json.dumps({"devices": [{"bdf": self.bdf(g), "port": [
+                    {"station_id": str(pid // 2), "port_id": str(pid),
+                     "statistics": {"rx_frames": str(n if self._port_up(g, pid) else 0),
+                                    "tx_frames": str(n if self._port_up(g, pid) else 0)}}
+                    for pid in range(2 * sim.n_sw)]} for g in self._gpus(m.group(1))]})
+            elif c == "date -u '+%Y-%m-%d %H:%M:%S'":
+                out = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S") + "\n"
+            elif m := re.fullmatch(r"journalctl -t afmctl --since '([^']+) UTC' --no-pager", c):
+                since = datetime.strptime(m.group(1), "%Y-%m-%d %H:%M:%S").replace(tzinfo=timezone.utc).timestamp()
+                out = "".join(f"afmctl[{4242 + n}]: phase=end sub_cmd=reset status=0\n"
+                              for n, t in enumerate(sim.journal.get(self.slot, [])) if t >= since - 1)
+        if out is None:
+            return self.fallback.run(cmd, timeout=timeout, sudo=sudo, env=env)
+        res = CmdResult(self.host.name, cmd, rc, out, "")
+        log.debug("[%s] $ %s", self.host.name, build_command(cmd, sudo, env))
+        log.debug("[%s] rc=%s 0.00s (sim)%s", self.host.name, rc, ("\n" + out.rstrip()[:2000]) if out else "")
         return res
 
     def close(self):

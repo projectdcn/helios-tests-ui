@@ -127,6 +127,51 @@ LIFECYCLE_FAULTS = [
     ("configdone_stuck", {'TC-STR-005'}),
     ("configdone_stuck", {'TC-STR-020'}),
     ("no_respawn", {'TC-AR-001'}),
+    # compute side / IFCP / switch agent / traffic + AFM (tranche 4)
+    ("stats_frozen", {"TC-HW-010"}),
+    ("ifcp_no_recover", {"TC-002"}),
+    ("ifcp_no_recover", {"TC-003"}),
+    ("ifcp_no_recover", {"TC-004"}),
+    ("ifcp_no_recover", {"TC-005"}),
+    ("ifcp_no_recover", {"TC-007"}),
+    ("ifcp_no_recover", {"TC-008"}),
+    ("ifcp_no_recover", {"TC-TRG-006"}),
+    ("ifcp_no_recover", {"TC-TRG-010"}),
+    ("ifcp_baseline_down", {"TC-001"}),
+    ("station_map_stale", {"TC-AFM-058"}),
+    ("stale_fwd_table", {"TC-E2E-099"}),
+    ("fwd_table_incomplete", {"TC-NA-048"}),
+    ("phase_active_when_failed", {"TC-E2E-110"}),
+    ("no_reset_on_reconfigure", {"TC-NA-047"}),
+    ("no_reset_on_reconfigure", {"TC-HW-025"}),
+    ("reset_not_logged", {"TC-AFM-RC-007"}),
+    ("accid_new_on_readmit", {"TC-NA-018"}),
+    ("decom_unhealthy_ok", {"TC-NA-013"}),
+    ("no_reconfigure_event", {"TC-NA-022"}),
+    ("no_agent_requests", {"TC-SEQ-012"}),
+    ("computes_before_switches", {"TC-BU-001"}),
+    ("duplicate_node_agent", {"TC-SEQ-005"}),
+    ("decommission_wipes_user_vlans", {"TC-SWA-037"}),
+    ("no_vlan_for_vpod", {"TC-SWA-180"}),
+    ("agent_stop_ignored", {"TC-SWA-204"}),
+    ("auto_needs_manual", {"TC-SWA-214"}),
+    ("cp_disrupted_by_fabric_change", {"TC-TRG-004"}),
+    ("cp_disrupted_by_fabric_change", {"TC-TRG-005"}),
+    ("cp_disrupted_by_fabric_change", {"TC-TRG-009"}),
+    ("no_compute_port_events", {"TC-AFM-009"}),
+    ("no_compute_port_events", {"TC-E2E-092"}),
+    ("unhealthy_reconf_ok", {"TC-NA-049"}),
+    ("sigstop_ignored", {"TC-NA-024"}),
+    ("admission_reconfigure_500", {"TC-NA-050"}),
+    ("reconfigure_500", {"TC-NA-040"}),
+    ("reconfigure_500", {"TC-RAS-reset-010"}),
+    ("reconfigure_500", {"TC-RAS-reset-012"}),
+    ("reconfigure_500", {"TC-RAS-reset-014"}),
+    ("reconfigure_500", {"TC-RAS-reset-016"}),
+    ("configdone_stuck", {"TC-RAS-reset-005"}),
+    ("configdone_stuck", {"TC-RAS-reset-006"}),
+    ("no_readmit", {"TC-NA-019"}),
+    ("configdone_stuck", {"TC-NA-016"}),
 ]
 # controls run alongside a fault and must still PASS (the fault is outside what they check)
 CONTROLS = {"one_failure_per_gpu": {"TC-E2E-048", "TC-E2E-137"}, "no_vpod_events": {"TC-E2E-030"},
@@ -137,7 +182,7 @@ def test_healthy_fake_all_pass(tmp_path):
     verdicts = _run(tmp_path)
     bad = {k: v for k, v in verdicts.items() if v not in ("PASS", "SKIP")}
     assert not bad, bad
-    assert sum(v == "PASS" for v in verdicts.values()) >= 150
+    assert sum(v == "PASS" for v in verdicts.values()) >= 200
 
 
 def test_healthy_fake_3switch_all_pass(tmp_path):
@@ -147,7 +192,7 @@ def test_healthy_fake_3switch_all_pass(tmp_path):
                 "TC-CTL-055"}        # one-time recovery key, opt-in (thresholds.afm.allow_recovery_key)
     bad = {k: v for k, v in verdicts.items() if v != "PASS" and not (k in optional and v == "SKIP")}
     assert not bad, bad
-    assert len(verdicts) >= 176
+    assert len(verdicts) >= 233
 
 
 @pytest.mark.parametrize("fault,tcs", LIFECYCLE_FAULTS, ids=[f"{f}-{sorted(t)[0]}" for f, t in LIFECYCLE_FAULTS])

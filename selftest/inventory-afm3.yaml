@@ -27,6 +27,36 @@ afm:
     password: selftest-admin-pw   # fake controller only
     tenant: default
 
+commands:
+  ifoe:
+    unload: "modprobe -r ifoe"
+    load: "modprobe ifoe"
+    loaded_check: "lsmod | grep -q '^ifoe '"
+  l2ping:
+    mode: afmctl          # discover acc ids + LINK_UP ports via afmctl; ring pairs
+  transferbench:
+    in_domain: "TransferBench a2a {size}"
+    rank_cmd: "TB_NUM_RANKS={num_ranks} TB_RANK={rank} TB_MASTER_ADDR={master_addr} TB_SINGLE_LOG=1 TransferBench a2a {size}"
+  rccl:
+    in_domain: "{rccl_tests_dir}/build/{collective}_perf -b {min_bytes} -e {max_bytes} -f 2 -g {gpus} -n {iters}"
+    cross_domain: "mpirun -np {np} -H {hostlist} {rccl_tests_dir}/build/{collective}_perf -b {min_bytes} -e {max_bytes} -f 2 -g 1"
+  rccl_smoke:
+    bin: /opt/helios/RcclSmokeTest
+    env: NCCL_LOG_DIR=/tmp/helios-rccl-logs
+    port: 45000
+  perftest:
+    nodes: [c1, c2]
+    duration_s: 1
+    server_start_s: 0
+    timeout_margin_s: 10
+    qp_sweep: [8, 64, 256]
+    custom: {verbs: [write, read], qps: [4], pairs: [1, 2], iterations: 2}
+  ras:
+    partial_stations_down: "ras-partial-stations down {name}"
+    partial_stations_up: "ras-partial-stations up {name}"
+    dc_cycle: "ipmitool -I lanplus -H {bmc} chassis power cycle"
+    ac_cycle: "pdu-ctl cycle {pdu_outlet}"
+
 thresholds:
   afm:
     quorum_members: 3

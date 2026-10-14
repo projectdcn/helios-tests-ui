@@ -13,6 +13,7 @@ script bugs the manual runs hit:
 """
 from __future__ import annotations
 
+import json
 import logging
 import re
 import time
@@ -424,6 +425,86 @@ class AfmOps:
     def link_fail_threshold(self, vpod: str) -> float:
         pol = (self.vpod(vpod).get("spec") or {}).get("failover-policy") or "system-failover-policy"
         return float((self.afm.get(f"{CLUSTER}/failoverpolicies/{pol}").get("spec") or {}).get("link-fail-threshold", 10))
+
+    # ================================================================ compute side (afmctl over SSH)
+    def tray(self, afm_name: str):
+        """Inventory compute tray for an AFM ComputeNode: host.extra.afm_name, else the tray whose afmctl
+        accelerator ids match the AFM GPU acc-ids."""
+        from .afmctl import Afmctl
+
+        cache = self.__dict__.setdefault("_trays", {})
+        if afm_name in cache:
+            return cache[afm_name]
+        for c in self.rack.computes.values():
+            if c.host.extra.get("afm_name") == afm_name:
+                cache[afm_name] = c
+                return c
+        want = {str(g.get("acc-id")) for g in self.gpu_info(self.compute(afm_name)).values()}
+        for c in self.rack.computes.values():
+            try:
+                have = {d.accel_id for d in Afmctl(c).devices()}
+            except Exception:  # noqa: BLE001 - tray down / no afmctl
+                continue
+            if want and want <= have:
+                cache[afm_name] = c
+                return c
+        raise RuntimeError(f"no inventory compute matches AFM {afm_name} (acc-ids {sorted(want)}); "
+                           f"set afm_name: {afm_name} on its inventory entry")
+
+    @staticmethod
+    def afmctl(tray):
+        from .afmctl import Afmctl
+
+        return Afmctl(tray)
+
+    def ifcp(self, tray) -> dict[tuple, dict]:
+        """{(bdf, port): {link, admin, ll_up, peer_enabled, error}} for every GPU port of the tray."""
+        a = self.afmctl(tray)
+        out = {}
+        for d in a.devices():
+            for p in a.ports_raw(d.bdf):
+                st, sp = p.get("status") or {}, p.get("spec") or {}
+                i = st.get("ifcp") or {}
+                out[(d.bdf, int(p.get("id")))] = {
+                    "link": st.get("link_status"), "admin": sp.get("admin_state"), "ll_up": i.get("ll_up") == "yes",
+                    "peer_enabled": i.get("peer_enabled") == "yes",
+                    "error": i.get("in_error") == "yes" or i.get("peer_in_error") == "yes"}
+        return out
+
+    def ifcp_up(self, tray) -> set[tuple]:
+        """Ports with a healthy IFCP link-layer session (LINK_UP, ll_up, peer enabled, no error)."""
+        return {k for k, v in self.ifcp(tray).items()
+                if v["link"] == "LINK_UP" and v["ll_up"] and v["peer_enabled"] and not v["error"]}
+
+    def compute_port_admin(self, tray, bdf: str, port: int, up: bool):
+        """afmctl update port admin-state on the compute side (station = port // ports_per_station)."""
+        st = port // int(self.th("ports_per_station", 2))
+        return tray.run(f"env AFMCTL_FORCE_UPDATE=1 afmctl update port -b {bdf} -s {st} -p {port} "
+                        f"--admin-state {'enabled' if up else 'idle'}", sudo=True, timeout=120)
+
+    def station_map(self, tray, bdf: str, which: str = "status") -> dict[int, set[int]]:
+        """{station: ports in its path-to-port map} from afmctl show station (spec or status)."""
+        doc = json.loads(tray.run(f"afmctl show station -b {bdf} --json 2>/dev/null", sudo=True, timeout=120).check().stdout)
+        out: dict[int, set[int]] = {}
+        for d in doc.get("device") or doc.get("devices") or []:
+            for s in d.get("station") or []:
+                ports = {int(m["port"]) for a in ((s.get(which) or {}).get("accel_path_map") or [])
+                         for m in a.get("path_to_port_map") or []}
+                out[int(s["id"])] = ports
+        return out
+
+    @staticmethod
+    def tray_time(tray) -> str:
+        return tray.run("date -u '+%Y-%m-%d %H:%M:%S'", timeout=30).stdout.strip()
+
+    @staticmethod
+    def reset_logged_since(tray, since: str) -> bool:
+        """journalctl confirms an afmctl reset completed after ``since`` (tray UTC time, 'YYYY-mm-dd HH:MM:SS')."""
+        r = tray.run(f"journalctl -t afmctl --since '{since} UTC' --no-pager", sudo=True, timeout=60)
+        return bool(re.search(r"phase=end.*sub_cmd=reset.*status=0", r.stdout))
+
+    def phases(self, tray) -> dict[str, str]:
+        return {d.bdf: d.config_phase for d in self.afmctl(tray).devices()}
 
     # ================================================================ events
     def events(self, etype: str | None = None, since: str | None = None, page: int = 300) -> list[dict]:

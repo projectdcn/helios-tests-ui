@@ -98,14 +98,18 @@ RULES = [
 ]
 
 
-# anything in a test (or the module helpers it calls) that drives a switch/compute over SSH
+# what a test (or the module helpers it calls) drives besides the AFM API
 SSH_MARKERS = re.compile(r"\b(links|rack|ssh_switch|ssh_by_ip|slot_host|sb_agents|afm_agent|signal_sb_agent|restart_controller|"
                          r"controller_action|controller_state|controllers|switch_agent_pid|epoch|controller_logs_since|"
-                         r"vlan_count|static_macs|gpu_links|link_candidates|port_admin|reset_switch_identity|_need_sideband)\b")
+                         r"vlan_count|static_macs|gpu_links|link_candidates|port_admin|reset_switch_identity|_need_sideband|"
+                         r"_vlans)\b")
+COMPUTE_MARKERS = re.compile(r"\bops\.(tray|ifcp|ifcp_up|compute_port_admin|station_map|tray_time|reset_logged_since|"
+                             r"phases|afmctl)\b|\b(ComputePorts|_mac_counters|_afm_names)\b|\btray\.run\b")
+TRAFFIC_MARKERS = re.compile(r"\b(datapath|_traffic|_ras|_vpod_split)\b")
 
 
-def _uses_ssh(fn: ast.FunctionDef, funcs: dict[str, ast.FunctionDef], seen=None) -> bool:
-    seen = seen or set()
+def _uses(fn: ast.FunctionDef, funcs: dict[str, ast.FunctionDef], rx, seen=None) -> bool:
+    seen = seen if seen is not None else set()
     if fn.name in seen:
         return False
     seen.add(fn.name)
@@ -113,14 +117,14 @@ def _uses_ssh(fn: ast.FunctionDef, funcs: dict[str, ast.FunctionDef], seen=None)
                                        and isinstance(b.value.value, str))]          # drop the docstring
     code = "\n".join(ast.unparse(b) for b in body)
     code = re.sub(r"(['\"]).*?\1", "''", code)                                        # and string literals
-    if SSH_MARKERS.search(code):
+    if rx.search(code):
         return True
     called = {n.func.id for n in ast.walk(fn) if isinstance(n, ast.Call) and isinstance(n.func, ast.Name)}
-    return any(_uses_ssh(funcs[c], funcs, seen) for c in called if c in funcs)
+    return any(_uses(funcs[c], funcs, rx, seen) for c in called if c in funcs)
 
 
-def automated() -> dict[str, tuple[str, bool, bool]]:
-    """{tc id: (test file, disruptive?, uses switch/compute SSH?)} from the test sources."""
+def automated() -> dict[str, tuple[str, bool, str]]:
+    """{tc id: (test file, disruptive?, extra access label)} from the test sources."""
     out = {}
     helper_src = {}
     for h in (ROOT / "tests").rglob("afm_helpers.py"):
@@ -131,16 +135,24 @@ def automated() -> dict[str, tuple[str, bool, bool]]:
         funcs = dict(helper_src)
         funcs.update({n.name: n for n in tree.body if isinstance(n, ast.FunctionDef)})
         mod_disr = any("disruptive" in ln for ln in src.splitlines() if ln.startswith("pytestmark"))
+        mod_traffic = any("datapath_ready" in ln for ln in src.splitlines() if ln.startswith("pytestmark"))
         for node in ast.walk(tree):
             if isinstance(node, ast.FunctionDef) and node.name.startswith("test_"):
                 decos = [ast.unparse(d) for d in node.decorator_list]
                 disr = mod_disr or any("disruptive" in d for d in decos)
                 args = {a.arg for a in node.args.args}
-                ssh = bool(args & {"links", "rack"}) or _uses_ssh(node, funcs)
+                sw = bool(args & {"links", "rack"}) or _uses(node, funcs, SSH_MARKERS)
+                cmp_ = bool(args & {"computes"}) or _uses(node, funcs, COMPUTE_MARKERS)
+                traffic = mod_traffic or _uses(node, funcs, TRAFFIC_MARKERS)
+                parts = [p for p, on in (("switch", sw), ("compute", cmp_ or traffic)) if on]
+                extra = (" + " + " + ".join(parts) + " SSH") if parts else ""
+                extra += " + datapath traffic" if traffic else ""
+                if not args & {"afm", "afm_anon", "afm_cfg", "ops", "afm_ready", "make_user", "watch"}:
+                    extra = "NOAFM" + extra          # no AFM call at all: SSH / traffic only
                 for d in decos:
                     m = re.search(r"mark\.tc\(['\"]([^'\"]+)", d)
                     if m:
-                        out.setdefault(m.group(1), (str(f.relative_to(ROOT)), disr, ssh))
+                        out.setdefault(m.group(1), (str(f.relative_to(ROOT)), disr, extra))
     return out
 
 
@@ -149,9 +161,11 @@ def classify(case: dict, auto: dict) -> str:
     if tid in ID_ACCESS:
         return ID_ACCESS[tid]
     if tid in auto:
-        f, disr, ssh = auto[tid]
+        f, disr, extra = auto[tid]
         if f.startswith("tests/afm/"):
-            return AFM_SW if ssh else (AFM + " (disruptive)" if disr else AFM)
+            if extra.startswith("NOAFM"):
+                return extra[len("NOAFM + "):].replace("compute SSH", "Compute SSH").replace("switch", "Switch", 1)
+            return AFM + extra if extra else (AFM + " (disruptive)" if disr else AFM)
         return FILE_ACCESS.get(f, SW_CMP)
     title = case.get("title") or ""
     for cat, rx, access in RULES:

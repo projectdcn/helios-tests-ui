@@ -59,10 +59,10 @@ These use recorded SONiC and GPU outputs from `selftest/replay`, so no hardware
 is needed.
 
 ```bash
-.venv/bin/pytest unit -n 6                                                  # 175 tests: 67 L1 + 16 AFM API + 66 AFM product-fault checks (~7 min)
-.venv/bin/pytest tests --inventory selftest/inventory.yaml                  # 196 pass, 127 skip (disruptive skipped)
-.venv/bin/pytest tests --inventory selftest/inventory.yaml --allow-disruptive   # 291 pass, 32 skip (one-switch fake)
-.venv/bin/pytest tests/afm --inventory selftest/inventory-afm3.yaml --allow-disruptive   # 174 pass, 3 skip (3-switch fake; 3 opt-in/one-switch cases)
+.venv/bin/pytest unit -n 6                                                  # 219 tests: 67 L1 + 16 AFM API + 110 AFM product-fault checks (~8 min)
+.venv/bin/pytest tests --inventory selftest/inventory.yaml                  # 208 pass, 171 skip (disruptive skipped)
+.venv/bin/pytest tests --inventory selftest/inventory.yaml --allow-disruptive   # 345 pass, 34 skip (one-switch fake)
+.venv/bin/pytest tests/afm --inventory selftest/inventory-afm3.yaml --allow-disruptive   # 230 pass, 3 skip (3-switch fake; 3 opt-in/one-switch cases)
 ```
 
 ### 2. On a real rack
@@ -133,7 +133,7 @@ read -s HELIOS_AFM_PASSWORD && export HELIOS_AFM_PASSWORD
 Without the password, only the unauthenticated cases run; the rest SKIP. The
 tests create throw-away `helios-*` objects and delete them afterwards.
 
-The 108 `disruptive` cases need `--allow-disruptive`:
+The disruptive AFM cases (149) need `--allow-disruptive`:
 - **Lifecycle:** agent and controller restarts, vPOD moves, compute and switch decommission/delete/readmit.
 - **Fabric links:** ports shut with `config interface ... shutdown`.
 - **Reconfigure.**
@@ -229,7 +229,7 @@ The table has one row per category:
 `--missing` also lists every case that has **no test yet**, with its ID, level
 and title.
 
-## Coverage (269 of 542 cases)
+## Coverage (325 of 542 cases)
 
 * **TC-SWH-001…036, switch hardware.** Firmware, fans, PSUs, platform/EEPROM,
   multi-ASIC namespaces, interface state/speed/MTU, error-counter deltas,
@@ -345,6 +345,23 @@ and title.
     * **Stress:** configure time at scale (STR-005), bulk vPOD churn (STR-011), link event storm (STR-013),
       about 5 % of ports down at create (STR-019), soak (STR-020), no transient 0/0 planes (STR-023),
       Reconcile at scale (STR-024).
+  * **Compute side, IFCP, switch agent and traffic with AFM (56).** AFM ComputeNodes are matched to
+    inventory trays by accelerator id. Files: `test_afm_compute.py`, `test_afm_ifcp.py`,
+    `test_afm_switch_agent.py`, `test_afm_traffic.py`.
+    * **Compute side:** compute port flap and port-down events (AFM-009, E2E-092), station path maps
+      after link triggers and versus port state (AFM-058/060), forwarding table after a flap (E2E-099),
+      GPU config phase on configfailed (E2E-110), accelerator reset + Reconfigure (RC-007).
+    * **Node agent:** NA-013/016/018/022/024/040/047/048/049/050 and HW-025.
+    * **Sideband sequence:** SEQ-005/010/012, BU-001.
+    * **IFCP sessions from `afmctl` (ll_up / peer / errors):** baseline (TC-001); recovery after a link
+      flap, agent restart, agent pause, controller restart, compute port shut, all links down
+      (TC-002…008); triggers TRG-004/005/006/009/010.
+    * **Switch agent:** user VLANs kept on decommission, fabric update on vPOD CRUD, switch states,
+      automatic reconfigure on the policy timer (SWA-037/180/204/214).
+    * **Traffic with AFM:** NA-003/004/005/006/019, HW-010, TRG-001, E2E-009 and RAS-reset
+      005/006/010…017 (hard reset = AFM Reconfigure).
+    * **Not automated:** SPDM session, SelectedLink and IFCP packet-format cases. They need data
+      that neither afmctl nor the node-agent API exposes (AMD tooling or packet capture).
   * **Built from the g02-g17 procedures, with their script bugs fixed** (see `helios/afm_ops.py`):
     * membership is checked per GPU
     * a slot's agent is re-located on every poll
@@ -355,7 +372,8 @@ and title.
     * `selftest/fake_afm.py` is an in-process HTTPS + WebSocket AFM. `selftest/fake_rack.py` simulates
       the rack behind it (agents, controllers, admission, vPOD membership, planes, links) and the switch
       SSH the disruptive cases drive.
-    * `unit/test_afm_selftest.py` injects 16 API faults and 66 lifecycle/link/failover/controller/regression product faults, including
+    * `unit/test_afm_selftest.py` injects 16 API faults and 110 product faults (lifecycle, links, failover,
+      controller, regression, compute side, IFCP, traffic), including
       the full-rack issues (stale planes after readmit, VLAN wipe AIFM-1901, coupled ports). Each one must
       fail exactly the cases that should catch it.
 

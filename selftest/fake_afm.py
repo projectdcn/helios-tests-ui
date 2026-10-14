@@ -410,6 +410,8 @@ class Handler(BaseHTTPRequestHandler):
                                     "object-ref": {"kind": f"{op}Request"}})
         if op == "DrainSwitchNode":
             sw["status"]["admission-phase"] = "drained"
+            if "cp_disrupted_by_fabric_change" in st.f:
+                sim.stopped |= set(sim.sb_pid)
             sim.event("switchnode_drained", f"switch {name} drained")
         elif op == "DecommissionSwitchNode":
             force = bool(body.get("force-decommission"))
@@ -468,13 +470,20 @@ class Handler(BaseHTTPRequestHandler):
                 return self._err(412, f"reconfigure compute tray is not allowed: compute node {name} does not have scaleup info")
             if time.monotonic() - sim.reconf_at.get(name, -99) < 1:
                 return self._err(412, f"reconfigure of {name} already in progress")
+            if "reconfigure_500" in st.f or ("admission_reconfigure_500" in st.f
+                                             and time.monotonic() - sim.readmit_at.get(slot, -99) < 2):
+                return self._err(500, "internal error during reconfigure")
             sim.reconf_at[name] = time.monotonic()
             if "reconfig_clears_drain" in st.f:
                 c["spec"]["drained-ports"] = []
             for u in sim.gpus[slot]:
                 sim.removed_at[u] = time.monotonic()
+            if "no_reset_on_reconfigure" not in st.f:
+                sim.journal.setdefault(slot, []).append(time.time())
             st.record(user, "Reconfigure", "ComputeNode", name, path)
             return self._send(200, c)
+        if op == "DrainGPUPort" and "cp_disrupted_by_fabric_change" in st.f:
+            sim.stopped |= set(sim.sb_pid)
         if op in ("DrainGPUPort", "ActivateGPUPort"):
             ports = [(x.get("gpu-id"), x.get("port-id")) for x in (body or {}).get("ports") or []]
             cur = [(x["gpu-id"], x["port-id"]) for x in c["spec"].get("drained-ports") or []]
@@ -484,7 +493,10 @@ class Handler(BaseHTTPRequestHandler):
         if op == "Decommission":
             if in_vpod and "decom_in_vpod_ok" not in st.f:
                 return self._err(412, f"GPUs are part of vPods ({','.join(in_vpod)})")
-            c["status"]["admission-phase"] = "decommissioned"
+            force = bool((body or {}).get("force-decommission"))
+            unhealthy = slot in sim.stopped or sim.slot_host(slot) is None
+            c["status"]["admission-phase"] = "decommission_failed" if (unhealthy and not force
+                                                                      and "decom_unhealthy_ok" not in st.f) else "decommissioned"
             return self._send(200, c)
         if op == "Delete":
             if ph == "admitted":
@@ -507,6 +519,8 @@ class Handler(BaseHTTPRequestHandler):
                 sim.failed_evt.clear()
             if op == "ReconfigureDataFabric":
                 sim.ack.setdefault(name, set()).update(sim.failed_links(st.objs, coll[name]))
+                if "no_reconfigure_event" not in st.f:
+                    sim.vpod_event("vpod_status_change", name, "status changed to reconfiguredatafabric")
             return self._send(200, coll[name])
         if method == "POST":
             if isinstance(body, dict):
@@ -514,6 +528,8 @@ class Handler(BaseHTTPRequestHandler):
                 if err:
                     return self._err(400, err)
             r = self._crud(method, "cluster", "VPod", None, body, user, path, action)
+            if "cp_disrupted_by_fabric_change" in st.f:
+                sim.stopped |= set(sim.sb_pid)
             if isinstance(body, dict) and (body.get("meta") or {}).get("name") in coll:
                 sim.vpod_written(body["meta"]["name"])
                 sim.vpod_event("vpod_status_change", body["meta"]["name"], "created")
@@ -528,6 +544,7 @@ class Handler(BaseHTTPRequestHandler):
             if err:
                 return self._err(400, err)
             sim.gpus_removed(before, after)
+            sim.stick_slot_ports({g.get("slot-id") for g in before} ^ {g.get("slot-id") for g in after})
             if "configdone_stuck" in st.f and len(after) > len(before):
                 sim.configdone.add(name)
             if "transient_zero_planes" in st.f and (body.get("spec") or {}).get("failover-policy") != \
