@@ -1,0 +1,4 @@
+ 1674044 syncd
+  412000 orchagent
+  101000 switch-agent
+    6384 portsyncd

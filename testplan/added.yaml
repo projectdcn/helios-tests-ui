@@ -4,20 +4,20 @@
 cases:
 - id: TC-SWH-037
   level: L1
-  title: 'Fabric port configuration matches the cabling: every port described as a GPU link is trunk, admin up and a VLAN
-    member; uncabled ports are admin down'
+  title: 'Fabric port configuration matches the cabling: every port described as a GPU link is trunk, admin up and
+    a VLAN member; uncabled ports are admin down'
   category: switch-hw
   origin: added 2026-10-14
 - id: TC-SWH-038
   level: L2
-  title: 'Switch trays configured consistently: same SONiC build, AFM agent/controller images, port speed/MTU/role layout
-    and VLAN set on every switch'
+  title: 'Switch trays configured consistently: same SONiC build, AFM agent/controller images, port speed/MTU/role
+    layout and VLAN set on every switch'
   category: switch-hw
   origin: added 2026-10-14
 - id: TC-SWH-039
   level: L1
-  title: Transceivers present on every cabled fabric port and DOM (Rx/Tx power, temperature, voltage) within the module
-    thresholds
+  title: Transceivers present on every cabled fabric port and DOM (Rx/Tx power, temperature, voltage) within the
+    module thresholds
   category: switch-hw
   origin: added 2026-10-14
 - id: TC-SWH-040
@@ -54,12 +54,78 @@ cases:
   origin: added 2026-10-14
 - id: TC-SWH-046
   level: L2
-  title: 'PFC / QoS consistent and healthy: same PFC and QoS maps on every fabric port and switch, no PFC storm (pause
-    counters and PFC watchdog not growing)'
+  title: 'PFC / QoS consistent and healthy: same PFC and QoS maps on every fabric port and switch, no PFC storm
+    (pause counters and PFC watchdog not growing)'
   category: switch-hw
   origin: added 2026-10-14
 - id: TC-SWH-047
   level: L2
   title: Running configuration matches the saved configuration (no unsaved changes that a reboot would revert)
+  category: switch-hw
+  origin: added 2026-10-14
+- id: TC-SWH-048
+  level: L2
+  title: 'AFM and switch topology agree: every admitted compute''s GPUs are cabled (port descriptions) and up on
+    every switch, accelerator IDs match AFM, and ports of computes AFM does not admit are not in service'
+  category: switch-hw
+  origin: added 2026-10-14
+- id: TC-SWH-049
+  level: L1
+  title: 'Fabric port state healthy: every up fabric port reports link training trained, RS-FEC, its configured
+    speed and host_tx_ready true'
+  category: switch-hw
+  origin: added 2026-10-14
+- id: TC-SWH-050
+  level: L2
+  title: 'Static MAC entries match the fabric: every static FDB entry sits on a port cabled to an admitted compute,
+    and no admitted compute''s ports lack their entries'
+  category: switch-hw
+  origin: added 2026-10-14
+- id: TC-SWH-051
+  level: L2
+  title: 'vPOD isolation on the switch: no fabric port is a member of more than one vPOD VLAN, and MAC learning
+    is disabled on the vPOD VLANs'
+  category: switch-hw
+  origin: added 2026-10-14
+- id: TC-SWH-052
+  level: L1
+  title: No queue drops growing on fabric queues over a watch window, and buffer watermarks below a threshold
+  category: switch-hw
+  origin: added 2026-10-14
+- id: TC-SWH-053
+  level: L1
+  title: 'ASIC resource usage (CRM: FDB, ACL, next hop, neighbour, route tables) below a threshold'
+  category: switch-hw
+  origin: added 2026-10-14
+- id: TC-SWH-054
+  level: L1
+  title: 'Management interface healthy: eth0 up with no errors or drops growing, no carrier changes over a watch
+    window, default route present'
+  category: switch-hw
+  origin: added 2026-10-14
+- id: TC-SWH-055
+  level: L1
+  title: All switch sensors (ASIC, CPU, board temperatures and voltages) within their thresholds
+  category: switch-hw
+  origin: added 2026-10-14
+- id: TC-SWH-056
+  level: L1
+  title: 'Resources: disk use on /, /var/log and /host, free memory and load within limits; syncd, orchagent and
+    afm-agent memory not growing over a watch window'
+  category: switch-hw
+  origin: added 2026-10-14
+- id: TC-SWH-057
+  level: L1
+  title: Critical processes running inside each container (swss, syncd, pmon, lldp, ...) in steady state
+  category: switch-hw
+  origin: added 2026-10-14
+- id: TC-SWH-058
+  level: L1
+  title: Hardware watchdog armed and SSD healthy (no excessive wear, no reallocated or pending sectors)
+  category: switch-hw
+  origin: added 2026-10-14
+- id: TC-SWH-059
+  level: L2
+  title: 'Firmware consistent across switch trays: BIOS, CPLD and FPGA versions identical on every switch'
   category: switch-hw
   origin: added 2026-10-14

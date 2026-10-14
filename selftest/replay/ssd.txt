@@ -1,0 +1,4 @@
+Disk Type    : NVME
+Device Model : TS2TMTE712P-VS2
+Health       : 100.0%
+Temperature  : 41.0C

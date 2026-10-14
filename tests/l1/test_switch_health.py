@@ -409,3 +409,237 @@ def test_running_config_saved(switch, inventory, checks, record_property):
                         f"only saved {len(only_saved)} {only_saved[:2]}, changed {len(changed)} {changed[:2]}")
     record_property("config_diff", found)
     checks.assert_all()
+
+
+# ================================================================== TC-SWH-049, 051..059 (added 14 Oct 2026, third batch)
+# thresholds.switch: require_host_tx_ready (false: on QFX5252 without optics host_tx_ready stays false on up ports);
+# queue_window_s (30), queue_max_drop_delta (0), queue_watermark_max_bytes (null = record only);
+# crm_max_used_pct (80); mgmt_window_s (60), mgmt_iface (eth0); disk_max_pct (80), mem_min_available_pct (10),
+# load_max_per_cpu (2.0), rss_window_s (60), rss_max_growth_kb (20480), rss_processes; watchdog_armed (true),
+# ssd_min_health_pct (80)
+
+def _fabric_up(ps: dict) -> bool:
+    return ps.get("netdev_oper_status", "").lower() == "up"
+
+
+@pytest.mark.l1
+@pytest.mark.tc("TC-SWH-049")
+def test_fabric_port_state_healthy(switch, inventory, checks, record_property):
+    """Every up fabric port: link training trained (or off), RS-FEC, oper speed = configured speed, and - only where
+    thresholds.switch.require_host_tx_ready - host_tx_ready true. Ports' flap counts are recorded."""
+    need_htx = bool(inventory.th("switch.require_host_tx_ready", False))
+    want_fec = str(inventory.th("switch.fec", "rs"))
+    summary, flaps = Counter(), {}
+    for ns in switch.namespaces():
+        for port, st in switch.port_states(ns).items():
+            if not _fabric_up(st):
+                continue
+            where = f"{switch.name}/{ns}: {port}"
+            summary["up"] += 1
+            summary[f"host_tx_ready={st.get('host_tx_ready', '?')}"] += 1
+            lt = st.get("link_training_status", "")
+            checks.check(lt in ("trained", "off", ""), f"{where} up but link training '{lt}'")
+            if st.get("fec"):
+                checks.check(st["fec"] == want_fec, f"{where} FEC {st['fec']}, expected {want_fec}")
+            if st.get("speed") and st.get("cfg_speed"):
+                checks.check(st["speed"] == st["cfg_speed"], f"{where} speed {st['speed']} != configured {st['cfg_speed']}")
+            if need_htx:
+                checks.check(st.get("host_tx_ready") == "true", f"{where} host_tx_ready {st.get('host_tx_ready')}")
+            if (st.get("flap_count") or "0").isdigit() and int(st["flap_count"]) > 0:
+                flaps[f"{ns}/{port}"] = int(st["flap_count"])
+    record_property("ports", dict(summary))
+    record_property("flap_counts_top", dict(sorted(flaps.items(), key=lambda kv: -kv[1])[:10]))
+    checks.check(summary["up"], f"{switch.name}: no up fabric port")
+    checks.assert_all()
+
+
+@pytest.mark.l2
+@pytest.mark.tc("TC-SWH-051")
+def test_vpod_isolation(switch, inventory, checks, record_property):
+    """No fabric port is a member of two VLANs, and every VLAN with members has MAC learning disabled."""
+    for ns in switch.namespaces():
+        members = switch.vlan_members(ns)
+        where: dict[str, list[str]] = {}
+        for vlan, ports in members.items():
+            for p in ports:
+                where.setdefault(p, []).append(vlan)
+        multi = {p: v for p, v in where.items() if len(v) > 1}
+        checks.check(not multi, f"{switch.name}/{ns}: ports in several VLANs: {dict(list(multi.items())[:6])}")
+        for vlan, ports in members.items():
+            if ports:
+                ld = switch.vlan_hash(vlan, ns).get("learn_disable", "")
+                checks.check(ld == "true", f"{switch.name}/{ns}: {vlan} ({len(ports)} members) has MAC learning enabled (learn_disable={ld!r})")
+        record_property(f"vlans_{ns}", {v: len(p) for v, p in members.items()})
+    checks.assert_all()
+
+
+@pytest.mark.l1
+@pytest.mark.tc("TC-SWH-052")
+def test_queue_drops_and_watermarks(switch, inventory, checks, record_property):
+    """No fabric queue drop counter grows by more than queue_max_drop_delta over queue_window_s; unicast-queue
+    watermarks stay below queue_watermark_max_bytes when set (always recorded)."""
+    window = float(inventory.th("switch.queue_window_s", 30))
+    max_delta = float(inventory.th("switch.queue_max_drop_delta", 0))
+    wm_max = inventory.th("switch.queue_watermark_max_bytes")
+    nss = switch.namespaces()
+    before = {ns: switch.queue_counters(ns) for ns in nss}
+    time.sleep(window)
+    worst = {}
+    for ns in nss:
+        for (port, q), n in switch.queue_counters(ns).items():
+            b = before[ns].get((port, q))
+            if b is not None and switch.is_fabric_port(port):
+                checks.check(n - b <= max_delta, f"{switch.name}/{ns}: {port} {q} +{n - b:.0f} dropped packets in {window:.0f} s")
+        for port, wm in switch.queue_watermarks(ns).items():
+            worst[f"{ns}/{port}"] = wm
+            if wm_max is not None:
+                checks.check(wm <= float(wm_max), f"{switch.name}/{ns}: {port} queue watermark {wm:.0f} B > {wm_max}")
+    record_property("watermark_top_bytes", dict(sorted(worst.items(), key=lambda kv: -kv[1])[:5]))
+    checks.assert_all()
+
+
+@pytest.mark.l1
+@pytest.mark.tc("TC-SWH-053")
+def test_asic_resources(switch, inventory, checks, record_property):
+    """Every CRM resource with capacity is below crm_max_used_pct (80 %) used."""
+    limit = float(inventory.th("switch.crm_max_used_pct", 80))
+    crm = switch.crm_resources()
+    checks.check(crm, f"{switch.name}: 'crm show resources all' returned nothing")
+    top = {}
+    for asic, res in crm.items():
+        for name, (used, avail) in res.items():
+            if used + avail == 0:
+                continue
+            pct = 100.0 * used / (used + avail)
+            top[f"{asic}/{name}"] = round(pct, 2)
+            checks.check(pct <= limit, f"{switch.name}/{asic}: {name} {pct:.1f}% used ({used} of {used + avail})")
+    record_property("crm_top_pct", dict(sorted(top.items(), key=lambda kv: -kv[1])[:5]))
+    checks.assert_all()
+
+
+@pytest.mark.l1
+@pytest.mark.tc("TC-SWH-054")
+def test_management_interface_healthy(switch, inventory, checks, record_property):
+    """The management interface is UP, its error/drop counters and carrier changes do not grow over mgmt_window_s,
+    and a default route exists."""
+    iface = str(inventory.th("switch.mgmt_iface", "eth0"))
+    window = float(inventory.th("switch.mgmt_window_s", 60))
+    a = switch.iface_stats(iface)
+    time.sleep(window)
+    b = switch.iface_stats(iface)
+    record_property("mgmt", {"start": a, "end": b})
+    checks.check(b.get("state") == "UP", f"{switch.name}: {iface} state {b.get('state')}")
+    for k in ("rx_errors", "rx_dropped", "tx_errors", "tx_dropped", "carrier_changes"):
+        if k in a and k in b:
+            checks.check(b[k] <= a[k], f"{switch.name}: {iface} {k} +{b[k] - a[k]} in {window:.0f} s")
+    checks.check(switch.default_route(), f"{switch.name}: no default route")
+    checks.assert_all()
+
+
+def _num(v):
+    m = re.match(r"^\s*(-?\d+(?:\.\d+)?)", str(v or ""))
+    return float(m.group(1)) if m else None
+
+
+@pytest.mark.l1
+@pytest.mark.tc("TC-SWH-055")
+def test_sensors_within_thresholds(switch, inventory, checks, record_property):
+    """Every temperature and voltage sensor reads between its low and high thresholds (where set) and raises no
+    warning."""
+    n = 0
+    for kind, rows, val_col in (("temperature", switch.temperatures(), "Temperature"),
+                                ("voltage", switch.voltages(), "Voltage")):
+        for r in rows:
+            v, hi, lo = _num(r.get(val_col)), _num(r.get("High TH")), _num(r.get("Low TH"))
+            if v is None:
+                continue
+            n += 1
+            name = r.get("Sensor", "?")
+            if hi is not None:
+                checks.check(v <= hi, f"{switch.name}: {kind} {name} {v} above high threshold {hi}")
+            if lo is not None:
+                checks.check(v >= lo, f"{switch.name}: {kind} {name} {v} below low threshold {lo}")
+            checks.check(str(r.get("Warning", "False")).strip().lower() != "true", f"{switch.name}: {kind} {name} warning raised")
+    record_property("sensors_checked", n)
+    checks.check(n, f"{switch.name}: no sensor readings")
+    checks.assert_all()
+
+
+@pytest.mark.l1
+@pytest.mark.tc("TC-SWH-056")
+def test_resources_and_memory_growth(switch, inventory, checks, record_property):
+    """Disk use on /, /var/log and /host <= disk_max_pct (80 %), available memory >= mem_min_available_pct (10 %),
+    1-minute load <= load_max_per_cpu x CPUs, and syncd / orchagent / switch-agent / sb-node-agent RSS does not grow by
+    more than rss_max_growth_kb over rss_window_s."""
+    for path, pct in switch.disk_usage().items():
+        checks.check(pct <= float(inventory.th("switch.disk_max_pct", 80)), f"{switch.name}: {path} {pct}% full")
+    m = switch.memory_load()
+    if m.get("MemTotal"):
+        avail = 100.0 * m.get("MemAvailable", 0) / m["MemTotal"]
+        checks.check(avail >= float(inventory.th("switch.mem_min_available_pct", 10)), f"{switch.name}: only {avail:.1f}% memory available")
+    checks.check(m["load1"] <= float(inventory.th("switch.load_max_per_cpu", 2.0)) * m["nproc"],
+                 f"{switch.name}: load {m['load1']} on {m['nproc']:.0f} CPUs")
+    names = tuple(inventory.th("switch.rss_processes") or ("syncd", "orchagent", "switch-agent", "sb-node-agent"))
+    a = switch.process_rss(names)
+    time.sleep(float(inventory.th("switch.rss_window_s", 60)))
+    b = switch.process_rss(names)
+    grow = float(inventory.th("switch.rss_max_growth_kb", 20480))
+    for name in sorted(set(a) & set(b)):
+        checks.check(b[name] - a[name] <= grow, f"{switch.name}: {name} RSS grew {b[name] - a[name]} kB during the watch")
+    record_property("resources", {"memory_available_pct": round(100.0 * m.get("MemAvailable", 0) / m.get("MemTotal", 1), 1),
+                                  "load1": m["load1"], "rss_kb": b})
+    checks.assert_all()
+
+
+@pytest.mark.l1
+@pytest.mark.tc("TC-SWH-057")
+def test_critical_processes_running(switch, inventory, checks, record_property):
+    """In every running container that declares /etc/supervisor/critical_processes, each listed program is RUNNING."""
+    seen = 0
+    for c in switch.containers():
+        crit = switch.critical_processes(c)
+        if not crit:
+            continue
+        status = switch.supervisor_status(c)
+        seen += 1
+        for prog in crit:
+            checks.check(status.get(prog) == "RUNNING", f"{switch.name}: {c}/{prog} is {status.get(prog, 'missing')}")
+    record_property("containers_checked", seen)
+    checks.check(seen, f"{switch.name}: no container declares critical processes")
+    checks.assert_all()
+
+
+@pytest.mark.l1
+@pytest.mark.tc("TC-SWH-058")
+def test_watchdog_and_ssd(switch, inventory, checks, record_property):
+    """The hardware watchdog is armed (thresholds.switch.watchdog_armed, true) and the SSD health is at least
+    ssd_min_health_pct (80 %)."""
+    wd = switch.watchdog_status()
+    ssd = switch.ssd_health()
+    record_property("watchdog", wd[:120])
+    record_property("ssd", ssd)
+    if inventory.th("switch.watchdog_armed", True):
+        checks.check(re.search(r"Status:\s*Armed", wd) is not None, f"{switch.name}: hardware watchdog not armed ({wd[:80]!r})")
+    h = _num(ssd.get("Health"))
+    checks.check(h is not None, f"{switch.name}: SSD health not reported")
+    if h is not None:
+        checks.check(h >= float(inventory.th("switch.ssd_min_health_pct", 80)), f"{switch.name}: SSD health {h}%")
+    checks.assert_all()
+
+
+@pytest.mark.l2
+@pytest.mark.tc("TC-SWH-059")
+def test_firmware_consistent_across_switches(rack, inventory, checks, record_property):
+    """Every firmware component (BIOS, BMC, CPLDs, FPGAs) has the same version on all switch trays."""
+    sws = list(rack.switches.values())
+    if len(sws) < 2:
+        pytest.skip("needs at least 2 switch trays")
+    fw = {}
+    for sw, rows, exc in fan_out(lambda s: s.firmware_status(), sws):
+        if checks.check(exc is None, f"{sw.name}: cannot read firmware status: {exc}"):
+            fw[sw.name] = {r.get("Component"): r.get("Version") for r in rows if r.get("Component")}
+    comps = sorted(set().union(*fw.values())) if fw else []
+    for comp in comps:
+        _majority(f"{comp} firmware", {n: v.get(comp, "absent") for n, v in fw.items()}, checks)
+    record_property("firmware", fw)
+    checks.assert_all()

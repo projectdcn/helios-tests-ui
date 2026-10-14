@@ -103,6 +103,17 @@ def _pfc_storm(replay: Path):
     _edit_rule(replay, "pfc\\ counters\\ \\-n\\ asic0", files=["pfc_asic0.txt", "pfc_asic0_b.txt"], file=None)
 
 
+def _cycle(replay: Path, fname: str, pattern: str, repl: str, rule_fragment: str):
+    """Make the second read of a command differ: a copy of ``fname`` with ``pattern`` replaced, served on every other
+    call of the rule that matches ``rule_fragment``."""
+    text = (replay / fname).read_text()
+    changed, n = re.subn(pattern, repl, text, count=1, flags=re.M)
+    assert n == 1, f"{pattern!r} not in {fname}"
+    alt = fname.replace(".txt", "_b.txt")
+    (replay / alt).write_text(changed)
+    _edit_rule(replay, rule_fragment, files=[fname, alt], file=None)
+
+
 def test_healthy_rack_passes(tmp_path):
     verdicts = _run(tmp_path)
     failed = {k: v for k, v in verdicts.items() if v in ("FAIL", "PARTIAL", "BLOCKED")}
@@ -285,6 +296,21 @@ FAULTS = {
     "pfc_storm": (lambda d: _pfc_storm(d), {"TC-SWH-046"}),
     "config_unsaved": (lambda d: _edit(d / "cfg_saved_asic0.json", r'"Vlan100\|Ethernet0"', '"Vlan100|Ethernet999"'),
                        {"TC-SWH-047"}),
+    # ---- added switch cases, third batch (TC-SWH-049, 051..058; 059 needs 2 switches: unit test of _majority)
+    "port_not_trained": (lambda d: _edit(d / "port_states_asic0.txt", r"'link_training_status': 'trained'",
+                                         "'link_training_status': 'not_trained'"), {"TC-SWH-049"}),
+    "vlan_learning_on": (lambda d: _edit(d / "vlan_asic0_Vlan100.txt", r"'learn_disable': 'true'", "'learn_disable': 'false'"),
+                         {"TC-SWH-051"}),
+    "queue_drops": (lambda d: _cycle(d, "queue_asic0.txt", r"(Ethernet0\s+UC0(?:\s+\S+){2}\s+)0", r"\g<1>500",
+                                     "queue\\ counters\\ \\-n\\ asic0"), {"TC-SWH-052"}),
+    "crm_full": (lambda d: _edit(d / "crm.txt", r"fdb_entry(\s+)204(\s+)7987", r"fdb_entry\g<1>7900\g<2> 291"), {"TC-SWH-053"}),
+    "mgmt_errors": (lambda d: _cycle(d, "eth0.txt", r"(1630377338 12608432)      0", r"\1     42",
+                                     "ip\\ \\-s\\ link"), {"TC-SWH-054"}),
+    "voltage_warning": (lambda d: _edit(d / "voltage.txt", r"False", "True "), {"TC-SWH-055"}),
+    "disk_full": (lambda d: _edit(d / "df.txt", r"2% /var/log", "95% /var/log"), {"TC-SWH-056"}),
+    "critical_process_exited": (lambda d: _edit(d / "supervisor_swss0.txt", r"^(orchagent\s+)RUNNING", r"\1EXITED "),
+                                {"TC-SWH-057", "TC-SWA-141"}),   # SWA-141 also checks swss processes
+    "watchdog_unarmed": (lambda d: _edit(d / "watchdog.txt", r"Status: Armed", "Status: Unarmed"), {"TC-SWH-058"}),
     "thermalctld_down": (lambda d: _edit_rule(d, "thermalctld", stdout="thermalctld   EXITED\n"), {"TC-SWH-004"}),
 }
 

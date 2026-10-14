@@ -1,0 +1,4 @@
+Sensor               Voltage     High TH  Low TH  Crit High TH  Crit Low TH  Warning  Timestamp
+-------------------  ----------  -------  ------  ------------  -----------  -------  -----------------
+CPU_VDDCR_SOC        1035.0 mV   1200     800     1250          750          False    20261014 17:53:22
+PDB_HSC_MAIN_50V_IN  49650.0 mV  55000    45000   55000         45000        False    20261014 17:53:22

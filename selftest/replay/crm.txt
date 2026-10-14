@@ -1,0 +1,16 @@
+
+ASIC0
+
+Resource Name  Used Count  Available Count
+-------------  ----------  ---------------
+ipv4_route              1          1048575
+fdb_entry             204             7987
+nexthop_group           0             4095
+
+ASIC1
+
+Resource Name  Used Count  Available Count
+-------------  ----------  ---------------
+ipv4_route              1          1048575
+fdb_entry             204             7987
+nexthop_group           0             4095

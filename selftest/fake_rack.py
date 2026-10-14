@@ -731,8 +731,20 @@ class FakeSwitchTransport:
                 res = self._res(cmd, rc=0 if ok else 1)
             elif "CONFIG_DB keys 'PORT|Ethernet*'" in cmd and cmd.startswith("for k in"):
                 ns = re.search(r"-n (asic\d+)", cmd).group(1)
-                res = self._res(cmd, "".join(f"{p}|To ComputeTray Slot{s}/GPU{g}[{acc}]/Port{pid}\n"
+                off = 1 if "desc_acc_off_by_one" in st.f else 0
+                res = self._res(cmd, "".join(f"{p}|To ComputeTray Slot{s}/GPU{g}[{acc + off}]/Port{pid}\n"
                                              for p, (s, g, acc, pid) in sim.ports(i, ns).items()))
+            elif "CONFIG_DB keys 'FDB|*'" in cmd and cmd.startswith("for k in"):
+                # static FDB: one entry per VLAN-member port of an admitted compute (fault stale_fdb: + one in Vlan2)
+                ns = re.search(r"-n (asic\d+)", cmd).group(1)
+                lines = []
+                for p, (s, g, acc, pid) in sim.ports(i, ns).items():
+                    c = sim.computes.get(sim.cname(s))
+                    if c and c["status"]["admission-phase"] == "admitted" and sim.lane_used(i, ns, p):
+                        lines.append(f"FDB|Vlan100|02:00:00:{acc:02x}:{pid:02x}:01|{p}")
+                if "stale_fdb" in st.f and lines:
+                    lines.append(f"FDB|Vlan2|02:00:00:ff:00:01|{lines[0].rsplit('|', 1)[1]}")
+                res = self._res(cmd, "\n".join(lines) + "\n")
             elif m := re.fullmatch(r"docker exec afm-agent curl -s -m 5 localhost:(\d+)/api/runtime/requests", cmd):
                 slot = int(m.group(1)) - 13000
                 ok = sim.agent_up[i] and sim.slot_host(slot) == i and "no_agent_requests" not in st.f

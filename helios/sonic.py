@@ -131,7 +131,7 @@ class SonicSwitch:
 
     def fdb(self, ns: str | None) -> list[dict]:
         """`show mac` rows: [{'Vlan', 'MacAddress', 'Port', 'Type'}]."""
-        return parse_table(self.sh(f"show mac{_ns_flag(ns)}", timeout=120))
+        return parse_table(self.sh(f"show mac{_ns_flag(ns)}", sudo=True, timeout=120))
 
     def sb_node_agent_slots(self) -> list[int]:
         """Slot ids of the sb-node-agent processes inside this switch's afm-agent container (sideband mode)."""
@@ -318,6 +318,138 @@ class SonicSwitch:
         f = f"/etc/sonic/config_db{ns[4:] if ns else ''}.json"
         saved = json.loads(self.sh(f"cat {f}", sudo=True, timeout=120))
         return run, saved
+
+    # -- fabric / platform health (TC-SWH-048..059) -----------------------------
+    def port_states(self, ns: str | None) -> dict[str, dict[str, str]]:
+        """{port: STATE_DB PORT_TABLE fields + cfg_speed (CONFIG_DB) + flap_count / last_down_time (APPL_DB)},
+        all fabric ports of one namespace in one round trip."""
+        flag = _ns_flag(ns)
+        script = (f"for k in $(sonic-db-cli{flag} STATE_DB keys 'PORT_TABLE|Ethernet*'); do p=${{k#PORT_TABLE|}}; "
+                  f"echo \"$p|S|$(sonic-db-cli{flag} STATE_DB hgetall \"$k\")\"; "
+                  f"echo \"$p|C|$(sonic-db-cli{flag} CONFIG_DB hget \"PORT|$p\" speed)\"; "
+                  f"echo \"$p|A|$(sonic-db-cli{flag} APPL_DB hget \"PORT_TABLE:$p\" flap_count)|"
+                  f"$(sonic-db-cli{flag} APPL_DB hget \"PORT_TABLE:$p\" last_down_time)\"; done")
+        out: dict[str, dict[str, str]] = {}
+        for line in self.sh(script, sudo=True, timeout=300).splitlines():
+            port, _, rest = line.partition("|")
+            kind, _, val = rest.partition("|")
+            if not self.is_fabric_port(port):
+                continue
+            d = out.setdefault(port, {})
+            if kind == "S":
+                d.update(parse_db_hash(val) if val.strip() else {})
+            elif kind == "C":
+                d["cfg_speed"] = val.strip()
+            elif kind == "A":
+                fc, _, ld = val.partition("|")
+                d["flap_count"], d["last_down_time"] = fc.strip(), ld.strip()
+        return out
+
+    def fdb_static(self, ns: str | None) -> list[tuple[str, str, str]]:
+        """CONFIG_DB static FDB entries: [(vlan, mac, port)]."""
+        flag = _ns_flag(ns)
+        script = (f"for k in $(sonic-db-cli{flag} CONFIG_DB keys 'FDB|*'); do "
+                  f"echo \"$k|$(sonic-db-cli{flag} CONFIG_DB hget \"$k\" port)\"; done")
+        out = []
+        for line in self.sh(script, sudo=True, timeout=300).splitlines():
+            parts = line.strip().split("|")
+            if len(parts) == 4 and parts[0] == "FDB":
+                out.append((parts[1], parts[2].lower(), parts[3]))
+        return out
+
+    def vlan_hash(self, vlan: str, ns: str | None) -> dict[str, str]:
+        return self.db_hash("CONFIG_DB", f"VLAN|{vlan}", ns)
+
+    def queue_counters(self, ns: str | None) -> dict[tuple[str, str], float]:
+        """{(port, queue): drop packets} from 'show queue counters'."""
+        out = self.sh(f"show queue counters{_ns_flag(ns)}", sudo=True, timeout=300)
+        res = {}
+        for r in parse_table(out.split(":", 1)[1] if out.lstrip().startswith("For namespace") else out):
+            v = r.get("Drop/pkts", "").replace(",", "")
+            if r.get("Port") and v.isdigit():
+                res[(r["Port"], r.get("TxQ", ""))] = float(v)
+        return res
+
+    def queue_watermarks(self, ns: str | None) -> dict[str, float]:
+        """{port: max unicast-queue shared-pool occupancy (bytes)} from 'show queue watermark unicast'."""
+        out = self.run(f"show queue watermark unicast{_ns_flag(ns)}", sudo=True, timeout=300).stdout
+        body = out.split("\n", 1)[1] if out.lstrip().startswith("Egress") else out
+        res = {}
+        for r in parse_table(body):
+            vals = [float(v) for k, v in r.items() if k.startswith("UC") and v.replace(".", "").isdigit()]
+            if r.get("Port") and vals:
+                res[r["Port"]] = max(vals)
+        return res
+
+    def crm_resources(self) -> dict[str, dict[str, tuple[int, int]]]:
+        """{ASIC: {resource: (used, available)}} from 'crm show resources all' (one table per ASIC)."""
+        out = self.sh("crm show resources all", sudo=True, timeout=120)
+        res: dict[str, dict] = {}
+        for block in re.split(r"\n(?=\s*ASIC\d+\s*$)", out, flags=re.M):
+            m = re.search(r"^\s*(ASIC\d+)\s*$", block, re.M)
+            name = m.group(1) if m else "ASIC"
+            for r in parse_table(block[m.end():] if m else block):
+                u, a = r.get("Used Count", ""), r.get("Available Count", "")
+                if u.isdigit() and a.isdigit() and r.get("Resource Name"):
+                    res.setdefault(name, {})[r["Resource Name"]] = (int(u), int(a))
+        return res
+
+    def iface_stats(self, iface: str = "eth0") -> dict[str, int | str]:
+        """state, rx/tx errors+dropped and carrier_changes of a kernel interface."""
+        out = self.sh(f"ip -s link show {iface}; echo CC=$(cat /sys/class/net/{iface}/carrier_changes)", timeout=60)
+        st = {"state": (re.search(r"state (\S+)", out) or [None, "?"])[1]}
+        lines = out.splitlines()
+        for i, ln in enumerate(lines):
+            key = "rx" if ln.strip().startswith("RX:") else "tx" if ln.strip().startswith("TX:") else None
+            if key and i + 1 < len(lines):
+                hdr, vals = ln.split()[1:], lines[i + 1].split()
+                for h, v in zip(hdr, vals):
+                    if h in ("errors", "dropped") and v.isdigit():
+                        st[f"{key}_{h}"] = int(v)
+        m = re.search(r"CC=(\d+)", out)
+        st["carrier_changes"] = int(m.group(1)) if m else -1
+        return st
+
+    def default_route(self) -> str:
+        return self.run("ip route show default", timeout=60).stdout.strip()
+
+    def voltages(self) -> list[dict]:
+        return parse_table(self.run("show platform voltage", sudo=True, timeout=120).stdout)
+
+    def disk_usage(self, paths=("/", "/var/log", "/host")) -> dict[str, int]:
+        """{mount path: capacity %}."""
+        out = self.run("df -P " + " ".join(paths), timeout=60).stdout
+        res = {}
+        for ln in out.splitlines()[1:]:
+            t = ln.split()
+            if len(t) >= 6 and t[4].endswith("%"):
+                res[t[5]] = int(t[4][:-1])
+        return res
+
+    def memory_load(self) -> dict[str, float]:
+        out = self.sh("grep -E '^(MemTotal|MemAvailable):' /proc/meminfo; cat /proc/loadavg; nproc", timeout=60)
+        d = {m.group(1): float(m.group(2)) for m in re.finditer(r"^(MemTotal|MemAvailable):\s+(\d+)", out, re.M)}
+        nums = re.findall(r"^(\d+\.\d+) \d+\.\d+ \d+\.\d+", out, re.M)
+        d["load1"] = float(nums[0]) if nums else 0.0
+        d["nproc"] = float(out.strip().splitlines()[-1]) if out.strip().splitlines()[-1].isdigit() else 1.0
+        return d
+
+    def process_rss(self, names: tuple[str, ...]) -> dict[str, int]:
+        """{process name: total RSS kB} for processes whose command name is one of ``names``."""
+        out = self.run("ps -eo rss=,comm=", timeout=60).stdout
+        res: dict[str, int] = {}
+        for ln in out.splitlines():
+            t = ln.split(None, 1)
+            if len(t) == 2 and t[1].strip() in names and t[0].isdigit():
+                res[t[1].strip()] = res.get(t[1].strip(), 0) + int(t[0])
+        return res
+
+    def watchdog_status(self) -> str:
+        return self.run("watchdogutil status", sudo=True, timeout=60).stdout.strip()
+
+    def ssd_health(self) -> dict[str, str]:
+        out = self.run("ssdutil", sudo=True, timeout=120).stdout
+        return {k.strip(): v.strip() for k, _, v in (ln.partition(":") for ln in out.splitlines()) if v}
 
     def close(self) -> None:
         self.t.close()

@@ -1,0 +1,4 @@
+Filesystem     1024-blocks     Used Available Capacity Mounted on
+root-overlay     459202680 25498108 433688188       6% /
+/dev/loop1        65478188  1113944  60992420       2% /var/log
+/dev/nvme0n1p3   459202680 25498108 433688188       6% /host

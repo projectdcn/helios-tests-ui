@@ -1,0 +1,12 @@
+Ethernet0|S|{'netdev_oper_status': 'up', 'link_training_status': 'trained', 'fec': 'rs', 'speed': '400000', 'host_tx_ready': 'false'}
+Ethernet0|C|400000
+Ethernet0|A|1|Tue Oct 13 07:42:02 2026
+Ethernet8|S|{'netdev_oper_status': 'up', 'link_training_status': 'trained', 'fec': 'rs', 'speed': '400000', 'host_tx_ready': 'false'}
+Ethernet8|C|400000
+Ethernet8|A|1|Tue Oct 13 07:42:02 2026
+Ethernet16|S|{'netdev_oper_status': 'up', 'link_training_status': 'trained', 'fec': 'rs', 'speed': '400000', 'host_tx_ready': 'false'}
+Ethernet16|C|400000
+Ethernet16|A|1|Tue Oct 13 07:42:02 2026
+Ethernet24|S|{'netdev_oper_status': 'up', 'link_training_status': 'trained', 'fec': 'rs', 'speed': '400000', 'host_tx_ready': 'false'}
+Ethernet24|C|400000
+Ethernet24|A|1|Tue Oct 13 07:42:02 2026

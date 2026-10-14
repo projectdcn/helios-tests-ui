@@ -591,6 +591,84 @@
   rc: 0
   host: ^sw
   file: cfg_saved_asic1.json
+- cmd: '^for k in \$\(sonic-db-cli -n asic0 STATE_DB keys ''PORT_TABLE\|Ethernet\*''\); do '
+  rc: 0
+  host: ^sw
+  file: port_states_asic0.txt
+- cmd: ^sonic\-db\-cli\ \-n\ asic0\ CONFIG_DB\ hgetall\ 'VLAN\|Vlan100'$
+  rc: 0
+  host: ^sw
+  file: vlan_asic0_Vlan100.txt
+- cmd: ^sonic\-db\-cli\ \-n\ asic0\ CONFIG_DB\ hgetall\ 'VLAN\|Vlan101'$
+  rc: 0
+  host: ^sw
+  file: vlan_asic0_Vlan101.txt
+- cmd: ^show\ queue\ counters\ \-n\ asic0$
+  rc: 0
+  host: ^sw
+  file: queue_asic0.txt
+- cmd: ^show\ queue\ watermark\ unicast\ \-n\ asic0$
+  rc: 0
+  host: ^sw
+  file: wm_asic0.txt
+- cmd: '^for k in \$\(sonic-db-cli -n asic1 STATE_DB keys ''PORT_TABLE\|Ethernet\*''\); do '
+  rc: 0
+  host: ^sw
+  file: port_states_asic1.txt
+- cmd: ^sonic\-db\-cli\ \-n\ asic1\ CONFIG_DB\ hgetall\ 'VLAN\|Vlan100'$
+  rc: 0
+  host: ^sw
+  file: vlan_asic1_Vlan100.txt
+- cmd: ^sonic\-db\-cli\ \-n\ asic1\ CONFIG_DB\ hgetall\ 'VLAN\|Vlan101'$
+  rc: 0
+  host: ^sw
+  file: vlan_asic1_Vlan101.txt
+- cmd: ^show\ queue\ counters\ \-n\ asic1$
+  rc: 0
+  host: ^sw
+  file: queue_asic1.txt
+- cmd: ^show\ queue\ watermark\ unicast\ \-n\ asic1$
+  rc: 0
+  host: ^sw
+  file: wm_asic1.txt
+- cmd: ^crm\ show\ resources\ all$
+  rc: 0
+  host: ^sw
+  file: crm.txt
+- cmd: ^ip\ \-s\ link\ show\ eth0;\ echo\ CC=\$\(cat\ /sys/class/net/eth0/carrier_changes\)$
+  rc: 0
+  host: ^sw
+  file: eth0.txt
+- cmd: ^ip\ route\ show\ default$
+  rc: 0
+  host: ^sw
+  stdout: 'default via 10.0.0.254 dev eth0
+
+    '
+- cmd: ^show\ platform\ voltage$
+  rc: 0
+  host: ^sw
+  file: voltage.txt
+- cmd: ^df\ \-P\ /\ /var/log\ /host$
+  rc: 0
+  host: ^sw
+  file: df.txt
+- cmd: ^grep\ \-E\ '\^\(MemTotal\|MemAvailable\):'\ /proc/meminfo;\ cat\ /proc/loadavg;\ nproc$
+  rc: 0
+  host: ^sw
+  file: meminfo.txt
+- cmd: ^ps\ \-eo\ rss=,comm=$
+  rc: 0
+  host: ^sw
+  file: ps_rss.txt
+- cmd: ^watchdogutil\ status$
+  rc: 0
+  host: ^sw
+  file: watchdog.txt
+- cmd: ^ssdutil$
+  rc: 0
+  host: ^sw
+  file: ssd.txt
 - cmd: ^sonic\-installer\ list$
   rc: 0
   host: ^sw

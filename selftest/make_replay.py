@@ -209,6 +209,49 @@ for i, ns in enumerate(NS):
     add(f"sonic-cfggen -n {ns} -d --print-data", _json.dumps(_cfg[ns], indent=4), name=f"cfg_running_{ns}.json", host=SW)
     add(f"cat /etc/sonic/config_db{i}.json", _json.dumps(_cfg[ns], indent=4), name=f"cfg_saved_{ns}.json", host=SW)
 
+# TC-SWH-049, 051..059 (formats as seen on g02-g17 sw-05, 14 Oct 2026)
+for ns, ports in PORTS.items():
+    lines = []
+    for p_ in ports:
+        lines += [f"{p_}|S|" + repr({"netdev_oper_status": "up", "link_training_status": "trained", "fec": "rs",
+                                      "speed": "400000", "host_tx_ready": "false"}),
+                  f"{p_}|C|400000", f"{p_}|A|1|Tue Oct 13 07:42:02 2026"]
+    add(rf"^for k in \$\(sonic-db-cli -n {ns} STATE_DB keys 'PORT_TABLE\|Ethernet\*'\); do ", "\n".join(lines) + "\n",
+        name=f"port_states_{ns}.txt", host=SW, regex=True)
+    for v in ("Vlan100", "Vlan101"):
+        add(db(ns, "CONFIG_DB", "hgetall", f"VLAN|{v}"),
+            repr({"learn_disable": "true", "vlanid": v[4:]}) + "\n", name=f"vlan_{ns}_{v}.txt", host=SW)
+    q_rows = [[p_, f"UC{q}", "747291", "1207464530", "0", "0"] for p_ in ports for q in range(2)]
+    add(f"show queue counters -n {ns}", f"For namespace {ns}:\n" + table(
+        ["Port", "TxQ", "Counter/pkts", "Counter/bytes", "Drop/pkts", "Drop/bytes"], q_rows, right={2, 3, 4, 5}),
+        name=f"queue_{ns}.txt", host=SW)
+    add(f"show queue watermark unicast -n {ns}", f"Egress shared pool occupancy per unicast queue: (Namespace {ns})\n" +
+        table(["Port"] + [f"UC{q}" for q in range(8)], [[p_, "396480", "63000"] + ["0"] * 5 + ["420"] for p_ in ports],
+              right=set(range(1, 9))), name=f"wm_{ns}.txt", host=SW)
+_crm_rows = [["ipv4_route", "1", "1048575"], ["fdb_entry", "204", "7987"], ["nexthop_group", "0", "4095"]]
+add("crm show resources all", "".join(f"\n{a}\n\n" + table(["Resource Name", "Used Count", "Available Count"], _crm_rows,
+                                                            right={1, 2}) for a in ("ASIC0", "ASIC1")), name="crm.txt", host=SW)
+add("ip -s link show eth0; echo CC=$(cat /sys/class/net/eth0/carrier_changes)",
+    "2: eth0: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc mq state UP mode DEFAULT group default qlen 1000\n"
+    "    link/ether dc:b8:7d:81:0a:00 brd ff:ff:ff:ff:ff:ff\n"
+    "    RX:  bytes  packets errors dropped  missed   mcast\n    1630377338 12608432      0       0       0   78522\n"
+    "    TX:  bytes  packets errors dropped carrier collsns\n    3742731093 19961492      0       0       0       0\nCC=3\n",
+    name="eth0.txt", host=SW)
+add("ip route show default", "default via 10.0.0.254 dev eth0\n", host=SW)
+add("show platform voltage", table(["Sensor", "Voltage", "High TH", "Low TH", "Crit High TH", "Crit Low TH", "Warning", "Timestamp"],
+    [["CPU_VDDCR_SOC", "1035.0 mV", "1200", "800", "1250", "750", "False", "20261014 17:53:22"],
+     ["PDB_HSC_MAIN_50V_IN", "49650.0 mV", "55000", "45000", "55000", "45000", "False", "20261014 17:53:22"]]),
+    name="voltage.txt", host=SW)
+add("df -P / /var/log /host", "Filesystem     1024-blocks     Used Available Capacity Mounted on\n"
+    "root-overlay     459202680 25498108 433688188       6% /\n/dev/loop1        65478188  1113944  60992420       2% /var/log\n"
+    "/dev/nvme0n1p3   459202680 25498108 433688188       6% /host\n", name="df.txt", host=SW)
+add("grep -E '^(MemTotal|MemAvailable):' /proc/meminfo; cat /proc/loadavg; nproc",
+    "MemTotal:       32581108 kB\nMemAvailable:   23254044 kB\n1.63 1.20 1.40 1/1791 2523414\n16\n", name="meminfo.txt", host=SW)
+add("ps -eo rss=,comm=", " 1674044 syncd\n  412000 orchagent\n  101000 switch-agent\n    6384 portsyncd\n", name="ps_rss.txt", host=SW)
+add("watchdogutil status", "Status: Armed\nTime remaining: 162 seconds\n", name="watchdog.txt", host=SW)
+add("ssdutil", "Disk Type    : NVME\nDevice Model : TS2TMTE712P-VS2\nHealth       : 100.0%\nTemperature  : 41.0C\n",
+    name="ssd.txt", host=SW)
+
 IMG_CUR, IMG_OLD = "SONiC-OS-helios.202505.1", "SONiC-OS-helios.202411.3"
 add("sonic-installer list", f"Current: {IMG_CUR}\nNext: {IMG_CUR}\nAvailable:\n{IMG_CUR}\n{IMG_OLD}\n",
     name="sonic_installer_list.txt", host=SW)

@@ -1,0 +1,12 @@
+Ethernet256|S|{'netdev_oper_status': 'up', 'link_training_status': 'trained', 'fec': 'rs', 'speed': '400000', 'host_tx_ready': 'false'}
+Ethernet256|C|400000
+Ethernet256|A|1|Tue Oct 13 07:42:02 2026
+Ethernet264|S|{'netdev_oper_status': 'up', 'link_training_status': 'trained', 'fec': 'rs', 'speed': '400000', 'host_tx_ready': 'false'}
+Ethernet264|C|400000
+Ethernet264|A|1|Tue Oct 13 07:42:02 2026
+Ethernet272|S|{'netdev_oper_status': 'up', 'link_training_status': 'trained', 'fec': 'rs', 'speed': '400000', 'host_tx_ready': 'false'}
+Ethernet272|C|400000
+Ethernet272|A|1|Tue Oct 13 07:42:02 2026
+Ethernet280|S|{'netdev_oper_status': 'up', 'link_training_status': 'trained', 'fec': 'rs', 'speed': '400000', 'host_tx_ready': 'false'}
+Ethernet280|C|400000
+Ethernet280|A|1|Tue Oct 13 07:42:02 2026

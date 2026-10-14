@@ -1,0 +1,7 @@
+Egress shared pool occupancy per unicast queue: (Namespace asic0)
+Port           UC0    UC1  UC2  UC3  UC4  UC5  UC6  UC7
+----------  ------  -----  ---  ---  ---  ---  ---  ---
+Ethernet0   396480  63000    0    0    0    0    0  420
+Ethernet8   396480  63000    0    0    0    0    0  420
+Ethernet16  396480  63000    0    0    0    0    0  420
+Ethernet24  396480  63000    0    0    0    0    0  420

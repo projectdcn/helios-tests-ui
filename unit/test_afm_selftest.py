@@ -199,6 +199,9 @@ SIDEBAND_FAULTS = [
     ("mtu_sticky", {"TC-SBM-023"}),
     ("agent_fails_on_eth1", {"TC-BUG-019"}),
     ("fru_ignored", {"TC-BUG-020"}),
+    # added switch-vs-AFM cases (tests/afm/test_afm_switch_fabric.py)
+    ("desc_acc_off_by_one", {"TC-SWH-048"}),
+    ("stale_fdb", {"TC-SWH-050"}),
 ]
 # MCH (tests/afm/test_afm_mch.py) on the heliosmch fake (inventory-mch.yaml) unless another inventory is named;
 # MCH-045/047 (traffic over replayed tools) have no controller fault

@@ -1,0 +1,11 @@
+For namespace asic1:
+Port         TxQ  Counter/pkts  Counter/bytes  Drop/pkts  Drop/bytes
+-----------  ---  ------------  -------------  ---------  ----------
+Ethernet256  UC0        747291     1207464530          0           0
+Ethernet256  UC1        747291     1207464530          0           0
+Ethernet264  UC0        747291     1207464530          0           0
+Ethernet264  UC1        747291     1207464530          0           0
+Ethernet272  UC0        747291     1207464530          0           0
+Ethernet272  UC1        747291     1207464530          0           0
+Ethernet280  UC0        747291     1207464530          0           0
+Ethernet280  UC1        747291     1207464530          0           0
