@@ -283,6 +283,12 @@ def build(items: list[dict], args) -> str:
     executed = kp["PASS"] + kp["FAIL"]
     rate = (100.0 * kp["PASS"] / executed) if executed else 0.0
     auto_pill = auto_card = ""
+    # cases that ran on the rack = any status other than not run / not automated (pass, fail, pending, skip, N/A)
+    n_exec = n_cases - kp["NOT RUN"] - kp["NOT AUTOMATED"]
+    exec_txt = f" &middot; {n_exec} executed" if plan_rows is not None else ""
+    exec_card = (f'<div class="kpi-card"><div class="num" style="color:var(--accent2);">{n_exec}</div>'
+                 f'<div class="label">Executed ({100.0 * n_exec / n_cases:.0f}% of plan)</div></div>'
+                 if plan_rows is not None and n_cases else "")
     if plan_rows is not None:      # automation coverage (tools/coverage.py) in the hero pills + KPI cards
         from coverage import coverage
         cov = coverage()
@@ -395,7 +401,7 @@ pre.logpre .lvl-note {{ color: #9aa7b4; font-style: italic; }}
       &nbsp;|&nbsp; Executed {esc(started[0] if started else "")} &rarr; {esc(started[-1] if started else "")}
       &nbsp;|&nbsp; Generated {datetime.now().strftime("%Y-%m-%d %H:%M")}</div>
     <div class="hero-pills">
-      <div class="pill"><div><div class="cap">Test cases</div><div class="val">{n_cases} plan cases &middot; {len(items)} executions</div>
+      <div class="pill"><div><div class="cap">Test cases</div><div class="val">{n_cases} plan cases{exec_txt} &middot; {len(items)} executions</div>
         {f'<span class="chip">+{len(extra)} extra evidence test(s): {esc(", ".join(extra))}</span>' if extra else ''}
         <span class="chip">{len(suites)} suites</span><span class="chip">{len(runs)} run(s)</span></div></div>
       <div class="pill"><div><div class="cap">Executed result</div>
@@ -407,7 +413,7 @@ pre.logpre .lvl-note {{ color: #9aa7b4; font-style: italic; }}
     </div>
   </div>
   <div class="kpi-grid">
-    <div class="kpi-card"><div class="num" style="color:var(--accent);">{n_cases}</div><div class="label">Test cases</div></div>{auto_card}{not_run_card}
+    <div class="kpi-card"><div class="num" style="color:var(--accent);">{n_cases}</div><div class="label">Test cases</div></div>{auto_card}{exec_card}{not_run_card}
     <div class="kpi-card"><div class="num" style="color:var(--pass);">{kp['PASS']}</div><div class="label">Passed</div></div>
     <div class="kpi-card"><div class="num" style="color:var(--fail);">{kp['FAIL']}</div><div class="label">Failed</div></div>
     <div class="kpi-card"><div class="num" style="color:var(--blocked);">{kp['PENDING'] + kp['BLOCKED']}</div><div class="label">Pending / blocked</div></div>
