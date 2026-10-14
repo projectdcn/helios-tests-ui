@@ -142,7 +142,7 @@
   <p class="muted">Only needed for the AFM controller API tests (<code>tests/afm</code>):</p>
   <div class="cmd"><pre>read -s &quot;HELIOS_AFM_PASSWORD?AFM admin password: &quot; &amp;&amp; export HELIOS_AFM_PASSWORD &amp;&amp; echo</pre></div>
   <div class="note">
-    <strong>Scope today:</strong> 400 of the 542 plan cases are automated, plus 2 RCCL smoke tests. 52 of them (MCH rack, LDAP/RADIUS, syslog, upgrade images, management-network control) skip until the equipment is in the inventory.
+    <strong>Scope today:</strong> 406 of 548 cases are automated (the 542 plan cases plus 6 switch cases added on 14 Oct, TC-SWH-037…042), plus 2 RCCL smoke tests used as evidence. 52 of them (MCH rack, LDAP/RADIUS, syslog, upgrade images, management-network control) skip until the equipment is in the inventory.
     <ul>
       <li><strong>Over SSH:</strong> switch hardware, switch agent, datapath, scale-out RDMA, RAS reset, metrics exporter, node platform, sideband and IFCP.</li>
       <li><strong>Over the AFM REST API and AggWatch WebSocket (<code>tests/afm</code>, 233 cases):</strong> auth, cluster and object specs, failover policies, RBAC, audit, metrics, techsupport and AggWatch. Plus 149 disruptive cases, built from the full-rack procedures: compute Reconfigure, agent/controller restarts, vPOD/compute/switch lifecycle, fabric-link failover (TC-AFM-006…047, RC-001…026), the FO failover scenarios and vPOD operations (TC-E2E), controller resilience, snapshot/restore, bug regressions, stress, compute-side afmctl checks, IFCP recovery, switch-agent cases and traffic with AFM operations.</li>
@@ -172,8 +172,8 @@
   <table>
     <thead><tr><th>Option</th><th>How</th><th>Good for</th><th>Watch out for</th></tr></thead>
     <tbody>
-      <tr><td><strong>1. Your Mac, through tunnels</strong></td><td>AFM via <code>ssh -L 8443:&lt;controller&gt;:443</code>; inventory URL <code>https://localhost:8443</code></td><td>AFM API stage today; results land in your <code>results/</code> directly</td><td>Switch/compute SSH through a jump host is not supported yet (an <code>ssh</code> jump setting would need adding). A sleeping laptop or dropped tunnel stops the run.</td></tr>
-      <tr><td><strong>2. A Linux host inside the lab</strong> (jump host / management server)</td><td>Clone the repo, create the venv, inventory with the real 10.190.x addresses, run in <code>tmux</code>; <code>scp</code> the <code>results/&lt;run&gt;</code> folders back</td><td>SSH suites and long disruptive batches; fastest, no hops. This is how the full-rack team ran 10–11 Oct.</td><td>Needs Python 3.10+ and pip access (or a copied wheel cache) on that host</td></tr>
+      <tr><td><strong>1. Your Mac, through tunnels</strong></td><td>AFM via <code>ssh -L 8443:&lt;controller&gt;:443</code>; inventory URL <code>https://localhost:8443</code></td><td>AFM API stage today; results land in your <code>results/</code> directly</td><td>Switch/compute SSH through the jump host works (<code>transport.jump</code>, <code>via: exec</code>), but the g02-g17 jump host allows only 2 sessions per connection, so commands queue: fine for small read-only runs, too slow for traffic. A sleeping laptop or dropped tunnel stops the run.</td></tr>
+      <tr><td><strong>2. The jump host itself</strong> (recommended for g02-g17)</td><td>Copy the code and a wheel cache there, build a venv, run in <code>tmux</code> with the jump host's own key; copy the <code>results/&lt;run&gt;</code> folders back (steps in <a href="#full">section 4</a>)</td><td>Traffic, parallel and long runs: no session limit, no laptop dependency. Used for the 14 Oct L1 runs.</td><td>The jump host has Python 3.12 but no pip: install from wheels downloaded on your Mac</td></tr>
       <tr><td><strong>3. Lab VPN</strong> (if available)</td><td>As option 2, run from your Mac with the real addresses</td><td>Everything, no tunnels or code changes</td><td>Laptop must stay awake for long stages</td></tr>
       <tr><td><strong>4. Hybrid</strong> (recommended)</td><td>AFM stage from your Mac (option 1), SSH and disruptive stages from a lab host (option 2)</td><td>Starting now while lab access is arranged</td><td>Nothing extra: the report and workbook tools merge several run folders</td></tr>
       <tr><td><strong>5. Import the full-rack team's runs</strong></td><td>Read their logs (e.g. <code>results/AMD-Fullrack-logs/</code>) and record verdicts in the workbook</td><td>Cases they already execute</td><td>Manual; mapping by title has to be confirmed</td></tr>
@@ -196,19 +196,19 @@
   <p><strong>4. Disruptive</strong>, one case at a time, starting with TC-AFM-035A (order in <a href="#mini">section 3</a>, stage 4). Switch-lifecycle and controller-failover cases skip on a one-switch rack.</p>
   <div class="cmd"><pre>.venv/bin/pytest tests --inventory inventory/mr3.local.yaml --allow-disruptive --tc TC-AFM-035A -v</pre></div>
 
-  <h3>Full rack (g02-g17): two tracks</h3>
-  <p><strong>Track A: AFM API from your Mac</strong>, through the tunnel; inventory <code>inventory/fullrack-afm.local.yaml</code>. Keep the tunnel open in its own terminal:</p>
-  <div class="cmd"><pre>ssh -N -L 8443:10.190.198.51:443 &lt;user&gt;@&lt;jump-host&gt;</pre></div>
-  <p>In a second terminal (techsupport left out: it downloads 0.3–2 GB per node through the tunnel; run it alone with <code>--tc TC-AFM-048</code>):</p>
+  <h3>Full rack (g02-g17): through the jump host</h3>
+  <p>Everything goes through the jump host <code>tenant-hpe@165.204.38.103</code> (port 8059), which reaches the rack network 10.255.4.0/24. Your SSH key logs you in there; the jump host's own key (<code>~/.ssh/id_cluster</code>, set up in its <code>~/.ssh/config</code>) logs in to the trays: switches as <code>tenant_hpe</code>, computes as <code>tenant-hpe</code>, both with passwordless sudo. No passwords are needed for SSH.</p>
+  <p><strong>AFM API from your Mac:</strong> keep the tunnel open in its own terminal (the browser UI uses it too), inventory <code>inventory/fullrack-afm.local.yaml</code>:</p>
+  <div class="cmd"><pre>ssh -p 8059 -N -L 8443:10.255.4.71:443 tenant-hpe@165.204.38.103</pre></div>
   <div class="cmd"><pre>read -s HELIOS_AFM_PASSWORD &amp;&amp; export HELIOS_AFM_PASSWORD</pre></div>
   <div class="cmd"><pre>.venv/bin/pytest tests/afm --inventory inventory/fullrack-afm.local.yaml --deselect tests/afm/test_afm_rbac_audit.py::test_techsupport -v --log-file=results/fullrack-afm.log</pre></div>
-  <p><strong>Track B: SSH suites and disruptive cases from a lab host</strong> that reaches 10.190.198.46–.51 (switches) and 10.190.178/179.x (compute trays). Inventory steps are in <a href="#full">section 4</a>. On that host:</p>
-  <div class="cmd"><pre>python3 -m venv .venv &amp;&amp; .venv/bin/pip install -e &#x27;.[tools,dev]&#x27;</pre></div>
-  <p>Then, inside <code>tmux</code>, a subset first, then the whole rack:</p>
-  <div class="cmd"><pre>.venv/bin/pytest tests --ignore=tests/afm --inventory inventory/fullrack.local.yaml --switches &lt;sw1&gt; --computes &lt;c01&gt;,&lt;c02&gt; -m &quot;not stress&quot; -v</pre></div>
-  <p>Disruptive cases in batches you approve, one <code>--tc</code> at a time: Reconfigure, then agent restarts, link/failover, vPOD, switch lifecycle. The full rack is shared lab hardware.</p>
-  <div class="cmd"><pre>.venv/bin/pytest tests --inventory inventory/fullrack.local.yaml --allow-disruptive --tc &lt;ID&gt; -v</pre></div>
-  <p>Copy the <code>results/&lt;run&gt;</code> folders back to your Mac.</p>
+  <p><strong>Switch L1 checks from your Mac</strong> (read-only; the inventory's <code>transport.jump</code> runs each command on the jump host):</p>
+  <div class="cmd"><pre>.venv/bin/pytest tests/l1/test_switch_hw.py tests/l1/test_switch_health.py --inventory inventory/fullrack.local.yaml -v</pre></div>
+  <p><strong>Traffic and anything parallel: run on the jump host</strong> (setup in <a href="#full">section 4</a>), inside <code>tmux</code> so it survives a closed laptop:</p>
+  <div class="cmd"><pre>cd ~/helios/helios-tests &amp;&amp; tmux new -s helios-l1</pre></div>
+  <div class="cmd"><pre>../venv/bin/python -m pytest tests --inventory ../fullrack-jump.yaml --tc TC-AFM-001,TC-AFM-002,TC-AFM-003,TC-AFM-004,TC-AFM-005A,SMOKE-RCCL-1N,SMOKE-RCCL-MN -v</pre></div>
+  <p>Disruptive cases in batches you approve, one <code>--tc</code> at a time (the full rack is shared lab hardware), with <code>--allow-disruptive</code>. Copy the results back to your Mac:</p>
+  <div class="cmd"><pre>ssh -p 8059 tenant-hpe@165.204.38.103 &#x27;cd ~/helios/helios-tests/results &amp;&amp; tar -czf - &lt;run&gt;&#x27; | tar -C results -xzf -</pre></div>
 
   <h3>After any run (both racks)</h3>
   <p>HTML report (<a href="#report">section 8</a>):</p>
@@ -216,11 +216,13 @@
   <p>Record the results in the test plan (<a href="#results">section 7</a>). Close the workbook in Excel first.</p>
   <div class="cmd"><pre>.venv/bin/python tools/update_testplan.py testplan/full_rack_testplan.xlsx results/&lt;run&gt; [more runs] --sw-version &quot;AFM 0.1.0-AICC-817&quot; --label &quot;g02-g17 full rack, &lt;date&gt;&quot;</pre></div>
 
-  <div class="note warn"><strong>Rack state, 13 Oct:</strong>
+  <div class="note warn"><strong>Rack state, 14 Oct:</strong>
     <ul>
-      <li><strong>MR3 c2 is down:</strong> no ping or SSH from the host or its BMC, and its sb-node-agent is gone. Two-tray cases fail or report BLOCKED until it is recovered.</li>
-      <li><strong>MR3 switching plane 9</strong> drops traffic, so datapath tests report BLOCKED.</li>
-      <li><strong>Full rack:</strong> only Track A is possible until a lab host or jump host reaches the 10.190.x networks. <code>fullrack.local.yaml</code> has not been created yet.</li>
+      <li><strong>MR3 c2 is down</strong> (no ping or SSH, sb-node-agent gone), and <strong>MR3 switching plane 9</strong> drops traffic.</li>
+      <li><strong>g02-g17 CT02 and CT05 are down</strong> (no ping, BMC reachable); their switch ports show routed/down (TC-SWH-030/037).</li>
+      <li><strong>g02-g17 TransferBench</strong> (<code>/usr/sbin/TransferBench</code>) segfaults even on its own smoketest, and is missing on CT08, CT09, CT11–CT16; <strong>rccl-tests</strong> is not installed. TC-AFM-002…005 stay Pending until these are fixed.</li>
+      <li><strong>g02-g17 GPU access:</strong> <code>tenant-hpe</code> is not in the <code>render</code> group, so GPU tools run with sudo (<code>commands.datapath.sudo: true</code>).</li>
+      <li><strong>g02-g17 is shared:</strong> other teams run GPU jobs on the trays (CT01 on 14 Oct); the pre-flight leaves such trays out.</li>
     </ul>
   </div>
 </section>
@@ -230,7 +232,7 @@
   <p>These use recorded SONiC and GPU outputs from <code>selftest/replay</code>, so no hardware is needed.</p>
   <div class="cmd"><pre>.venv/bin/pytest unit -n 6 -q</pre></div>
   <div class="cmd"><pre>.venv/bin/pytest tests --inventory selftest/inventory.yaml --allow-disruptive -q</pre></div>
-  <p class="muted">Expected: <span class="pill ok">293 unit tests</span> (about 11 minutes with <code>-n 6</code>): 67 L1 injected faults, plus 16 AFM API faults and 180 AFM product faults (lifecycle, links, failover, controller, regression, compute side, IFCP, traffic, sideband placement, MCH, lab equipment). For the replayed suite, <span class="pill ok">356 passed</span> <span class="pill">98 skipped</span>. The AFM tests run against the in-process fake controller; the skips are cases that need more than one switch or controller, an MCH rack or lab equipment. The 3-switch fake runs every AFM case except MCH and equipment:</p>
+  <p class="muted">Expected: <span class="pill ok">307 unit tests</span> (about 13 minutes with <code>-n 6</code>): L1 injected faults (including the 6 added switch cases and the datapath pre-flight), 16 AFM API faults, 180 AFM product faults (lifecycle, links, failover, controller, regression, compute side, IFCP, traffic, sideband placement, MCH, lab equipment) and unit checks of the pre-flight, rank abort and workbook tools. For the replayed suite, <span class="pill ok">361 passed</span> <span class="pill">99 skipped</span>. The AFM tests run against the in-process fake controller; the skips are cases that need more than one switch or controller, an MCH rack or lab equipment. The 3-switch fake runs every AFM case except MCH and equipment:</p>
   <div class="cmd"><pre>.venv/bin/pytest tests/afm --inventory selftest/inventory-afm3.yaml --allow-disruptive -q</pre></div>
   <p class="muted">Expected: <span class="pill ok">253 passed</span> <span class="pill">55 skipped</span>: the 52 MCH and equipment cases, TC-AFM-035A (one-switch rack only), and the opt-in bearer token (AGGW-002) and recovery key (CTL-055). The MCH and equipment fakes cover those 52:</p>
   <div class="cmd"><pre>.venv/bin/pytest tests/afm/test_afm_mch.py --inventory selftest/inventory-mch.yaml --allow-disruptive -q</pre></div>
@@ -324,30 +326,39 @@
 
 <section id="full">
   <h2><span class="num">4</span>Full rack (6 switches, 18 computes)</h2>
-  <div class="note"><strong>g02-g17 access today:</strong> see <a href="#quick">Quick start</a> for the two tracks. Only the AFM API is reachable from the runner, through the SSH tunnel to <code>https://localhost:8443</code>, so <a href="#afm">tests/afm</a> runs there now. The SSH suites below need a runner (or jump host) that reaches the switch (10.190.198.46–.51) and compute (10.190.178/179.x) management IPs.</div>
+  <div class="note"><strong>g02-g17 access:</strong> the trays are on 10.255.4.0/24 behind the jump host <code>tenant-hpe@165.204.38.103:8059</code>; host names are in the jump host's <code>/etc/hosts</code> (switches <code>helios-sw-hp-rck-g02-g17-0N.enclave-d</code> = .71–.76, computes <code>ctheliosr-rck-g02-g17-NN.enclave-d</code> = .47–.64, BMCs <code>bmc-…</code>).</div>
   <ol class="steps">
     <li>
-      <strong>Create the inventory from the example:</strong>
-      <div class="cmd"><pre>cp inventory/example-fullrack.yaml inventory/fullrack.local.yaml</pre></div>
+      <strong>Inventory for your Mac</strong> (<code>inventory/fullrack.local.yaml</code>, git-ignored; small read-only runs). Host names as above, plus:
+      <div class="cmd"><pre>transport:
+  kind: ssh
+  jump: {host: 165.204.38.103, port: 8059, user: tenant-hpe, via: exec}
+defaults:
+  switch: {user: tenant_hpe}
+  compute: {user: tenant-hpe, gpus: 4}</pre></div>
+      <p class="muted"><code>via: exec</code> runs each command on the jump host as <code>ssh &lt;rack host&gt; …</code>, so the rack key never leaves it. The jump host allows 2 sessions per connection; commands queue behind that limit.</p>
     </li>
     <li>
-      <strong>Edit it, using <code>mr3.local.yaml</code> as the model:</strong>
+      <strong>Set up the jump host once</strong> (it has Python 3.12 but no pip). On your Mac, download the wheels for Linux / Python 3.12:
+      <div class="cmd"><pre>.venv/bin/python -m pip download -d wheelhouse --platform manylinux2014_x86_64 --platform manylinux_2_28_x86_64 --python-version 3.12 --implementation cp --only-binary=:all: pytest paramiko PyYAML requests websocket-client pip</pre></div>
+      <p>Copy the committed code and the wheels (no results, logs or workbooks):</p>
+      <div class="cmd"><pre>git archive --format=tar --prefix=helios-tests/ HEAD | ssh -p 8059 tenant-hpe@165.204.38.103 &#x27;mkdir -p ~/helios &amp;&amp; cd ~/helios &amp;&amp; tar -xf -&#x27;</pre></div>
+      <div class="cmd"><pre>tar -czf - wheelhouse | ssh -p 8059 tenant-hpe@165.204.38.103 &#x27;cd ~/helios &amp;&amp; tar -xzf -&#x27;</pre></div>
+      <p>Then on the jump host, build the venv offline:</p>
+      <div class="cmd"><pre>cd ~/helios &amp;&amp; python3 -m venv --without-pip venv &amp;&amp; venv/bin/python $(ls wheelhouse/pip-*.whl)/pip install --no-index --find-links wheelhouse pip &amp;&amp; venv/bin/pip install --no-index --find-links wheelhouse -e helios-tests</pre></div>
+      <p>Its inventory <code>~/helios/fullrack-jump.yaml</code> is the same file without <code>jump:</code>, with <code>key_file: ~/.ssh/id_cluster</code> under both defaults, and <code>commands.datapath.sudo: true</code>. To update the code later, repeat the <code>git archive</code> copy.</p>
+    </li>
+    <li>
+      <strong>Thresholds</strong> (same QFX5252 platform as MR3; copied from <code>mr3.local.yaml</code>):
       <ul>
-        <li><strong>Hosts:</strong> 6 switches. On the g02-g17 rack, <code>.51</code>, <code>.50</code> and <code>.49</code> run the AFM controllers. Add the computes and their <code>bmc:</code> addresses.</li>
-        <li><strong>Users:</strong> set the user per node type. If one tray needs different credentials (like CT14 on g02-g17), give it its own <code>user</code> / <code>password_env</code> on its entry.</li>
-        <li><strong>Commands:</strong> copy MR3's <code>commands:</code> blocks (<code>l2ping</code>, <code>transferbench</code>, <code>rccl</code>, <code>rccl_smoke</code>), adjusting tool paths if they differ.</li>
-        <li><strong>Thresholds,</strong> set from the full-rack log:
-          <ul>
-            <li><code>switch.expected_up_ports: described</code>: every port with a cabling description must be up. Then list accepted exceptions, such as the known-down <code>.48</code> Eth243/251 and <code>.51</code> Eth97/99, under <code>datapath.known_down_ports</code>, or fix them.</li>
-            <li><code>datapath.parallel_computes: true</code>, <code>datapath.parallel_pairs: false</code>.</li>
-            <li><code>l2ping.pairs: ring</code>. A full mesh took about 10 minutes per compute when run serially.</li>
-          </ul>
-        </li>
+        <li><code>switch.psu_identity_exempt_re: ^PDB HSC</code>, <code>switch.psu_load_balance: false</code> (busbar power, no PSU modules), <code>switch.port_speed_overrides: {Ethernet513: 100G, Ethernet514: 100G}</code> (uplinks), <code>switch.expected_up_ports: described</code>.</li>
+        <li>Known-down ports per switch: <code>exclude_ports</code> on the switch entry (st1 Ethernet97/99, st4 Ethernet243/251).</li>
+        <li><code>datapath.parallel_computes: true</code>, <code>datapath.parallel_pairs: false</code>, <code>l2ping.pairs: ring</code>.</li>
+        <li><code>commands.datapath.sudo: true</code> while the test account is not in the <code>render</code> group.</li>
       </ul>
     </li>
     <li>
-      <strong>Run the same three stages</strong> with <code>--inventory inventory/fullrack.local.yaml</code>. Try one switch and two computes before the whole rack:
-      <div class="cmd"><pre>.venv/bin/pytest tests --inventory inventory/fullrack.local.yaml --switches sw1 --computes c01,c02 -m &quot;not stress&quot; -v</pre></div>
+      <strong>Datapath pre-flight</strong> (every traffic test): each tray is checked for SSH, GPUs ACTIVE, GPU access and visibility, other GPU users, the tools the test needs (<code>@pytest.mark.datapath(tools=…)</code>) and black-holed ports (an L2 ping probe). A tray that fails is <strong>left out with its reason</strong>; the test then runs on the rest and reports <strong>PARTIAL</strong>. It is BLOCKED only when a switch is dropping traffic or fewer trays than the test needs remain. Turn exclusion off with <code>thresholds.datapath.preflight.exclude_unhealthy: false</code>.
     </li>
     <li>
       <strong>Before the disruptive stage,</strong> keep in mind what the full-rack log showed:
@@ -375,14 +386,14 @@
     <thead><tr><th>Rack</th><th>Controller URL</th><th>Inventory (git-ignored)</th></tr></thead>
     <tbody>
       <tr><td>MR3</td><td><code>https://10.153.80.83</code> (afm_controller on st1, reachable directly)</td><td><code>inventory/mr3.local.yaml</code></td></tr>
-      <tr><td>g02-g17 full rack</td><td><code>https://localhost:8443</code> through an SSH tunnel to a controller (.49/.50/.51 port 443)</td><td><code>inventory/fullrack-afm.local.yaml</code> (AFM only: 3 controllers, 6 switches, 18 computes expected)</td></tr>
+      <tr><td>g02-g17 full rack</td><td><code>https://localhost:8443</code> through an SSH tunnel via the jump host to a controller (10.255.4.71 port 443)</td><td><code>inventory/fullrack-afm.local.yaml</code> (AFM only: 3 controllers, 6 switches, 18 computes expected)</td></tr>
     </tbody>
   </table>
   </div>
 
   <h3>1. Full rack only: open the tunnel</h3>
   <p>Keep this running in its own terminal. The browser UI at <code>https://localhost:8443/#/login</code> uses the same tunnel.</p>
-  <div class="cmd"><pre>ssh -N -L 8443:10.190.198.51:443 &lt;user&gt;@&lt;jump-host&gt;</pre></div>
+  <div class="cmd"><pre>ssh -p 8059 -N -L 8443:10.255.4.71:443 tenant-hpe@165.204.38.103</pre></div>
 
   <h3>2. Check that curl reaches the API</h3>
   <p>Set the controller URL for the rack you're checking. MR3:</p>
@@ -424,7 +435,7 @@
     <tbody>
       <tr><td>Specific plan IDs</td><td><code>--tc TC-SWH-002,TC-AFM-001</code></td></tr>
       <tr><td>Part of the rack</td><td><code>--switches sw1,sw2</code> / <code>--computes c01,c02</code></td></tr>
-      <tr><td>Switch hardware tests only</td><td><code>tests/l1/test_switch_hw.py</code></td></tr>
+      <tr><td>Switch hardware tests only</td><td><code>tests/l1/test_switch_hw.py</code> (plan TC-SWH-001…036) and <code>tests/l1/test_switch_health.py</code> (added TC-SWH-037…042: port config vs cabling, consistency across switches, optics/DOM, FEC, containers, reboot cause and core files)</td></tr>
       <tr><td>Datapath tests only (L2 ping, TransferBench, RCCL)</td><td><code>tests/l1/test_afm_datapath.py</code> and <code>tests/l1/test_rccl_smoke.py</code></td></tr>
       <tr><td>Switch agent / hardware / RDMA / RAS only</td><td><code>tests/switch</code> / <code>tests/hw</code> / <code>tests/scaleout</code> / <code>tests/ras</code></td></tr>
       <tr><td>Metrics exporter / platform / IFoE driver only</td><td><code>tests/telemetry</code> / <code>tests/platform</code> / <code>tests/ifoe</code></td></tr>
@@ -447,7 +458,7 @@
   <table>
     <thead><tr><th>File</th><th>Contents</th></tr></thead>
     <tbody>
-      <tr><td><code>tc_summary.csv</code></td><td>One PASS / FAIL / BLOCKED / SKIP / PARTIAL verdict per plan ID. BLOCKED means a pre-flight refused to start: the datapath gate (traffic tests), the RDMA gate (scale-out) or the AFM health gate (disruptive AFM tests).</td></tr>
+      <tr><td><code>tc_summary.csv</code></td><td>One PASS / FAIL / BLOCKED / SKIP / PARTIAL verdict per plan ID. BLOCKED means a pre-flight refused to start: the datapath gate (traffic tests), the RDMA gate (scale-out) or the AFM health gate (disruptive AFM tests). PARTIAL means the test passed only on the trays the datapath pre-flight kept; the left-out trays and why are in <code>tc_results.csv</code> (<code>excluded_trays</code>).</td></tr>
       <tr><td><code>tc_results.csv</code></td><td>One row per test item: suite, test, description, outcome, duration, start time, failure message, measured values, and the path to its log.</td></tr>
       <tr><td><code>logs/NNN_&lt;test&gt;.log</code></td><td>The trace of that one test: every command (or AFM request/response, secrets redacted), its output, exit code and timing.</td></tr>
     </tbody>
@@ -461,21 +472,36 @@
   <p>To also rewrite the Automation column (D) from the code, add <code>--automation</code> with the rack result folders. <strong>Yes</strong> means automated and run on a rack (any result, including Skipped), <strong>Inprogress</strong> means automated but never run on a rack, and <strong>No</strong> means not automated.</p>
   <div class="cmd"><pre>.venv/bin/python tools/access_needed.py testplan/full_rack_testplan.xlsx --automation results/mr3-2026101*</pre></div>
   <h3>Record the results in the test-plan workbook</h3>
-  <p><code>tools/update_testplan.py</code> writes the verdicts of one or more runs into the Testcases sheet: Execution Status (F), SW Version (G) and Execution Notes (H). Only rows of the plan IDs that ran are changed. Close the workbook in Excel first; the tool refuses while Excel's <code>~$</code> lock file exists. It saves a timestamped backup next to the workbook before writing.</p>
+  <p><code>tools/update_testplan.py</code> writes the verdicts of one or more runs into the Testcases sheet: Execution Status (F), SW Version (G) and Execution Notes (H), and fills an empty Scope (J). Only rows of the plan IDs that ran are changed. New notes go above the row's earlier notes, which are kept under "Earlier:"; a rerun with the same <code>--label</code> replaces its own previous note. Close the workbook in Excel first; the tool refuses while Excel's <code>~$</code> lock file exists. It saves a timestamped backup next to the workbook before writing.</p>
   <div class="cmd"><pre>.venv/bin/python tools/update_testplan.py testplan/full_rack_testplan.xlsx results/&lt;run&gt; [more runs] --sw-version &quot;AFM 0.1.0-AICC-817&quot; --label &quot;g02-g17 full rack, &lt;date&gt;&quot; --dry-run</pre></div>
   <p class="muted">Drop <code>--dry-run</code> to write.</p>
   <div class="table-wrap">
   <table>
     <thead><tr><th>Run verdict</th><th>Execution Status</th><th>Notes</th></tr></thead>
     <tbody>
-      <tr><td>Any item failed</td><td>FAIL</td><td>first failure reason</td></tr>
+      <tr><td>Any item failed</td><td>FAIL</td><td>first failure reasons</td></tr>
+      <tr><td>Failed only because of the test environment (tool not installed, permission denied, unreachable, name lookup, GPU not openable)</td><td>Pending</td><td>"Environment: " + the reason (not a product verdict)</td></tr>
+      <tr><td>Passed on the trays the pre-flight kept</td><td>PARTIAL</td><td>the left-out trays and why</td></tr>
       <tr><td>All executed items passed</td><td>PASS</td><td>items passed, plus any skipped</td></tr>
       <tr><td>BLOCKED by a pre-flight</td><td>Pending</td><td>"Blocked: " + the reason</td></tr>
-      <tr><td>Not executed (SKIP)</td><td>untouched</td><td>use <code>--mark-skipped</code> to write Pending + reason</td></tr>
+      <tr><td>Not executed (SKIP)</td><td>Skipped</td><td>"Skipped: " + the reason (<code>--no-skipped</code> leaves the row alone)</td></tr>
     </tbody>
   </table>
   </div>
   <p class="muted">Several runs merge like the HTML report: a run that executed a test beats one that skipped it, otherwise the later run wins. The rows with a shared or missing ID are handled (TC-AFM-005 RCCL vs Failover CRUD, TC-AFM-048 Audit vs Techsupport, TC-AFM-035A). The Execution Summary counts recalculate when Excel opens the file.</p>
+  <h3>Workbook columns added by helios-tests</h3>
+  <div class="table-wrap">
+  <table>
+    <thead><tr><th>Column</th><th>Meaning</th></tr></thead>
+    <tbody>
+      <tr><td>D Automation</td><td><strong>Yes</strong> = automated and run on a rack (any result, Skipped included); <strong>Inprogress</strong> = automated, never run on a rack; <strong>No</strong> = not automated.</td></tr>
+      <tr><td>F Execution Status</td><td>PASS, FAIL, PARTIAL, Pending (blocked or environment), Skipped, or <strong>N/A</strong> (set by hand when the check does not apply to the platform, e.g. PSU cases on busbar-fed QFX5252 switches, optics on backplane links).</td></tr>
+      <tr><td>I Access needed</td><td>What a run needs (<code>tools/access_needed.py</code>).</td></tr>
+      <tr><td>J Scope</td><td>Where the case runs: Switch, Compute, Switch + Compute, or Switch (AFM API) (the controller runs on the switch trays).</td></tr>
+      <tr><td>K Origin</td><td>"BKC-26.12 plan", or "Added - helios-tests (&lt;date&gt;)" for cases we added (listed in <code>testplan/added.yaml</code>). Filter on it to show only the added cases.</td></tr>
+    </tbody>
+  </table>
+  </div>
   <div class="note"><strong>Updating the workbook:</strong> close it in Excel first. A script writing the file while Excel has it open loses its changes when Excel saves. The g02-g17 full-rack results (10–12 Oct: AFM L2 batch and the 18-tray traffic validation) are already recorded in it.</div>
 </section>
 
@@ -509,10 +535,11 @@ Not run: RAS power-cycle tests (disruptive)</pre></div>
   <table>
     <thead><tr><th>Option</th><th>Meaning</th></tr></thead>
     <tbody>
-      <tr><td><code>results/&lt;run-folder&gt; …</code></td><td>One or more run folders. When the same test appears in several, a run that actually executed it (pass, fail or blocked) wins over one that skipped it; otherwise the later run wins.</td></tr>
+      <tr><td><code>results/&lt;run-folder&gt; …</code></td><td>One or more run folders. When the same test appears in several, a run that actually executed it (pass, fail, partial) wins over one that skipped or blocked it; otherwise the later run wins.</td></tr>
       <tr><td><code>-o</code></td><td>Output HTML file (required).</td></tr>
       <tr><td><code>--title</code> / <code>--subtitle</code></td><td>Page title, and the line under it (rack, versions, etc.).</td></tr>
       <tr><td><code>--notes</code></td><td>Key-findings file shown in the dashboard (optional).</td></tr>
+      <tr><td><code>--workbook</code></td><td>Show the reviewed status of each plan case from the test-plan workbook (column F and its latest note) in the counts, the chart and a "Test plan status" table, so the report matches the workbook. The raw test verdict is shown next to it where they differ.</td></tr>
     </tbody>
   </table>
   </div>
@@ -520,7 +547,7 @@ Not run: RAS power-cycle tests (disruptive)</pre></div>
   <table>
     <thead><tr><th>Part of the page</th><th>Contents</th></tr></thead>
     <tbody>
-      <tr><td>Dashboard</td><td>Banner (rack, runs, times, executed result), counts (test cases, passed, failed, blocked, skipped, test items), result doughnut, per-suite bar chart</td></tr>
+      <tr><td>Dashboard</td><td>Banner (rack, runs, times, executed result), counts of plan cases (passed, failed, pending/blocked, skipped/N/A) and executions, result doughnut, per-suite bar chart. Tests that are not plan cases (e.g. the RCCL smoke tests) are listed separately as extra evidence.</td></tr>
       <tr><td>Key findings</td><td>The lines from <code>--notes</code></td></tr>
       <tr><td>Run summary</td><td>One row per suite with counts, duration and result, linking to its section, plus expand/collapse-all buttons</td></tr>
       <tr><td>Suite sections</td><td>One row per test: plan ID, test, description, duration, status. Each has a collapsible log with the failure message, measurements and the full colour-coded command trace (commands, output, exit codes, timings).</td></tr>
@@ -534,7 +561,7 @@ Not run: RAS power-cycle tests (disruptive)</pre></div>
   <h2><span class="num">9</span>Coverage: automated vs. missing</h2>
   <div class="cmd"><pre>.venv/bin/python tools/coverage.py</pre></div>
   <div class="cmd"><pre>.venv/bin/python tools/coverage.py --missing &gt; results/missing.txt</pre></div>
-  <p class="muted"><code>automated</code> = cases with a <code>@pytest.mark.tc</code> test; <code>total</code> = cases in the plan; <code>--missing</code> lists every case with no test yet.</p>
+  <p class="muted"><code>automated</code> = cases with a <code>@pytest.mark.tc</code> test; <code>total</code> = cases in the plan plus the cases in <code>testplan/added.yaml</code>; <code>--missing</code> lists every case with no test yet.</p>
 </section>
 
 <footer>helios-tests · see README.md for layout, calibration notes and how to add tests</footer>

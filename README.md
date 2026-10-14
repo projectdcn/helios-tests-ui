@@ -59,9 +59,9 @@ These use recorded SONiC and GPU outputs from `selftest/replay`, so no hardware
 is needed.
 
 ```bash
-.venv/bin/pytest unit -n 6                                                  # 293 tests: 67 L1 + 16 AFM API + 180 AFM product-fault checks + healthy fakes (~11 min)
-.venv/bin/pytest tests --inventory selftest/inventory.yaml                  # 211 pass, 243 skip (disruptive skipped)
-.venv/bin/pytest tests --inventory selftest/inventory.yaml --allow-disruptive   # 356 pass, 98 skip (one-switch fake)
+.venv/bin/pytest unit -n 6                                                  # 307 tests: L1 + added-switch faults, 16 AFM API + 180 AFM product-fault checks, healthy fakes (~13 min)
+.venv/bin/pytest tests --inventory selftest/inventory.yaml                  # 216 pass, 244 skip (disruptive skipped)
+.venv/bin/pytest tests --inventory selftest/inventory.yaml --allow-disruptive   # 361 pass, 99 skip (one-switch fake)
 .venv/bin/pytest tests/afm --inventory selftest/inventory-afm3.yaml --allow-disruptive   # 253 pass, 55 skip (3-switch fake; MCH/equipment cases skip here)
 .venv/bin/pytest tests/afm/test_afm_mch.py --inventory selftest/inventory-mch.yaml --allow-disruptive      # 36 pass, 1 skip (heliosmch fake)
 HELIOS_SELFTEST_DIR_PW=selftest-dir-pw .venv/bin/pytest tests/afm/test_afm_equipment.py \
@@ -237,7 +237,7 @@ The table has one row per category:
 `--missing` also lists every case that has **no test yet**, with its ID, level
 and title.
 
-## Coverage (400 of 542 cases)
+## Coverage (406 of 548 cases: 542 plan + 6 added)
 
 * **TC-SWH-001…036, switch hardware.** Firmware, fans, PSUs, platform/EEPROM,
   multi-ASIC namespaces, interface state/speed/MTU, error-counter deltas,
