@@ -298,6 +298,38 @@ class AfmOps:
         return sw.run(f"docker exec afm-agent kill -{sig} {pid}", sudo=True, timeout=60)
 
     @staticmethod
+    def controller_action(sw, action: str):
+        """docker stop|start|restart afm-controller."""
+        return sw.run(f"docker {action} afm-controller", sudo=True, timeout=300)
+
+    @staticmethod
+    def controller_state(sw) -> tuple[str, int]:
+        """(StartedAt, RestartCount) of the afm-controller container - a crash/restart changes either."""
+        out = sw.run("docker inspect -f '{{.State.StartedAt}} {{.RestartCount}}' afm-controller",
+                     sudo=True, timeout=60).stdout.split()
+        return (out[0], int(out[1])) if len(out) >= 2 and out[1].isdigit() else ("", -1)
+
+    def controllers(self) -> dict:
+        """{quorum member IP: inventory switch} for every controller node."""
+        return {ip: self.ssh_by_ip(ip) for ip in self.quorum_ips()}
+
+    @staticmethod
+    def switch_agent_pid(sw) -> int | None:
+        r = sw.run("docker exec afm-agent ps -eo pid,args", sudo=True, timeout=60)
+        m = re.search(r"^\s*(\d+)\s+\S*switch-agent(?:\s|$)", r.stdout, re.M)
+        return int(m.group(1)) if m else None
+
+    @staticmethod
+    def epoch(sw) -> int:
+        return int(sw.run("date +%s", timeout=30).stdout.strip() or 0)
+
+    @staticmethod
+    def controller_logs_since(sw, epoch: int) -> list[str]:
+        """Controller log files written after ``epoch`` (switch clock)."""
+        r = sw.run(f"find /opt/amd/afm/controller/logs -type f -newermt @{epoch}", sudo=True, timeout=60)
+        return [ln for ln in r.stdout.splitlines() if ln.strip()]
+
+    @staticmethod
     def reset_switch_identity(sw):
         """Re-admission after delete: drop the agent's TLS identity and restart it."""
         sw.run("rm -f /opt/amd/afm/agent/sysconfig/config0/*.pem /opt/amd/afm/agent/sysconfig/config1/*.pem",

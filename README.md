@@ -59,10 +59,10 @@ These use recorded SONiC and GPU outputs from `selftest/replay`, so no hardware
 is needed.
 
 ```bash
-.venv/bin/pytest unit -n 6                                                  # 143 tests: 67 L1 + 16 AFM API + 34 AFM lifecycle/link/failover fault checks (~5 min)
-.venv/bin/pytest tests --inventory selftest/inventory.yaml                  # 187 pass, 92 skip (disruptive skipped)
-.venv/bin/pytest tests --inventory selftest/inventory.yaml --allow-disruptive   # 255 pass, 24 skip (one-switch fake)
-.venv/bin/pytest tests/afm --inventory selftest/inventory-afm3.yaml --allow-disruptive   # 132 pass, 1 skip (3-switch fake)
+.venv/bin/pytest unit -n 6                                                  # 175 tests: 67 L1 + 16 AFM API + 66 AFM product-fault checks (~7 min)
+.venv/bin/pytest tests --inventory selftest/inventory.yaml                  # 196 pass, 127 skip (disruptive skipped)
+.venv/bin/pytest tests --inventory selftest/inventory.yaml --allow-disruptive   # 291 pass, 32 skip (one-switch fake)
+.venv/bin/pytest tests/afm --inventory selftest/inventory-afm3.yaml --allow-disruptive   # 174 pass, 3 skip (3-switch fake; 3 opt-in/one-switch cases)
 ```
 
 ### 2. On a real rack
@@ -133,7 +133,7 @@ read -s HELIOS_AFM_PASSWORD && export HELIOS_AFM_PASSWORD
 Without the password, only the unauthenticated cases run; the rest SKIP. The
 tests create throw-away `helios-*` objects and delete them afterwards.
 
-The 74 `disruptive` cases need `--allow-disruptive`:
+The 108 `disruptive` cases need `--allow-disruptive`:
 - **Lifecycle:** agent and controller restarts, vPOD moves, compute and switch decommission/delete/readmit.
 - **Fabric links:** ports shut with `config interface ... shutdown`.
 - **Reconfigure.**
@@ -168,6 +168,20 @@ Each run creates a folder `results/<rack>-<timestamp>/` with two files:
   (BLOCKED = the datapath pre-flight refused to start traffic).
 - `tc_results.csv`: one row per test, with the failure message and measured
   values such as bandwidth and bus bandwidth.
+
+### Access needed per case
+
+`tools/access_needed.py` adds an **Access needed** column to a workbook: column I on Testcases, column H on
+mortaro. It says what each case needs to run: AFM API, switch SSH, compute SSH, datapath traffic, BMC/PDU, a
+special rack or server, or manual work.
+- **Automated cases** are classified from the code: which suite, disruptive or not, and whether the test or
+  its helpers drive a switch or compute.
+- **The rest** are classified from the plan category and title. Values inferred from a title only are marked "(est.)".
+- **Summary only:** `--summary` prints the counts per class without touching a workbook.
+
+```bash
+.venv/bin/python tools/access_needed.py testplan/full_rack_testplan.xlsx [--dry-run]
+```
 
 ### Record results in the test-plan workbook
 
@@ -215,7 +229,7 @@ The table has one row per category:
 `--missing` also lists every case that has **no test yet**, with its ID, level
 and title.
 
-## Coverage (225 of 542 cases)
+## Coverage (269 of 542 cases)
 
 * **TC-SWH-001…036, switch hardware.** Firmware, fans, PSUs, platform/EEPROM,
   multi-ASIC namespaces, interface state/speed/MTU, error-counter deltas,
@@ -309,6 +323,28 @@ and title.
     * **vPOD operations:** move several computes, full system vPOD, parallel CRUD, GPUs between user vPODs,
       per-vPOD VLANs on every switch, vPOD CRUD events.
     * **Station of a GPU port:** `gpu_port // thresholds.afm.ports_per_station` (2). Verified on MR3 c1 on 2026-10-13: `afmctl show station` maps station k to ports 2k and 2k+1, on all 4 GPUs and all 18 stations.
+  * **More AFM API cases (44, `test_afm_api_more.py`, `test_afm_controller.py`, `test_afm_snapshot.py`,
+    `test_afm_regression.py`, `test_afm_stress.py`).**
+    * **AggWatch and auth:** resource-version filters (AGGW-009, CTL-009), audit records for watches
+      (AGGW-017/018), bearer token (AGGW-002, opt-in), group roles (CTL-117), local-user login (CTL-131),
+      login-attempt policy validation (BUG-033).
+    * **Events:** default event policies (EVT-003), event retention (EVT-038), status-change events (EVT-021),
+      alerts from an alert policy (CTL-098).
+    * **Controller resilience:** stop/start of the leader's controller (CTL-074), surviving and rejoining
+      after a single node failure (CTL-133/134), logs after a restart (CTL-124), full controller restart
+      (STR-010, AR-003), AggWatch across non-leader and leader restarts (AGGW-023/024).
+    * **Snapshot and restore:** AFM-051, auth objects (CTL-039), a removed compute (CTL-040), recovery key
+      (CTL-055, opt-in, because the key downloads only once).
+    * **Regression:**
+      * blacklisted GPU ports across Reconfigure (RC-028)
+      * controller stability on a compute rejoin or a stuck switch-agent (BUG-001/004)
+      * switch state not stuck at unknown (BUG-007), ports recovering after an agent flap (BUG-016)
+      * no duplicated GPU info (BUG-009), stable acc-ids (BUG-014)
+      * Reconcile not clearing failures (BUG-025), no operation-failed or configDone hang (BUG-026/027)
+      * drain reprograms GPUs (BUG-030); agent restart and pause (AR-001/002)
+    * **Stress:** configure time at scale (STR-005), bulk vPOD churn (STR-011), link event storm (STR-013),
+      about 5 % of ports down at create (STR-019), soak (STR-020), no transient 0/0 planes (STR-023),
+      Reconcile at scale (STR-024).
   * **Built from the g02-g17 procedures, with their script bugs fixed** (see `helios/afm_ops.py`):
     * membership is checked per GPU
     * a slot's agent is re-located on every poll
@@ -319,7 +355,7 @@ and title.
     * `selftest/fake_afm.py` is an in-process HTTPS + WebSocket AFM. `selftest/fake_rack.py` simulates
       the rack behind it (agents, controllers, admission, vPOD membership, planes, links) and the switch
       SSH the disruptive cases drive.
-    * `unit/test_afm_selftest.py` injects 16 API faults and 34 lifecycle/link/failover product faults, including
+    * `unit/test_afm_selftest.py` injects 16 API faults and 66 lifecycle/link/failover/controller/regression product faults, including
       the full-rack issues (stale planes after readmit, VLAN wipe AIFM-1901, coupled ports). Each one must
       fail exactly the cases that should catch it.
 

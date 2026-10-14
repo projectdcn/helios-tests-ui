@@ -76,6 +76,10 @@ thresholds:
     quorum_members: 1
     poll_s: 0.2
     time_scale: 0.05
+    soak_s: 20
+    soak_interval_s: 1
+    str011_cycles: 3
+    str013_flaps: 2
     link_watch_s: 1
     retry_interval_s: 0.2
     agent_settle_s: 0

@@ -68,6 +68,13 @@ class State:
         self.watchers: list[dict] = []
         self.audit: list[dict] = []
         self.techsupport: dict[str, dict] = {}
+        self.alerts: list[dict] = []
+        self.rv = __import__("itertools").count(1000)
+        self.snapshot: dict | None = None
+        self.recovery_key_taken = False
+        self.authn = obj("AuthenticationPolicy", "authn-policy",
+                         {"authenticators": {"local": {"enabled": True}},
+                          "lockout": {"max-failed-login-attempts": 5, "lockout-duration-seconds": 900}})
         sys.path.insert(0, str(Path(__file__).resolve().parent))
         from fake_rack import Sim
 
@@ -194,6 +201,8 @@ class Handler(BaseHTTPRequestHandler):
         if user is None and not ("unauth_ok" in st.f and method == "GET"):
             return self._err(401, "Not authenticated")
         user = user or "admin"
+        if "api_down_on_one_node" in st.f and not all(st.sim.ctrl_up.values()) and method != "GET":
+            return self._err(503, "controller quorum degraded")
         if body is ValueError:
             return self._err(400, "invalid JSON body")
         with st.lock:
@@ -218,11 +227,15 @@ class Handler(BaseHTTPRequestHandler):
                     return
                 if res == "version":
                     return self._send(200, obj("Version", "version", status={"build-version": "0.1.0-AICC-797"}))
-                down = "quorum_down" in st.f
+                up = st.sim.ctrl_up
+                down = "quorum_down" in st.f or sum(up.values()) * 2 <= len(up)
                 return self._send(200, obj("Cluster", "cluster", status={
                     "leader": st.sim.leader, "conditions": [{"type": "healthy", "status": "false" if down else "true"}],
-                    "quorum-status": {"members": [{"name": ip, "status": "stopped" if down else "started",
-                                                   "conditions": [{"status": "true"}]} for ip in st.sim.quorum]}}))
+                    "quorum-status": {"members": [{"name": ip, "status": "stopped" if ("quorum_down" in st.f or not up[k])
+                                                   else "started", "conditions": [{"status": "true" if up[k] else "false"}]}
+                                                  for k, ip in enumerate(st.sim.quorum)]}}))
+            if res in ("config-snapshot", "config-restore"):
+                return self._snapshot(method, p, body, user)
             kind = CLUSTER_KINDS.get(res)
             if not kind:
                 return self._err(404, f"unknown resource {res}")
@@ -240,9 +253,17 @@ class Handler(BaseHTTPRequestHandler):
         # ---- auth group
         if path.startswith("/configs/auth/v1/"):
             if path == "/configs/auth/v1/authn-policy":
-                if self._deny(user, "auth", "AuthenticationPolicy", "read"):
+                if self._deny(user, "auth", "AuthenticationPolicy", "read" if method == "GET" else "update"):
                     return
-                return self._send(200, obj("AuthenticationPolicy", "authn-policy", {"authenticators": {"local": {}}}))
+                if method == "PUT":
+                    def nums(x):
+                        if isinstance(x, dict):
+                            return [v for y in x.values() for v in nums(y)]
+                        return [x] if isinstance(x, (int, float)) and not isinstance(x, bool) else []
+                    if any(v < 1 for v in nums((body or {}).get("spec") or {})) and "authn_accepts_invalid" not in st.f:
+                        return self._err(400, "invalid authentication policy: values must be >= 1")
+                    st.authn["spec"] = (body or {}).get("spec") or st.authn["spec"]
+                return self._send(200, st.authn)
             res = p[6] if len(p) > 6 else ""
             kind = {"users": "User", "roles": "Role", "role-bindings": "RoleBinding"}.get(res)
             if not kind:
@@ -255,7 +276,8 @@ class Handler(BaseHTTPRequestHandler):
             if res == "alerts":
                 if self._deny(user, "monitoring", "Alert", "read"):
                     return
-                return self._send(200, {"kind": "AlertList", "list-meta": {"total-count": 0}, "items": []})
+                return self._send(200, {"kind": "AlertList", "list-meta": {"total-count": len(st.alerts)},
+                                        "items": list(reversed(st.alerts))})
             if res == "alertPolicies":
                 return self._crud(method, "monitoring", "AlertPolicy", name, body, user, path, action)
             if res == "techsupport":
@@ -264,6 +286,11 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/events/v1/events":
             if self._deny(user, "events", "Event", "read"):
                 return
+            if "events_unbounded" in st.f and len(st.sim.events) < 16050:
+                old = "2026-01-01T00:00:00.000000Z"
+                st.sim.events[:0] = [{"kind": "Event", "meta": {"name": f"old-{k}", "creation-time": old,
+                                                                "mod-time": old}, "type": "old", "message": "old"}
+                                     for k in range(16050)]
             evs = sorted(st.sim.events, key=lambda e: e["meta"]["creation-time"], reverse=True)
             return self._send(200, {"kind": "EventList", "items": evs[: int((qs.get("page-size") or [1000])[0])]})
         if path.startswith("/audit/v1/events"):
@@ -275,6 +302,11 @@ class Handler(BaseHTTPRequestHandler):
             return self._send(200, {"kind": "AuditEventList", "items": self._select(st.audit, qs)})
         if path == "/telemetry/v1/metrics" and method == "POST":
             return self._metrics(body)
+        if path == "/sysruntime/v1/cluster/recoverykeys":
+            if st.recovery_key_taken and "recovery_key_reusable" not in st.f:
+                return self._err(412, "recovery key already downloaded")
+            st.recovery_key_taken = True
+            return self._send(200, {"recovery-key": secrets.token_hex(16)})
         if path.startswith("/objstore/v1/downloads/"):
             return self._send(200, b"\x1f\x8b fake techsupport bundle")
         return self._err(404, f"no route {path}")
@@ -308,7 +340,9 @@ class Handler(BaseHTTPRequestHandler):
             return
         if method == "GET":
             if name is None:
-                return self._send(200, {"kind": f"{kind}List", "list-meta": {"total-count": len(coll)},
+                rvs = [int(o["meta"].get("resource-version", 0)) for o in coll.values()] + [0]
+                return self._send(200, {"kind": f"{kind}List", "list-meta": {"total-count": len(coll),
+                                                                            "resource-version": str(max(rvs))},
                                         "items": list(coll.values())})
             return self._send(200, coll[name]) if name in coll else self._err(404, "Object get failed: object not found")
         if method == "POST" and name is None:
@@ -323,6 +357,7 @@ class Handler(BaseHTTPRequestHandler):
             if kind == "FailoverPolicy":
                 spec.setdefault("link-fail-threshold", 10)
             o = obj(kind, n, spec, {"vpod-state": "online"} if kind == "VPod" else {})
+            o["meta"]["resource-version"] = str(next(st.rv))
             coll[n] = o
             st.record(user, "Create", kind, n, path)
             st.publish("Created", group, kind, o)
@@ -333,6 +368,7 @@ class Handler(BaseHTTPRequestHandler):
             o = coll[name]
             o["spec"] = (body or {}).get("spec") or o["spec"]
             o["meta"]["mod-time"] = now()
+            o["meta"]["resource-version"] = str(next(st.rv))
             st.record(user, "Update", kind, name, path)
             st.publish("Updated", group, kind, o)
             return self._send(200, o)
@@ -384,6 +420,39 @@ class Handler(BaseHTTPRequestHandler):
             return self._err(404, f"unknown switch action {op}")
         return self._send(200, sw)
 
+    def _snapshot(self, method, p, body, user):
+        st = self.st
+        if self._deny(user, "cluster", "ConfigurationSnapshot", "read" if method == "GET" else "update"):
+            return
+        keep = ("FailoverPolicy", "VPod", "AlertPolicy")
+        if p[4] == "config-snapshot":
+            if method == "DELETE":
+                return self._send(200, {})
+            if len(p) == 6 and p[5] == "save":
+                st.snapshot = {"objs": {k: copy.deepcopy(st.objs[k]) for k in keep},
+                               "users": copy.deepcopy(st.users), "roles": copy.deepcopy(st.roles),
+                               "bindings": copy.deepcopy(st.bindings)}
+                name = f"snapshot-{int(time.time())}.gz"
+                return self._send(200, obj("ConfigurationSnapshot", "Default-Snapshot", {},
+                                           {"last-snapshot": {"uri": f"/objstore/v1/downloads/snapshots/{name}"}}))
+            return self._send(200, obj("ConfigurationSnapshot", (body or {}).get("meta", {}).get("name", "x"), {}))
+        if p[4] == "config-restore" and method == "POST":
+            if not st.snapshot:
+                return self._err(412, "no snapshot saved")
+            if "restore_noop" not in st.f:
+                for k, v in st.snapshot["objs"].items():
+                    st.objs[k].clear()
+                    st.objs[k].update(copy.deepcopy(v))
+                admin = st.users["admin"]
+                st.users.clear()
+                st.users.update(copy.deepcopy(st.snapshot["users"]))
+                st.users["admin"] = admin
+                st.roles.clear(); st.roles.update(copy.deepcopy(st.snapshot["roles"]))
+                st.bindings.clear(); st.bindings.update(copy.deepcopy(st.snapshot["bindings"]))
+            return self._send(200, obj("SnapshotRestore", "SnapshotRestore", (body or {}).get("spec") or {},
+                                       {"status": "completed"}))
+        return self._err(404, "unknown snapshot path")
+
     def _compute_op(self, method, name, op, body, user, path):
         st, sim = self.st, self.st.sim
         c = st.objs["ComputeNode"].get(name)
@@ -400,9 +469,17 @@ class Handler(BaseHTTPRequestHandler):
             if time.monotonic() - sim.reconf_at.get(name, -99) < 1:
                 return self._err(412, f"reconfigure of {name} already in progress")
             sim.reconf_at[name] = time.monotonic()
+            if "reconfig_clears_drain" in st.f:
+                c["spec"]["drained-ports"] = []
             for u in sim.gpus[slot]:
                 sim.removed_at[u] = time.monotonic()
             st.record(user, "Reconfigure", "ComputeNode", name, path)
+            return self._send(200, c)
+        if op in ("DrainGPUPort", "ActivateGPUPort"):
+            ports = [(x.get("gpu-id"), x.get("port-id")) for x in (body or {}).get("ports") or []]
+            cur = [(x["gpu-id"], x["port-id"]) for x in c["spec"].get("drained-ports") or []]
+            new = sorted(set(cur) | set(ports)) if op == "DrainGPUPort" else [x for x in cur if x not in ports]
+            c["spec"]["drained-ports"] = [{"gpu-id": g, "port-id": pt} for g, pt in new]
             return self._send(200, c)
         if op == "Decommission":
             if in_vpod and "decom_in_vpod_ok" not in st.f:
@@ -424,6 +501,10 @@ class Handler(BaseHTTPRequestHandler):
         if op in ("Reconcile", "ReconfigureDataFabric"):
             if name not in coll:
                 return self._err(404, "Object get failed: object not found")
+            if op == "Reconcile" and "reconcile_clears_failure" in st.f:
+                for d in sim.links_down.values():
+                    d["since"] = time.monotonic()
+                sim.failed_evt.clear()
             if op == "ReconfigureDataFabric":
                 sim.ack.setdefault(name, set()).update(sim.failed_links(st.objs, coll[name]))
             return self._send(200, coll[name])
@@ -447,6 +528,18 @@ class Handler(BaseHTTPRequestHandler):
             if err:
                 return self._err(400, err)
             sim.gpus_removed(before, after)
+            if "configdone_stuck" in st.f and len(after) > len(before):
+                sim.configdone.add(name)
+            if "transient_zero_planes" in st.f and (body.get("spec") or {}).get("failover-policy") != \
+                    coll[name]["spec"].get("failover-policy"):
+                sim.zero_reads[name] = 3
+            if "accid_changes_on_move" in st.f:
+                gone = {(g.get("slot-id"), g.get("index")) for g in before} - \
+                    {(g.get("slot-id"), g.get("index")) for g in after}
+                for c in st.objs["ComputeNode"].values():
+                    for gi in c["status"]["scale-up-info"]["gpu-info"].values():
+                        if (c["spec"]["slot-id"], gi["index"]) in gone:
+                            gi["acc-id"] += 100
             if not any(sim.agent_up.values()) and "stale_macs" in st.f:
                 sim.stale_macs += max(0, len(before) - len(after))
             r = self._crud(method, "cluster", "VPod", name, body, user, path, action)
@@ -562,6 +655,8 @@ class Handler(BaseHTTPRequestHandler):
         user = self._user()
         if user is None:
             return self._err(401, "Not authenticated")
+        if st.sim.ws_refuse:
+            return self._err(503, "watch service unavailable")
         origin = self.headers.get("Origin")
         if origin and urlsplit(origin).netloc != self.headers.get("Host") and "cswsh" not in st.f:
             return self._err(403, "cross-origin websocket refused")
@@ -585,7 +680,7 @@ class Handler(BaseHTTPRequestHandler):
         except (ValueError, KeyError, TypeError):
             _write_frame(sock, 1, json.dumps({"error": "invalid watch options"}).encode())
             return _close(sock)
-        kinds = set()
+        kinds, rv_of = set(), {}
         for o in opts:
             g, k = o.get("group"), o.get("kind")
             known = {"cluster": set(CLUSTER_KINDS.values()), "monitoring": {"AlertPolicy"}}
@@ -593,15 +688,27 @@ class Handler(BaseHTTPRequestHandler):
                 _write_frame(sock, 1, json.dumps({"error": f"unknown kind {g}/{k}"}).encode())
                 continue
             kinds.add((g, k))
+            rv = ((o.get("options") or {}).get("meta") or {}).get("resource-version")
+            if rv is not None and "ws_rv_ignored" not in st.f:
+                rv_of[(g, k)] = int(rv)
         if not opts:
             _write_frame(sock, 1, json.dumps({"error": "empty watch options"}).encode())
             return _close(sock)
-        w = {"kinds": kinds, "q": queue.Queue()}
+        w = {"kinds": kinds, "q": queue.Queue(), "close": False}
         with st.lock:
             initial = [{"type": "Created", "kind": k, "group": g, "object": o}
                        for g, k in sorted(kinds) if st.allowed(user, g, k, "read") or "ws_rbac_leak" in st.f
-                       for o in st.objs[k].values()]
+                       for o in st.objs[k].values()
+                       if (g, k) not in rv_of or (rv_of[(g, k)] >= 0
+                                                  and int(o["meta"].get("resource-version", 0)) > rv_of[(g, k)])]
             st.watchers.append(w)
+            if kinds and "no_watch_audit" not in st.f:
+                for stage in ("requestauthorization", "requestprocessing"):
+                    st.audit.append({"kind": "AuditEvent", "meta": {"uuid": str(uuid.uuid4()), "creation-time": now()},
+                                     "action": "Watch", "stage": stage, "outcome": "success", "user": {"name": user},
+                                     "resource": {"kind": "AggWatch", "name": "watch"},
+                                     "request-uri": "/configs/aggwatch/v1/watch",
+                                     "watch-options": [f"{g}/{k}" for g, k in sorted(kinds)]})
         try:
             if initial:
                 _write_frame(sock, 1, json.dumps({"events": initial}).encode())
@@ -613,6 +720,8 @@ class Handler(BaseHTTPRequestHandler):
                         break
                 except socket.timeout:
                     pass
+                if w["close"]:
+                    break
                 while not w["q"].empty():
                     ev = w["q"].get()
                     if user not in st.users:

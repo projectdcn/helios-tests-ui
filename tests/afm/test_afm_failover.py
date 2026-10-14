@@ -600,7 +600,7 @@ def test_vpod_crud_events(ops, afm_ready, uniq, checks, record_property):
 
 
 @pytest.mark.tc("TC-E2E-040")
-def test_delete_policy_after_vpod_deleted(ops, afm_ready, links, uniq, cleanup, checks, record_property):
+def test_delete_policy_after_vpod_deleted(ops, afm_ready, uniq, cleanup, checks, record_property):
     """A failover policy used by a vPOD cannot be deleted; once the vPOD is deleted, it can (then GET 404)."""
     sysv, user, pol, names, moved = _user_vpod_ctx(
         ops, uniq, cleanup, {"datafabric-reconfig": "automatic", "link-fail-threshold": 20})

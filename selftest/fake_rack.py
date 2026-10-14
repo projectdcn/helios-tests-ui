@@ -56,10 +56,21 @@ class Sim:
         self.failed_evt: set[tuple] = set()
         self.sticky: set[tuple] = set()       # links AFM keeps counting as failed after they came back (faults)
         self.last_avail: dict[str, int] = {}
+        # controllers: quorum member index -> up; container start time / restart count / last log write
+        self.ctrl_up = {i: True for i in range(len(self.quorum))}
+        self.ctrl_started = {i: time.time() - 3600 for i in range(n_switches)}
+        self.ctrl_restarts = {i: 0 for i in range(n_switches)}
+        self.ctrl_log = {i: time.time() - 600 for i in range(n_switches)}
+        self.sw_stopped: set[int] = set()      # switch-agent process SIGSTOPped
+        self.stops = {i: 0 for i in range(n_switches)}
+        self.configdone: set[str] = set()
+        self.zero_reads: dict[str, int] = {}
+        self.ws_refuse = False
         self.ack: dict[str, set] = {}          # vPOD -> failed links acknowledged by ReconfigureDataFabric
         self.n_ct = n_computes
         self.events: list[dict] = []
         self.gpus: dict[int, list[str]] = {}  # slot -> gpu uuids
+        self.st = st
         gpu_ready = "Failed" if "gpu_not_ready" in self.f else "Ready"
         computes, switches = {}, {}
         for slot in range(n_computes):
@@ -171,6 +182,15 @@ class Sim:
     def event(self, etype, msg):
         self.events.append({"kind": "Event", "meta": {"name": str(uuidlib.uuid4()), "creation-time": now(),
                                                        "mod-time": now()}, "type": etype, "message": msg})
+        if "no_alerts" in self.f:
+            return
+        for pol in list(self.st.objs["AlertPolicy"].values()):
+            sp = pol.get("spec") or {}
+            if sp.get("enable") and sp.get("resource", "Event") == "Event":
+                self.st.alerts.append({"kind": "Alert", "meta": {"name": str(uuidlib.uuid4()), "creation-time": now()},
+                                       "spec": {"alert-policy-id": pol["meta"]["name"], "state": "open"},
+                                       "status": {"severity": sp.get("severity", "info"), "message": msg,
+                                                  "event-type": etype}})
 
     # ------------------------------------------------------------ derived state
     def refresh(self, objs):
@@ -183,7 +203,8 @@ class Sim:
             o = self.switches.get(self.sname(i))
             if o:
                 ok = (self.agent_up[i] or "agent_stop_ignored" in self.f) and \
-                    o["status"]["admission-phase"] in ("admitted", "drained")
+                    o["status"]["admission-phase"] in ("admitted", "drained") and i not in self.sw_stopped \
+                    and not ("switch_stuck_unknown" in self.f and self.stops[i] >= 2)
                 o["status"]["conditions"] = [{"type": "healthy", "status": "true" if ok else "unknown"}]
         for name, o in self.computes.items():
             slot = o["spec"]["slot-id"]
@@ -220,6 +241,9 @@ class Sim:
             counted = [k for k in failed if (not manual) or k in acked]
             pending = manual and any(k not in acked for k in failed) and "manual_auto" not in self.f
             avail = max(0, PLANES - (BASELINE_DOWN if sysv else 0) - lost - len(counted))
+            if self.zero_reads.get(name):
+                self.zero_reads[name] -= 1
+                avail = 0
             if self.last_avail.get(name) not in (None, avail):
                 self.vpod_event("vpod_bandwidth_change", name,
                                 f"available/effective/provisioned switch planes changed to {avail}/{avail}/{PLANES}")
@@ -238,6 +262,9 @@ class Sim:
                     continue
             if pending:
                 st["vpod-state"] = "needdatafabricreconfiguration"
+                continue
+            if name in self.configdone:
+                st["vpod-state"] = "configDone"
                 continue
             st["vpod-state"] = "online" if avail == PLANES else "degraded"
 
@@ -266,11 +293,30 @@ class Sim:
     # ------------------------------------------------------------ switch "SSH"
     def agent(self, i, action):
         if action == "stop":
+            self.stops[i] += 1
             self.agent_up[i] = False
             if "no_unreachable_event" not in self.f:
                 self.event("switchnode_unreachable", f"switch {self.sname(i)} unreachable")
             return
+        was_down = not self.agent_up[i] or i in self.sw_stopped
         self.agent_up[i] = True
+        self.sw_stopped.discard(i)
+        if "controller_unstable" in self.f:
+            j = self.switch_ips.index(self.leader)
+            self.ctrl_restarts[j] += 1
+            self.ctrl_started[j] = time.time()
+        if "ports_not_recovered" in self.f and was_down:
+            self.stale.add(i)
+        if self.sname(i) in self.switches:
+            self.event("switchnode_healthy", f"switch {self.sname(i)} healthy")
+        if "gpu_dup_after_restart" in self.f:
+            sysv = next((v for v in self.st.objs["VPod"].values() if v["meta"]["name"].endswith(".system")), None)
+            for v in self.st.objs["VPod"].values():
+                if sysv is None or v is sysv:
+                    continue
+                for g in v["spec"].get("GPUs") or []:
+                    if self.slot_host(g.get("slot-id")) == i and g not in sysv["spec"]["GPUs"]:
+                        sysv["spec"]["GPUs"].append(dict(g))
         if "no_reconcile" not in self.f:
             for k, d in self.links_down.items():
                 if k[0] == i and not d["known"]:
@@ -296,10 +342,33 @@ class Sim:
                     if "no_readmit" not in self.f:
                         self.computes[self.cname(slot)] = self._compute_obj(slot, gi)
 
-    def restart_controller(self, i):
+    def controller(self, i, action):
+        """docker stop|start|restart afm-controller on switch i."""
         ip = self.switch_ips[i]
-        if ip == self.leader and len(self.quorum) > 1:
-            self.leader = next(q for q in self.quorum if q != ip)
+        q = self.quorum.index(ip) if ip in self.quorum else None
+        if action in ("stop", "restart"):
+            if q is not None:
+                self.ctrl_up[q] = False
+            was_leader = ip == self.leader
+            if was_leader:
+                up = [self.quorum[k] for k, u in self.ctrl_up.items() if u]
+                if up:
+                    self.leader = up[0]
+            for w in list(self.st.watchers):
+                if was_leader or "watch_breaks_on_nonleader" in self.f:
+                    w["close"] = True
+            if was_leader and "ws_no_reconnect_after_failover" in self.f:
+                self.ws_refuse = True
+        if action in ("start", "restart"):
+            if q is not None and "no_rejoin" not in self.f:
+                self.ctrl_up[q] = True
+            self.ctrl_started[i] = time.time()
+            self.ctrl_restarts[i] += 1
+            if "no_logs_after_restart" not in self.f:
+                self.ctrl_log[i] = time.time()
+
+    def restart_controller(self, i):
+        self.controller(i, "restart")
         if "vlan_wipe" in self.f:
             self.wiped |= {j for j in range(self.n_sw) if self.phase_sw(j) == "drained"}
 
@@ -348,9 +417,23 @@ class FakeSwitchTransport:
             elif cmd == "docker restart afm-controller":
                 sim.restart_controller(i)
                 res = self._res(cmd, "afm-controller\n")
+            elif m := re.fullmatch(r"docker (stop|start) afm-controller", cmd):
+                sim.controller(i, m.group(1))
+                res = self._res(cmd, "afm-controller\n")
+            elif cmd.startswith("docker inspect -f") and cmd.endswith("afm-controller"):
+                t = datetime.fromtimestamp(sim.ctrl_started[i], timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%fZ")
+                res = self._res(cmd, f"{t} {sim.ctrl_restarts[i]}\n")
+            elif cmd == "date +%s":
+                res = self._res(cmd, f"{int(time.time())}\n")
+            elif m := re.fullmatch(r"find /opt/amd/afm/controller/logs -type f -newermt @(\d+)( -print)?", cmd):
+                newer = sim.ctrl_log[i] > int(m.group(1))
+                res = self._res(cmd, "/opt/amd/afm/controller/logs/afm_controller.log\n" if newer else "")
             elif m := re.fullmatch(r"docker exec afm-agent kill -(STOP|CONT) (\d+)", cmd):
                 slot = next((s for s, p in sim.sb_pid.items() if p == int(m.group(2))), None)
-                if slot is None:
+                if int(m.group(2)) == 20:          # the switch-agent process
+                    (sim.sw_stopped.add if m.group(1) == "STOP" else sim.sw_stopped.discard)(i)
+                    res = self._res(cmd)
+                elif slot is None:
                     res = self._res(cmd, rc=1)
                 else:
                     if m.group(1) == "STOP":

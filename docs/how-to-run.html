@@ -142,10 +142,10 @@
   <p class="muted">Only needed for the AFM controller API tests (<code>tests/afm</code>):</p>
   <div class="cmd"><pre>read -s &quot;HELIOS_AFM_PASSWORD?AFM admin password: &quot; &amp;&amp; export HELIOS_AFM_PASSWORD &amp;&amp; echo</pre></div>
   <div class="note">
-    <strong>Scope today:</strong> 225 of the 542 plan cases are automated, plus 2 RCCL smoke tests.
+    <strong>Scope today:</strong> 269 of the 542 plan cases are automated, plus 2 RCCL smoke tests.
     <ul>
       <li><strong>Over SSH:</strong> switch hardware, switch agent, datapath, scale-out RDMA, RAS reset, metrics exporter, node platform, sideband and IFCP.</li>
-      <li><strong>Over the AFM REST API and AggWatch WebSocket (<code>tests/afm</code>, 133 cases):</strong> auth, cluster and object specs, failover policies, RBAC, audit, metrics, techsupport and AggWatch. Plus 74 disruptive cases, built from the full-rack procedures: compute Reconfigure, agent/controller restarts, vPOD/compute/switch lifecycle, fabric-link failover (TC-AFM-006…047, RC-001…026), and the FO failover scenarios and vPOD operations (TC-E2E).</li>
+      <li><strong>Over the AFM REST API and AggWatch WebSocket (<code>tests/afm</code>, 177 cases):</strong> auth, cluster and object specs, failover policies, RBAC, audit, metrics, techsupport and AggWatch. Plus 108 disruptive cases, built from the full-rack procedures: compute Reconfigure, agent/controller restarts, vPOD/compute/switch lifecycle, fabric-link failover (TC-AFM-006…047, RC-001…026), the FO failover scenarios and vPOD operations (TC-E2E), controller resilience, snapshot/restore, bug regressions and stress.</li>
     </ul>
   </div>
 </section>
@@ -160,7 +160,7 @@
     <thead><tr><th>What you run</th><th>Needs</th><th>Command</th></tr></thead>
     <tbody>
       <tr><td>Everything except AFM: switch HW/agent, sideband/IFCP, datapath, hardware, RAS, platform, metrics exporter, scale-out RDMA (about 120 cases)</td><td>SSH to switches and computes</td><td><code>pytest tests --ignore=tests/afm --inventory &lt;inv&gt;</code></td></tr>
-      <tr><td>AFM only (133 cases)</td><td>AFM URL (+ tunnel) and <code>HELIOS_AFM_PASSWORD</code>. The 74 disruptive AFM cases also need switch SSH (agent restarts, port shut).</td><td><code>pytest tests/afm --inventory &lt;inv&gt;</code></td></tr>
+      <tr><td>AFM only (177 cases)</td><td>AFM URL (+ tunnel) and <code>HELIOS_AFM_PASSWORD</code>. 69 are API-only and non-disruptive, 31 are API-only but disruptive (vPOD moves, Reconfigure, snapshot), and 77 also need switch SSH (agent/controller restarts, port shut). The workbook's <strong>Access needed</strong> column has this per case.</td><td><code>pytest tests/afm --inventory &lt;inv&gt;</code></td></tr>
       <tr><td>Both</td><td>all of the above</td><td><code>pytest tests --inventory &lt;inv&gt;</code></td></tr>
     </tbody>
   </table>
@@ -230,9 +230,9 @@
   <p>These use recorded SONiC and GPU outputs from <code>selftest/replay</code>, so no hardware is needed.</p>
   <div class="cmd"><pre>.venv/bin/pytest unit -n 6 -q</pre></div>
   <div class="cmd"><pre>.venv/bin/pytest tests --inventory selftest/inventory.yaml --allow-disruptive -q</pre></div>
-  <p class="muted">Expected: <span class="pill ok">143 unit tests</span> (about 5 minutes with <code>-n 6</code>): 67 L1 injected faults, plus 16 AFM API and 34 AFM lifecycle/link/failover product faults. For the replayed suite, <span class="pill ok">255 passed</span> <span class="pill">24 skipped</span>. The AFM tests run against the in-process fake controller; the skips are cases that need more than one switch or controller. The 3-switch fake runs every AFM case:</p>
+  <p class="muted">Expected: <span class="pill ok">175 unit tests</span> (about 7 minutes with <code>-n 6</code>): 67 L1 injected faults, plus 16 AFM API faults and 66 AFM product faults (lifecycle, links, failover, controller, regression). For the replayed suite, <span class="pill ok">291 passed</span> <span class="pill">32 skipped</span>. The AFM tests run against the in-process fake controller; the skips are cases that need more than one switch or controller. The 3-switch fake runs every AFM case:</p>
   <div class="cmd"><pre>.venv/bin/pytest tests/afm --inventory selftest/inventory-afm3.yaml --allow-disruptive -q</pre></div>
-  <p class="muted">Expected: <span class="pill ok">132 passed</span> <span class="pill">1 skipped</span> (TC-AFM-035A is for a one-switch rack).</p>
+  <p class="muted">Expected: <span class="pill ok">174 passed</span> <span class="pill">3 skipped</span>: TC-AFM-035A is for a one-switch rack; the bearer token (AGGW-002) and recovery key (CTL-055) are opt-in.</p>
 </section>
 
 <section id="mini">
@@ -406,7 +406,7 @@
     <tbody>
       <tr><td>No password</td><td>RC-021, CTL-089, AGGW-003/004 and CTL-004 run anyway (unauthenticated requests). Everything else SKIPs.</td></tr>
       <tr><td>Non-disruptive (default)</td><td>Reads, plus throw-away <code>helios-&lt;tc&gt;-*</code> objects deleted after each test: failover and alert policies (100 for the AggWatch burst test), test users/roles/role-bindings, and one empty vPOD (no GPUs). About 10 minutes.</td></tr>
-      <tr><td>Disruptive (<code>--allow-disruptive</code>)</td><td>74 cases: Reconfigure, agent and controller restarts, vPOD/compute/switch lifecycle, fabric links, and failover scenarios. They need SSH to the switch trays too. Each first checks AFM health (BLOCKED if unhealthy) and restores what it changed. On the full rack, pick cases with <code>--tc</code>. The full-rack team's evidence-first rule still applies: collect logs and techsupport before any manual recovery.</td></tr>
+      <tr><td>Disruptive (<code>--allow-disruptive</code>)</td><td>108 cases: Reconfigure, agent and controller restarts, vPOD/compute/switch lifecycle, fabric links, and failover scenarios. They need SSH to the switch trays too. Each first checks AFM health (BLOCKED if unhealthy) and restores what it changed. On the full rack, pick cases with <code>--tc</code>. The full-rack team's evidence-first rule still applies: collect logs and techsupport before any manual recovery.</td></tr>
     </tbody>
   </table>
   </div>
@@ -451,6 +451,10 @@
   </table>
   </div>
   <p>The <code>--log-file</code> records every command, its output, exit code and duration. Passwords are never logged.</p>
+  <h3>Access needed per case</h3>
+  <p><code>tools/access_needed.py</code> adds an <strong>Access needed</strong> column to the workbook: column I on Testcases, column H on mortaro. It says what each case needs to run: AFM API, switch SSH, compute SSH, datapath traffic, BMC/PDU, a special rack or server, or manual work. Automated cases are classified from the code; the rest from the plan category and title, and values inferred from a title only are marked "(est.)". Close the workbook in Excel first.</p>
+  <div class="cmd"><pre>.venv/bin/python tools/access_needed.py testplan/full_rack_testplan.xlsx</pre></div>
+  <div class="cmd"><pre>.venv/bin/python tools/access_needed.py --summary</pre></div>
   <h3>Record the results in the test-plan workbook</h3>
   <p><code>tools/update_testplan.py</code> writes the verdicts of one or more runs into the Testcases sheet: Execution Status (F), SW Version (G) and Execution Notes (H). Only rows of the plan IDs that ran are changed. Close the workbook in Excel first; the tool refuses while Excel's <code>~$</code> lock file exists. It saves a timestamped backup next to the workbook before writing.</p>
   <div class="cmd"><pre>.venv/bin/python tools/update_testplan.py testplan/full_rack_testplan.xlsx results/&lt;run&gt; [more runs] --sw-version &quot;AFM 0.1.0-AICC-817&quot; --label &quot;g02-g17 full rack, &lt;date&gt;&quot; --dry-run</pre></div>
