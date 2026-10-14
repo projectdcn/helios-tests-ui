@@ -189,6 +189,10 @@ class SonicSwitch:
                 names.append(name)
         return names
 
+    def container_processes(self, container: str) -> str:
+        """Process command lines inside a container (ps args), one per line."""
+        return self.run(f"docker exec {container} ps -eo args", sudo=True, timeout=60).stdout
+
     def supervisor_status(self, container: str) -> dict[str, str]:
         # supervisorctl exits non-zero when anything isn't RUNNING; the table is still what we want.
         out = self.run(f"docker exec {container} supervisorctl status", sudo=True).stdout

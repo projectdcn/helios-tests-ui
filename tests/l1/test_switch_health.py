@@ -601,9 +601,16 @@ def test_critical_processes_running(switch, inventory, checks, record_property):
         if not crit:
             continue
         status = switch.supervisor_status(c)
+        procs = None
         seen += 1
         for prog in crit:
-            checks.check(status.get(prog) == "RUNNING", f"{switch.name}: {c}/{prog} is {status.get(prog, 'missing')}")
+            if status.get(prog) == "RUNNING":
+                continue
+            if prog not in status:   # not a supervisor program of its own (e.g. dsserve wraps syncd): look for the process
+                procs = procs if procs is not None else switch.container_processes(c)
+                if re.search(rf"(^|/){re.escape(prog)}(\s|$)", procs, re.M):
+                    continue
+            checks.fail(f"{switch.name}: {c}/{prog} is {status.get(prog, 'not running')}")
     record_property("containers_checked", seen)
     checks.check(seen, f"{switch.name}: no container declares critical processes")
     checks.assert_all()
