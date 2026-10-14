@@ -337,6 +337,10 @@ class Handler(BaseHTTPRequestHandler):
             st.publish("Updated", group, kind, o)
             return self._send(200, o)
         if method == "DELETE":
+            users = [v["meta"]["name"] for v in st.objs["VPod"].values()
+                     if v["spec"].get("failover-policy") == name]
+            if kind == "FailoverPolicy" and users and "policy_delete_in_use" not in st.f:
+                return self._err(412, f"failover policy {name} is in use by vPods {users}")
             o = coll.pop(name)
             st.record(user, "Delete", kind, name, path)
             st.publish("Deleted", group, kind, o)
@@ -431,6 +435,7 @@ class Handler(BaseHTTPRequestHandler):
             r = self._crud(method, "cluster", "VPod", None, body, user, path, action)
             if isinstance(body, dict) and (body.get("meta") or {}).get("name") in coll:
                 sim.vpod_written(body["meta"]["name"])
+                sim.vpod_event("vpod_status_change", body["meta"]["name"], "created")
             return r
         if name not in coll:
             return self._err(404, "Object get failed: object not found")
@@ -446,12 +451,14 @@ class Handler(BaseHTTPRequestHandler):
                 sim.stale_macs += max(0, len(before) - len(after))
             r = self._crud(method, "cluster", "VPod", name, body, user, path, action)
             sim.vpod_written(name)
+            sim.vpod_event("vpod_status_change", name, f"updated ({len(after)} GPUs)")
             return r
         if method == "DELETE":
             n = len(coll[name]["spec"].get("GPUs") or [])
             if n:
                 return self._err(412, f"vPod {name} cannot be deleted, {n} GPUs still assigned")
             sim.configfailed.discard(name)
+            sim.vpod_event("vpod_deleted", name, "deleted")
             return self._crud(method, "cluster", "VPod", name, body, user, path, action)
         return self._err(405, "method not allowed")
 

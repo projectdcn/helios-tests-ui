@@ -13,7 +13,7 @@ import time
 
 import pytest
 
-from helios.afm import CLUSTER, MONITORING, ev_names, handshake_status, perm, wait_for
+from helios.afm import CLUSTER, MONITORING, ev_names, handshake_status, perm
 
 AP = f"{MONITORING}/alertPolicies"
 FP = f"{CLUSTER}/failoverpolicies"

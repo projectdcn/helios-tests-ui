@@ -17,6 +17,7 @@ dependencies = [
 
 [project.optional-dependencies]
 tools = ["openpyxl>=3.1"]
+dev = ["pytest-xdist>=3.5", "pyflakes>=3"]  # parallel self-test: pytest unit -n 6
 
 [tool.setuptools.packages.find]
 include = ["helios*"]

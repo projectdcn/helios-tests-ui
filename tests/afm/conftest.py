@@ -14,6 +14,7 @@ from pathlib import Path
 import pytest
 
 from helios.afm import AUTH, AfmClient, new_password, rack_health
+from helios.afm_ops import AfmOps
 
 
 @pytest.fixture(scope="session")
@@ -131,3 +132,19 @@ def make_user(afm, cleanup):
             u.login()
         return u, pw
     return make
+
+
+@pytest.fixture
+def ops(afm, rack, inventory):
+    """AFM lifecycle operations (REST + switch SSH) for the disruptive suites."""
+    return AfmOps(afm, rack, inventory)
+
+
+@pytest.fixture
+def links(ops):
+    """Shut fabric ports through it; every port it shut is brought back after the test."""
+    from afm_helpers import Links
+
+    lk = Links(ops)
+    yield lk
+    lk.restore_all()

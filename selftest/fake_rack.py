@@ -54,6 +54,8 @@ class Sim:
         self.links_down: dict[tuple[int, str, str], dict] = {}
         self.time_scale = 1.0                  # fake seconds per policy second (selftest shrinks timers)
         self.failed_evt: set[tuple] = set()
+        self.sticky: set[tuple] = set()       # links AFM keeps counting as failed after they came back (faults)
+        self.last_avail: dict[str, int] = {}
         self.ack: dict[str, set] = {}          # vPOD -> failed links acknowledged by ReconfigureDataFabric
         self.n_ct = n_computes
         self.events: list[dict] = []
@@ -132,8 +134,13 @@ class Sim:
             keys.append((i, ns, names[(names.index(port) + 1) % len(names)]))
         for k in ([key] if up else keys):   # a coupled neighbour does not come back with the target
             if up:
-                if self.links_down.pop(k, None) is not None:
+                d = self.links_down.pop(k, None)
+                if d is not None:
                     self.event("link_up", f"PortName {k[2]} asic {k[1]} switch {self.sname(i)} is UP")
+                    had_failed = k in self.failed_evt
+                    if ("flap_counts_as_failure" in self.f and not had_failed) or \
+                            ("no_auto_restore" in self.f and had_failed):
+                        self.sticky.add(k)
                 self.failed_evt.discard(k)
             elif k not in self.links_down:
                 self.links_down[k] = {"since": time.monotonic(), "known": self.agent_up[i], "admin": k == key}
@@ -148,11 +155,17 @@ class Sim:
         if "timer_ignored" in self.f:
             th = 0.0
         gpus = {(g.get("slot-id"), g.get("index")) for g in vpod["spec"].get("GPUs") or []}
-        out = []
-        for k, d in self.links_down.items():
+        out, seen = [], set()
+        for k, d in list(self.links_down.items()) + [(k, None) for k in self.sticky]:
             s, g, _, _ = self.ports(k[0], k[1])[k[2]]
-            if (s, g) in gpus and d["known"] and time.monotonic() - d["since"] >= th:
-                out.append(k)
+            if (s, g) not in gpus:
+                continue
+            if d is not None and not (d["known"] and time.monotonic() - d["since"] >= th):
+                continue
+            if "one_failure_per_gpu" in self.f and (s, g) in seen:
+                continue
+            seen.add((s, g))
+            out.append(k)
         return out
 
     def event(self, etype, msg):
@@ -207,6 +220,10 @@ class Sim:
             counted = [k for k in failed if (not manual) or k in acked]
             pending = manual and any(k not in acked for k in failed) and "manual_auto" not in self.f
             avail = max(0, PLANES - (BASELINE_DOWN if sysv else 0) - lost - len(counted))
+            if self.last_avail.get(name) not in (None, avail):
+                self.vpod_event("vpod_bandwidth_change", name,
+                                f"available/effective/provisioned switch planes changed to {avail}/{avail}/{PLANES}")
+            self.last_avail[name] = avail
             st = vp["status"]
             st.update({"provisioned-switch-planes": PLANES, "available-switch-planes": avail,
                        "effective-switch-planes": avail, "pending-ops": st.get("pending-ops") or []})
@@ -289,7 +306,14 @@ class Sim:
     def vlans(self, i) -> list[str]:
         if self.phase_sw(i) not in ("admitted", "drained") or i in self.wiped:
             return []
-        return ["Vlan100", "Vlan200", "Vlan300"]
+        users = [] if "no_vlan_for_vpod" in self.f else sorted(
+            v["meta"]["name"] for v in self.st.objs["VPod"].values()
+            if not v["meta"]["name"].endswith(".system") and v["spec"].get("GPUs"))
+        return ["Vlan100", "Vlan200", "Vlan300"] + [f"Vlan{1000 + n}" for n in range(len(users))]
+
+    def vpod_event(self, etype, name, msg):
+        if "no_vpod_events" not in self.f:
+            self.event(etype, f"vPod {name} {msg}")
 
     def macs(self, i, objs) -> int:
         if self.phase_sw(i) not in ("admitted", "drained"):

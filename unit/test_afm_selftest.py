@@ -79,27 +79,47 @@ LIFECYCLE_FAULTS = [
     ("manual_auto", {"TC-AFM-016", "TC-AFM-041", "TC-AFM-042"}),   # manual policy reconfigures on its own
     ("timer_ignored", {"TC-AFM-040"}),           # PortFailed before link-fail-threshold
     ("no_reconcile", {"TC-AFM-017"}),            # link change during agent outage never learnt
+    ("flap_counts_as_failure", {"TC-AFM-011"}),  # a flap shorter than the timer still marked failed
+    # failover scenarios / vPOD operations (tests/afm/test_afm_failover.py); the multi-GPU and other-fault
+    # cases in each list are controls that must keep passing
+    ("one_failure_per_gpu", {"TC-E2E-105", "TC-E2E-122", "TC-E2E-130", "TC-E2E-131", "TC-E2E-135",
+                             "TC-E2E-141", "TC-E2E-144"}),
+    ("flap_counts_as_failure", {"TC-E2E-132"}),
+    ("timer_ignored", {"TC-E2E-055"}),
+    ("timer_ignored", {"TC-E2E-132"}),
+    ("no_auto_restore", {"TC-E2E-056"}),
+    ("no_auto_restore", {"TC-E2E-145"}),
+    ("no_vpod_events", {"TC-E2E-025", "TC-E2E-106"}),
+    ("no_vlan_for_vpod", {"TC-E2E-087"}),
+    ("policy_delete_in_use", {"TC-E2E-040"}),
+    ("policy_delete_in_use", {"TC-E2E-134"}),
+    ("manual_auto", {"TC-E2E-052", "TC-E2E-146"}),
 ]
+# controls run alongside a fault and must still PASS (the fault is outside what they check)
+CONTROLS = {"one_failure_per_gpu": {"TC-E2E-048", "TC-E2E-137"}, "no_vpod_events": {"TC-E2E-030"},
+            "manual_auto": {"TC-E2E-133"}}
 
 
 def test_healthy_fake_all_pass(tmp_path):
     verdicts = _run(tmp_path)
     bad = {k: v for k, v in verdicts.items() if v not in ("PASS", "SKIP")}
     assert not bad, bad
-    assert sum(v == "PASS" for v in verdicts.values()) >= 93
+    assert sum(v == "PASS" for v in verdicts.values()) >= 114
 
 
 def test_healthy_fake_3switch_all_pass(tmp_path):
     verdicts = _run(tmp_path, inventory="inventory-afm3.yaml")
     bad = {k: v for k, v in verdicts.items() if v != "PASS" and k != "TC-AFM-035A"}  # 035A = one-switch only
     assert not bad, bad
-    assert len(verdicts) >= 107
+    assert len(verdicts) >= 132
 
 
 @pytest.mark.parametrize("fault,tcs", LIFECYCLE_FAULTS, ids=[f"{f}-{sorted(t)[0]}" for f, t in LIFECYCLE_FAULTS])
 def test_lifecycle_fault_detected(tmp_path, fault, tcs):
-    verdicts = _run(tmp_path, fault, tcs, inventory="inventory-afm3.yaml")
+    controls = CONTROLS.get(fault, set()) if sorted(tcs)[0] != "TC-AFM-011" else set()
+    verdicts = _run(tmp_path, fault, tcs | controls, inventory="inventory-afm3.yaml")
     assert {k for k, v in verdicts.items() if v == "FAIL"} == tcs, verdicts
+    assert all(verdicts.get(c) == "PASS" for c in controls), verdicts
 
 
 @pytest.mark.parametrize("fault", sorted(FAULTS))

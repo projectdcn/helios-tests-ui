@@ -50,7 +50,7 @@ example a lab host):
 
 ```bash
 python3 -m venv .venv
-.venv/bin/pip install -e '.[tools]'
+.venv/bin/pip install -e '.[tools,dev]'
 ```
 
 ### 1. Without a rack: check the framework
@@ -59,10 +59,10 @@ These use recorded SONiC and GPU outputs from `selftest/replay`, so no hardware
 is needed.
 
 ```bash
-.venv/bin/pytest unit                                                       # 131 tests: 67 L1 + 16 AFM API + 21 AFM lifecycle/link fault checks (~11 min)
-.venv/bin/pytest tests --inventory selftest/inventory.yaml                  # 187 pass, 67 skip (disruptive skipped)
-.venv/bin/pytest tests --inventory selftest/inventory.yaml --allow-disruptive   # 234 pass, 20 skip (one-switch fake)
-.venv/bin/pytest tests/afm --inventory selftest/inventory-afm3.yaml --allow-disruptive   # 107 pass, 1 skip (3-switch fake)
+.venv/bin/pytest unit -n 6                                                  # 143 tests: 67 L1 + 16 AFM API + 34 AFM lifecycle/link/failover fault checks (~5 min)
+.venv/bin/pytest tests --inventory selftest/inventory.yaml                  # 187 pass, 92 skip (disruptive skipped)
+.venv/bin/pytest tests --inventory selftest/inventory.yaml --allow-disruptive   # 255 pass, 24 skip (one-switch fake)
+.venv/bin/pytest tests/afm --inventory selftest/inventory-afm3.yaml --allow-disruptive   # 132 pass, 1 skip (3-switch fake)
 ```
 
 ### 2. On a real rack
@@ -133,7 +133,7 @@ read -s HELIOS_AFM_PASSWORD && export HELIOS_AFM_PASSWORD
 Without the password, only the unauthenticated cases run; the rest SKIP. The
 tests create throw-away `helios-*` objects and delete them afterwards.
 
-The 49 `disruptive` cases need `--allow-disruptive`:
+The 74 `disruptive` cases need `--allow-disruptive`:
 - **Lifecycle:** agent and controller restarts, vPOD moves, compute and switch decommission/delete/readmit.
 - **Fabric links:** ports shut with `config interface ... shutdown`.
 - **Reconfigure.**
@@ -201,7 +201,7 @@ The table has one row per category:
 `--missing` also lists every case that has **no test yet**, with its ID, level
 and title.
 
-## Coverage (200 of 542 cases)
+## Coverage (225 of 542 cases)
 
 * **TC-SWH-001…036, switch hardware.** Firmware, fans, PSUs, platform/EEPROM,
   multi-ASIC namespaces, interface state/speed/MTU, error-counter deltas,
@@ -283,6 +283,18 @@ and title.
   * **Disruptive, fabric links.** Flap and prolonged down on one or both ASICs (also checks no coupled port
     goes down); automatic vs manual data-fabric reconfiguration; link-fail timers; manual → automatic
     policy edit; reconciliation after an agent outage; vPOD created with a link down.
+  * **Disruptive, failover scenarios and vPOD operations (TC-E2E, `test_afm_failover.py`).**
+    * **Station patterns:** both ports of a station (FO-003), single ports on several stations (FO-013),
+      full + partial station (FO-014), every port of one GPU (FO-037), several trays at once (FO-026).
+    * **Sequences:** sequential failures with monotonic planes (FO-033); a second failure during
+      reconfiguration (FO-024).
+    * **Timers and policies:** automatic golden path with every event (FO-038); recovery just before the
+      timer (FO-021); `link_failed` only after the threshold; manual mode holds with unchanged planes
+      (FO-039, E2E-052); mode change while down (FO-022); in-use policy delete rejected (FO-023, E2E-040).
+    * **Events:** link_down/up per port, for one switch or across switches.
+    * **vPOD operations:** move several computes, full system vPOD, parallel CRUD, GPUs between user vPODs,
+      per-vPOD VLANs on every switch, vPOD CRUD events.
+    * **Station of a GPU port:** `gpu_port // thresholds.afm.ports_per_station` (2, VERIFY).
   * **Built from the g02-g17 procedures, with their script bugs fixed** (see `helios/afm_ops.py`):
     * membership is checked per GPU
     * a slot's agent is re-located on every poll
@@ -293,7 +305,7 @@ and title.
     * `selftest/fake_afm.py` is an in-process HTTPS + WebSocket AFM. `selftest/fake_rack.py` simulates
       the rack behind it (agents, controllers, admission, vPOD membership, planes, links) and the switch
       SSH the disruptive cases drive.
-    * `unit/test_afm_selftest.py` injects 16 API faults and 21 lifecycle/link product faults, including
+    * `unit/test_afm_selftest.py` injects 16 API faults and 34 lifecycle/link/failover product faults, including
       the full-rack issues (stale planes after readmit, VLAN wipe AIFM-1901, coupled ports). Each one must
       fail exactly the cases that should catch it.
 

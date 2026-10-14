@@ -350,6 +350,27 @@ class AfmOps:
                     out.append((ns, port, cab))
         return out
 
+    def gpu_links(self, slot: int, gpu: int | None = None) -> list[tuple]:
+        """Every up fabric port cabled to compute ``slot`` (optionally one GPU), across all switches:
+        [(sw, ns, port, (slot, gpu, acc, gpu_port))], ordered by GPU then GPU port id."""
+        out = []
+        for sw in self.rack.switches.values():
+            for ns, port, cab in self.link_candidates(sw, {slot}):
+                if gpu is None or cab[1] == gpu:
+                    out.append((sw, ns, port, cab))
+        return sorted(out, key=lambda x: (x[3][1], x[3][3]))
+
+    def station(self, cab) -> int:
+        """IFoE station of a GPU port: gpu_port // thresholds.afm.ports_per_station (2; VERIFY per platform)."""
+        return cab[3] // int(self.th("ports_per_station", 2))
+
+    def stations(self, slot: int, gpu: int) -> dict[int, list[tuple]]:
+        """{station: [(sw, ns, port, cab), ...]} for one GPU (up ports only)."""
+        out: dict[int, list[tuple]] = {}
+        for link in self.gpu_links(slot, gpu):
+            out.setdefault(self.station(link[3]), []).append(link)
+        return out
+
     def wait_oper(self, sw, ns, port, state: str, timeout: float = 60) -> bool:
         return bool(self.wait(lambda: self.port_oper(sw, ns, port) == state, timeout, 2, f"{port} {state}"))
 
@@ -380,7 +401,7 @@ class AfmOps:
             t = e.get("type") or (e.get("spec") or {}).get("event-type") or (e.get("spec") or {}).get("type")
             if etype and t != etype:
                 continue
-            if since and ((e.get("meta") or {}).get("creation-time") or "") < since:
+            if since and ((e.get("meta") or {}).get("creation-time") or "") <= since:  # strictly newer
                 continue
             out.append(e)
         return out

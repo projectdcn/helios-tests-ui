@@ -14,15 +14,10 @@ import time
 import pytest
 
 from helios.afm import CLUSTER, conditions_ok
-from helios.afm_ops import CN, SN, TERMINAL, AfmOps
+from helios.afm_ops import CN, SN, TERMINAL
 
 FP = f"{CLUSTER}/failoverpolicies"
 pytestmark = [pytest.mark.l2, pytest.mark.disruptive]
-
-
-@pytest.fixture
-def ops(afm, rack, inventory):
-    return AfmOps(afm, rack, inventory)
 
 
 def _need_switches(afm, n: int):
