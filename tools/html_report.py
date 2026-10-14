@@ -122,6 +122,78 @@ def workbook_status(wb_path, ids) -> dict[str, tuple[str, str, str]]:
     return out
 
 
+def workbook_all_rows(wb_path) -> list[dict]:
+    """Every case row of the workbook's Testcases sheet (the whole test plan), as recorded there."""
+    import openpyxl
+
+    ws = openpyxl.load_workbook(wb_path, read_only=True)["Testcases"]
+    out = []
+    for r in ws.iter_rows(min_row=3, values_only=True):
+        if not r or not r[0] or not str(r[0]).strip().startswith("TC-"):
+            continue
+        r = list(r) + [None] * 12
+        st = str(r[5] or "").strip()
+        auto = str(r[3] or "").strip()
+        shown = (WB_STATUS.get(st.upper(), st.upper()) if st else
+                 "NOT RUN" if auto in ("Yes", "Inprogress") else "NOT AUTOMATED")
+        out.append({"id": str(r[0]).strip(), "level": str(r[1] or ""), "title": str(r[2] or ""), "automation": auto,
+                    "status": shown, "note": str(r[7] or "").split("\n\nEarlier: ", 1)[0], "scope": str(r[9] or ""),
+                    "origin": str(r[10] or ""), "disruptive": str(r[11] or "")})
+    return out
+
+
+def all_cases_section(rows: list[dict], wb_name: str) -> str:
+    """Whole-plan overview: counts, level x status matrix, and a filterable table of every case."""
+    order = ["PASS", "FAIL", "PARTIAL", "PENDING", "SKIP", "N/A", "NOT RUN", "NOT AUTOMATED"]
+    cls = {"PASS": "pass", "FAIL": "fail", "PENDING": "blocked", "PARTIAL": "blocked", "SKIP": "skip", "N/A": "skip"}
+    levels = sorted({r["level"] for r in rows})
+    h = [f'<h2 id="plan">Test plan overview - every case in {esc(wb_name)} ({len(rows)})</h2>',
+         '<p class="desc">Executed cases show the reviewed status from the workbook. <b>NOT RUN</b> = automated but not yet run on '
+         'this rack (mostly disruptive cases awaiting approval, MCH-rack or equipment cases); <b>NOT AUTOMATED</b> = no test '
+         'yet (needs AMD input, equipment or manual work).</p>',
+         '<table><thead><tr><th>Level</th>' + "".join(f'<th class="num">{esc(o)}</th>' for o in order) +
+         '<th class="num">Total</th></tr></thead><tbody>']
+    for lv in levels + ["All"]:
+        sel = [r for r in rows if lv == "All" or r["level"] == lv]
+        c = Counter(r["status"] for r in sel)
+        b = "<b>" if lv == "All" else ""
+        h.append(f'<tr><td>{b}{esc(lv)}</td>' + "".join(f'<td class="num">{b}{c.get(o, 0)}</td>' for o in order) +
+                 f'<td class="num">{b}{len(sel)}</td></tr>')
+    h.append("</tbody></table>")
+    h.append('<div class="toggles"><input id="pf" type="search" placeholder="Filter: ID, title, scope, notes..." '
+             'style="padding:5px 8px;min-width:260px;font-size:12px"> <select id="ps" style="font-size:12px;padding:4px">'
+             '<option value="">All statuses</option>' + "".join(f'<option>{esc(o)}</option>' for o in order) +
+             '</select> <select id="pl" style="font-size:12px;padding:4px"><option value="">All levels</option>' +
+             "".join(f'<option>{esc(l)}</option>' for l in levels) + '</select> <span id="pc" class="desc"></span></div>')
+    h.append('<table id="plantable"><thead><tr><th>Plan ID</th><th>Level</th><th>Title</th><th>Scope</th><th>Disruptive</th>'
+             '<th>Origin</th><th>Automation</th><th>Status</th><th>Latest execution note</th></tr></thead><tbody>')
+    for r in rows:
+        h.append(f'<tr data-s="{esc(r["status"])}" data-l="{esc(r["level"])}"><td class="mono">{esc(r["id"])}</td>'
+                 f'<td>{esc(r["level"])}</td><td>{esc(r["title"][:160])}</td><td>{esc(r["scope"])}</td>'
+                 f'<td>{esc(r["disruptive"])}</td><td>{esc("Added" if r["origin"].startswith("Added") else r["origin"])}</td>'
+                 f'<td>{esc(r["automation"])}</td><td><span class="{cls.get(r["status"], "")}">{esc(r["status"])}</span></td>'
+                 f'<td class="reason">{esc(r["note"][:400])}</td></tr>')
+    h.append("</tbody></table>")
+    h.append("""<script>
+(function () {
+  var f = document.getElementById('pf'), s = document.getElementById('ps'), l = document.getElementById('pl'),
+      c = document.getElementById('pc'), rows = document.querySelectorAll('#plantable tbody tr');
+  function apply() {
+    var q = f.value.toLowerCase(), n = 0;
+    rows.forEach(function (tr) {
+      var ok = (!q || tr.textContent.toLowerCase().indexOf(q) >= 0) && (!s.value || tr.dataset.s === s.value) &&
+               (!l.value || tr.dataset.l === l.value);
+      tr.style.display = ok ? '' : 'none'; if (ok) n++;
+    });
+    c.textContent = n + ' of ' + rows.length + ' cases';
+  }
+  [f, s, l].forEach(function (e) { e.addEventListener('input', apply); e.addEventListener('change', apply); });
+  apply();
+}());
+</script>""")
+    return "\n".join(h)
+
+
 def build(items: list[dict], args) -> str:
     verdicts = plan_verdicts(items)
     # plan cases (AMD plan + testplan/added.yaml) vs extra evidence tests (e.g. SMOKE-RCCL-*), counted separately
@@ -136,6 +208,14 @@ def build(items: list[dict], args) -> str:
     for k, (st, _note, _title) in reviewed.items():
         verdicts[k] = st
     kp = Counter(v for k, v in verdicts.items() if k in plan_ids)
+    plan_rows = workbook_all_rows(args.workbook) if getattr(args, "all_cases", False) and args.workbook else None
+    if plan_rows is not None:      # whole test plan: counts follow the workbook rows, not only what ran
+        kp = Counter(r["status"] for r in plan_rows)
+    n_cases = len(plan_rows) if plan_rows is not None else len(verdicts) - len(extra)
+    not_run_txt = (f" &middot; {kp['NOT RUN']} not run &middot; {kp['NOT AUTOMATED']} not automated"
+                   if plan_rows is not None else "")
+    not_run_card = (f'<div class="kpi-card"><div class="num" style="color:var(--skip);">{kp["NOT RUN"] + kp["NOT AUTOMATED"]}'
+                    f'</div><div class="label">Not run / not automated</div></div>' if plan_rows is not None else "")
     executed = kp["PASS"] + kp["FAIL"]
     rate = (100.0 * kp["PASS"] / executed) if executed else 0.0
     suites: "OrderedDict[str, list[dict]]" = OrderedDict((k, []) for k in SUITE_NAMES)
@@ -239,18 +319,18 @@ pre.logpre .lvl-note {{ color: #9aa7b4; font-style: italic; }}
       &nbsp;|&nbsp; Executed {esc(started[0] if started else "")} &rarr; {esc(started[-1] if started else "")}
       &nbsp;|&nbsp; Generated {datetime.now().strftime("%Y-%m-%d %H:%M")}</div>
     <div class="hero-pills">
-      <div class="pill"><div><div class="cap">Test cases</div><div class="val">{len(verdicts) - len(extra)} plan cases &middot; {len(items)} executions</div>
+      <div class="pill"><div><div class="cap">Test cases</div><div class="val">{n_cases} plan cases &middot; {len(items)} executions</div>
         {f'<span class="chip">+{len(extra)} extra evidence test(s): {esc(", ".join(extra))}</span>' if extra else ''}
         <span class="chip">{len(suites)} suites</span><span class="chip">{len(runs)} run(s)</span></div></div>
       <div class="pill"><div><div class="cap">Executed result</div>
         <div class="val" style="color:{'#86efac' if kp['FAIL'] == 0 else '#fecaca'};">{kp['PASS']} / {executed} PASS</div>
         <span class="chip">{rate:.0f}% pass rate (executed)</span></div></div>
-      <div class="pill"><div><div class="cap">Not executed</div><div class="val">{kp['PENDING']} pending &middot; {kp['BLOCKED']} blocked &middot; {kp['SKIP']} skipped &middot; {kp['N/A']} N/A</div>
+      <div class="pill"><div><div class="cap">Not executed</div><div class="val">{kp['PENDING']} pending &middot; {kp['BLOCKED']} blocked &middot; {kp['SKIP']} skipped &middot; {kp['N/A']} N/A{not_run_txt}</div>
         <span class="chip">blocked = datapath pre-flight refused traffic</span></div></div>
     </div>
   </div>
   <div class="kpi-grid">
-    <div class="kpi-card"><div class="num" style="color:var(--accent);">{len(verdicts) - len(extra)}</div><div class="label">Test cases</div></div>
+    <div class="kpi-card"><div class="num" style="color:var(--accent);">{n_cases}</div><div class="label">Test cases</div></div>{not_run_card}
     <div class="kpi-card"><div class="num" style="color:var(--pass);">{kp['PASS']}</div><div class="label">Passed</div></div>
     <div class="kpi-card"><div class="num" style="color:var(--fail);">{kp['FAIL']}</div><div class="label">Failed</div></div>
     <div class="kpi-card"><div class="num" style="color:var(--blocked);">{kp['PENDING'] + kp['BLOCKED']}</div><div class="label">Pending / blocked</div></div>
@@ -269,7 +349,9 @@ pre.logpre .lvl-note {{ color: #9aa7b4; font-style: italic; }}
             h.append(f'    <li class="{kind}">{body}</li>')
         h.append("  </ul></div>")
     h.append("</div>")
-    if reviewed:
+    if plan_rows is not None:
+        h.append(all_cases_section(plan_rows, Path(args.workbook).name))
+    elif reviewed:
         cls = {"PASS": "pass", "FAIL": "fail", "PENDING": "blocked", "SKIP": "skip", "PARTIAL": "blocked", "N/A": "skip"}
         h.append(f'<h2>Test plan status (reviewed, from {esc(Path(args.workbook).name)})</h2>'
                  '<p class="desc">Status as recorded in the workbook. Where it differs from the raw test verdict in the '
@@ -290,8 +372,8 @@ pre.logpre .lvl-note {{ color: #9aa7b4; font-style: italic; }}
   Chart.defaults.font.family = "'Segoe UI', system-ui, sans-serif";
   var P='#22c55e', F='#ef4444', B='#f97316', S='#f59e0b';
   new Chart(document.getElementById('vizDoughnut'), {{ type: 'doughnut',
-    data: {{ labels: ['Pass','Fail','Pending / blocked','Skipped / N/A'], datasets: [{{ data: {json.dumps([kp['PASS'], kp['FAIL'], kp['PENDING'] + kp['BLOCKED'], kp['SKIP'] + kp['N/A']])},
-      backgroundColor: [P,F,B,S], borderWidth: 0, hoverOffset: 8 }}] }},
+    data: {{ labels: ['Pass','Fail','Pending / blocked','Skipped / N/A','Not run / not automated'], datasets: [{{ data: {json.dumps([kp['PASS'], kp['FAIL'], kp['PENDING'] + kp['BLOCKED'], kp['SKIP'] + kp['N/A'], kp['NOT RUN'] + kp['NOT AUTOMATED']])},
+      backgroundColor: [P,F,B,S,'#64748b'], borderWidth: 0, hoverOffset: 8 }}] }},
     options: {{ responsive: true, maintainAspectRatio: false, cutout: '70%', plugins: {{ legend: {{ position: 'bottom', labels: {{ boxWidth: 12 }} }} }} }},
     plugins: [{{ id: 'ct', beforeDraw: function (c) {{ var a=c.chartArea, x=(a.left+a.right)/2, y=(a.top+a.bottom)/2, ctx=c.ctx;
       ctx.save(); ctx.font='bold 24px Segoe UI'; ctx.fillStyle='#e2e8f0'; ctx.textAlign='center'; ctx.textBaseline='middle';
@@ -366,6 +448,8 @@ def main():
     ap.add_argument("--title", default="Helios Test Report")
     ap.add_argument("--subtitle", default="")
     ap.add_argument("--notes", type=Path)
+    ap.add_argument("--all-cases", action="store_true", help="with --workbook: cover EVERY case of the test plan "
+                    "(overview counts, level x status, filterable table incl. NOT RUN / NOT AUTOMATED), not only executed ones")
     ap.add_argument("--workbook", type=Path, help="show the reviewed status (Testcases column F + notes) of each plan case "
                                                 "from this test-plan workbook instead of the raw test verdict")
     args = ap.parse_args()
