@@ -94,8 +94,9 @@ def _env_only(r: dict) -> bool:
 def merge_notes(new: str, old, label: str) -> str:
     """New note first, earlier notes kept below; a previous note from the same label is replaced."""
     old = str(old or "").strip()
-    if label and old.startswith(f"[{label}]"):
-        old = old.split("\n\nEarlier: ", 1)[1] if "\n\nEarlier: " in old else ""
+    if label:   # drop every earlier note from this same label, wherever it sits in the history
+        paras = [x.removeprefix("Earlier: ") for x in old.split("\n\n")]
+        old = "\n\n".join(x for x in paras if x and not x.startswith(f"[{label}]"))
     return f"{new}\n\nEarlier: {old}" if old else new
 
 
