@@ -95,8 +95,9 @@ class SshTransport:
     """One persistent paramiko connection per host; channels are opened per command
     so a single transport is safe to share across threads."""
 
-    def __init__(self, host: Host, connect_timeout: float = 15.0, keepalive: int = 30):
+    def __init__(self, host: Host, connect_timeout: float = 15.0, keepalive: int = 30, jump: dict | None = None):
         self.host = host
+        self.jump = jump          # transport.jump: {host, user, port, key_file} - bastion in front of the rack
         self.connect_timeout = connect_timeout
         self.keepalive = keepalive
         self._client = None
@@ -119,8 +120,12 @@ class SshTransport:
         client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
         use_keys = h.password is None or bool(h.key_file)
         key_file = os.path.expanduser(h.key_file) if h.key_file else None  # paramiko does not expand ~
+        sock = None
+        if self.jump:
+            sock = _jump_client(self.jump, self.connect_timeout).get_transport().open_channel(
+                "direct-tcpip", (h.host, h.port), ("127.0.0.1", 0), timeout=self.connect_timeout)
         client.connect(
-            h.host, port=h.port, username=h.user, password=h.password, key_filename=key_file,
+            h.host, port=h.port, username=h.user, password=h.password, key_filename=key_file, sock=sock,
             timeout=self.connect_timeout, banner_timeout=self.connect_timeout,
             auth_timeout=self.connect_timeout, look_for_keys=use_keys, allow_agent=use_keys,
         )
@@ -283,10 +288,36 @@ class ReplayTransport:
     reset = close
 
 
+_JUMPS: dict[tuple, Any] = {}
+_JUMP_LOCK = threading.Lock()
+
+
+def _jump_client(jump: dict, timeout: float):
+    """One shared, key-authenticated connection to the jump host (ProxyJump); every rack host is reached
+    through a direct-tcpip channel on it. No password: the jump host must accept your key or agent."""
+    import paramiko
+
+    key = (jump["host"], int(jump.get("port", 22)), jump.get("user"))
+    with _JUMP_LOCK:
+        c = _JUMPS.get(key)
+        if c is not None and c.get_transport() is not None and c.get_transport().is_active():
+            return c
+        c = paramiko.SSHClient()
+        c.load_system_host_keys()
+        c.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+        kf = jump.get("key_file")
+        c.connect(key[0], port=key[1], username=key[2], key_filename=os.path.expanduser(kf) if kf else None,
+                  timeout=timeout, banner_timeout=timeout, auth_timeout=timeout, look_for_keys=True, allow_agent=True)
+        c.get_transport().set_keepalive(30)
+        log.debug("jump host %s@%s:%s connected", key[2], key[0], key[1])
+        _JUMPS[key] = c
+        return c
+
+
 def make_transport(host: Host, cfg: dict[str, Any]) -> Transport:
     kind = cfg.get("kind", "ssh")
     if kind == "ssh":
-        return SshTransport(host, connect_timeout=float(cfg.get("connect_timeout", 15)))
+        return SshTransport(host, connect_timeout=float(cfg.get("connect_timeout", 15)), jump=cfg.get("jump"))
     if kind == "replay":
         return ReplayTransport(host, cfg["dir"])
     if kind == "local":
