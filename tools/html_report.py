@@ -15,6 +15,7 @@ import argparse
 import csv
 import html
 import json
+import sys
 import re
 from collections import Counter, OrderedDict
 from datetime import datetime
@@ -100,7 +101,15 @@ def plan_verdicts(items: list[dict]) -> dict[str, str]:
 
 def build(items: list[dict], args) -> str:
     verdicts = plan_verdicts(items)
-    kp = Counter(verdicts.values())
+    # plan cases (AMD plan + testplan/added.yaml) vs extra evidence tests (e.g. SMOKE-RCCL-*), counted separately
+    try:
+        sys.path.insert(0, str(Path(__file__).resolve().parent))
+        from plan_cases import load_cases
+        plan_ids = {c["id"] for c in load_cases()} | {"TC-AFM-005A", "TC-AFM-048A", "TC-AFM-035A"}
+    except Exception:  # noqa: BLE001 - outside the repo: count everything
+        plan_ids = set(verdicts)
+    extra = sorted(k for k in verdicts if k not in plan_ids)
+    kp = Counter(v for k, v in verdicts.items() if k in plan_ids)
     executed = kp["PASS"] + kp["FAIL"]
     rate = (100.0 * kp["PASS"] / executed) if executed else 0.0
     suites: "OrderedDict[str, list[dict]]" = OrderedDict((k, []) for k in SUITE_NAMES)
@@ -204,7 +213,8 @@ pre.logpre .lvl-note {{ color: #9aa7b4; font-style: italic; }}
       &nbsp;|&nbsp; Executed {esc(started[0] if started else "")} &rarr; {esc(started[-1] if started else "")}
       &nbsp;|&nbsp; Generated {datetime.now().strftime("%Y-%m-%d %H:%M")}</div>
     <div class="hero-pills">
-      <div class="pill"><div><div class="cap">Test cases</div><div class="val">{len(verdicts)} plan IDs &middot; {len(items)} test items</div>
+      <div class="pill"><div><div class="cap">Test cases</div><div class="val">{len(verdicts) - len(extra)} plan cases &middot; {len(items)} executions</div>
+        {f'<span class="chip">+{len(extra)} extra evidence test(s): {esc(", ".join(extra))}</span>' if extra else ''}
         <span class="chip">{len(suites)} suites</span><span class="chip">{len(runs)} run(s)</span></div></div>
       <div class="pill"><div><div class="cap">Executed result</div>
         <div class="val" style="color:{'#86efac' if kp['FAIL'] == 0 else '#fecaca'};">{kp['PASS']} / {executed} PASS</div>
