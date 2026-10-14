@@ -97,7 +97,11 @@ class SshTransport:
 
     def __init__(self, host: Host, connect_timeout: float = 15.0, keepalive: int = 30, jump: dict | None = None):
         self.host = host
-        self.jump = jump          # transport.jump: {host, user, port, key_file} - bastion in front of the rack
+        # transport.jump: {host, user, port, key_file, via} - bastion in front of the rack. via: tunnel (default)
+        # opens a direct-tcpip channel and logs in to the rack host with YOUR key; via: exec runs each command
+        # on the jump host as `ssh <rack host> ...`, so the jump host's own ssh config and key do the last hop
+        self.jump = jump
+        self.via_exec = bool(jump) and jump.get("via") == "exec"
         self.connect_timeout = connect_timeout
         self.keepalive = keepalive
         self._client = None
@@ -113,6 +117,8 @@ class SshTransport:
     def _connect(self):
         import paramiko
 
+        if self.via_exec:
+            return _jump_client(self.jump, self.connect_timeout)
         h = self.host
         client = paramiko.SSHClient()
         client.load_system_host_keys()
@@ -142,6 +148,12 @@ class SshTransport:
         # Enforce the timeout on the remote side too: closing the SSH channel does not kill a hung tool
         # (e.g. a GPU workload stuck in the driver), so coreutils `timeout` sends TERM, then KILL.
         remote = f"timeout -k {self.KILL_GRACE_S} {max(1, int(timeout))} bash -c {shlex.quote(full)}"
+        if self.via_exec:
+            h = self.host
+            target = f"{h.user}@{h.host}" if h.user else h.host
+            remote = ("ssh -q -o BatchMode=yes -o ControlMaster=auto -o ControlPath=~/.ssh/helios-cm-%C "
+                      f"-o ControlPersist=600 -o ConnectTimeout={int(self.connect_timeout)} -p {h.port} "
+                      f"{shlex.quote(target)} {shlex.quote(remote)}")
         start = time.monotonic()
         log.debug("[%s] $ %s", self.host.name, full)
         chan = self._ensure().get_transport().open_session(timeout=self.connect_timeout)
@@ -188,9 +200,9 @@ class SshTransport:
 
     def close(self) -> None:
         with self._lock:
-            if self._client:
+            if self._client and not self.via_exec:   # the jump connection is shared by every host
                 self._client.close()
-                self._client = None
+            self._client = None
 
     reset = close  # drop a (possibly dead) connection; the next run() reconnects
 
