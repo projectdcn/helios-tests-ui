@@ -5,11 +5,15 @@
 
 Per plan ID (several runs merge like tools/html_report.py: a run that executed a test beats one that
 skipped it, otherwise the later run wins):
-  FAIL     any item failed or errored       -> Execution Status FAIL, notes = first failure reason
+  FAIL     any item failed or errored       -> FAIL, notes = first failure reasons
+           ... but every failure is the test ENVIRONMENT (tool not installed, permission denied, unreachable,
+           name lookup, GPU not openable)    -> Pending, notes "Environment: <reason>" (not a product verdict)
+  PARTIAL  passed only on the trays the pre-flight kept -> PARTIAL, notes list the excluded trays
   PASS     every executed item passed       -> PASS (notes list items that were skipped, if any)
   BLOCKED  a pre-flight refused to start    -> Pending, notes "Blocked: <reason>"
-  SKIP     nothing executed                 -> left untouched (use --mark-skipped to write Pending + reason)
-Only columns F (status), G (SW version) and H (notes) of matched rows are written; the workbook must be
+  SKIP     nothing executed                 -> Skipped, notes "Skipped: <reason>" (--no-skipped leaves the row)
+New notes go ABOVE the row's earlier notes (kept as "Earlier: ..."); a rerun with the same --label replaces its
+own previous note. Columns F (status), G (SW version), H (notes) and an empty Scope column are written; the workbook must be
 closed in Excel (refused while its ~$ lock file exists). A timestamped backup is written next to it
 (--no-backup to skip). Execution Summary formulas recalculate when Excel opens the file.
 """
@@ -37,7 +41,12 @@ ROW_ALIASES = {
     "TC-AFM-048": ("TC-AFM-048", "Techsupport"),
     "TC-AFM-035A": (None, "Not allowed in Minirack"),
 }
-COL_STATUS, COL_VERSION, COL_NOTES = 6, 7, 8
+COL_STATUS, COL_VERSION, COL_NOTES, COL_ACCESS, COL_SCOPE = 6, 7, 8, 9, 10
+
+# failures that say "the test could not run here", not "the product is broken"
+ENV_PATTERNS = ("command not found", "not installed", "permission denied", "no rocm-capable device",
+                "name or service not known", "unreachable", "connect failed", "unable to open channel",
+                "no such file or directory", "rankaborted", "killed after the rank on")
 
 
 def reason(r: dict) -> str:
@@ -58,17 +67,36 @@ def verdicts(items: list[dict]) -> "OrderedDict[str, tuple[str, str]]":
     for tc, rows in by.items():
         outs = [r["outcome"] for r in rows]
         bad = [r for r in rows if r["outcome"] in ("failed", "error")]
-        if bad:
+        if bad and all(_env_only(r) for r in bad):
+            out[tc] = ("ENV", "Environment: " + reason(bad[0]))
+        elif bad:
             out[tc] = ("FAIL", reason(bad[0]))
         elif "blocked" in outs:
             out[tc] = ("BLOCKED", "Blocked: " + reason(next(r for r in rows if r["outcome"] == "blocked")))
+        elif "partial" in outs:
+            out[tc] = ("PARTIAL", reason(next(r for r in rows if r["outcome"] == "partial")))
         elif "passed" in outs:
             skipped = [r["test"] for r in rows if r["outcome"] == "skipped"]
             out[tc] = ("PASS", f"{len(rows) - len(skipped)} item(s) passed"
                        + (f"; skipped: {', '.join(skipped)[:200]}" if skipped else ""))
         else:
-            out[tc] = ("SKIP", "Not run: " + reason(rows[0]))
+            out[tc] = ("SKIP", "Skipped: " + reason(rows[0]))
     return out
+
+
+def _env_only(r: dict) -> bool:
+    """Every failure line of this item is an environment problem (see ENV_PATTERNS)."""
+    lines = [ln.strip(" -").lower() for ln in (r.get("message") or "").splitlines()
+             if ln.strip() and "check(s) failed" not in ln]
+    return bool(lines) and all(any(p in ln for p in ENV_PATTERNS) for ln in lines)
+
+
+def merge_notes(new: str, old, label: str) -> str:
+    """New note first, earlier notes kept below; a previous note from the same label is replaced."""
+    old = str(old or "").strip()
+    if label and old.startswith(f"[{label}]"):
+        old = old.split("\n\nEarlier: ", 1)[1] if "\n\nEarlier: " in old else ""
+    return f"{new}\n\nEarlier: {old}" if old else new
 
 
 def find_row(ws, tc: str) -> int | None:
@@ -89,7 +117,8 @@ def main() -> int:
     ap.add_argument("runs", type=Path, nargs="+", help="results/<rack>-<timestamp> folders")
     ap.add_argument("--sw-version", default="", help="SW Version column text (e.g. 'AFM 0.1.0-AICC-817')")
     ap.add_argument("--label", default="", help="prefix for notes, e.g. 'g02-g17 full rack, 2026-10-14'")
-    ap.add_argument("--mark-skipped", action="store_true", help="write Pending + reason for not-executed IDs")
+    ap.add_argument("--mark-skipped", action="store_true", help=argparse.SUPPRESS)   # now the default
+    ap.add_argument("--no-skipped", action="store_true", help="leave rows of not-executed IDs untouched")
     ap.add_argument("--dry-run", action="store_true", help="print what would change, write nothing")
     ap.add_argument("--no-backup", action="store_true")
     a = ap.parse_args()
@@ -107,14 +136,14 @@ def main() -> int:
     changed, unmatched, counts = [], [], {}
     runs = ", ".join(sorted({r["_run"] for r in items}))
     for tc, (v, note) in res.items():
-        if v == "SKIP" and not a.mark_skipped:
+        if v == "SKIP" and a.no_skipped:
             counts["SKIP (untouched)"] = counts.get("SKIP (untouched)", 0) + 1
             continue
         row = find_row(ws, tc)
         if row is None:
             unmatched.append(tc)
             continue
-        status = {"BLOCKED": "Pending", "SKIP": "Pending"}.get(v, v)
+        status = {"BLOCKED": "Pending", "ENV": "Pending", "SKIP": "Skipped"}.get(v, v)
         text = " ".join(x for x in (f"[{a.label}]" if a.label else "", note, f"(helios-tests {runs})") if x)
         old = ws.cell(row, COL_STATUS).value
         changed.append((tc, row, old, status, text))
@@ -123,7 +152,11 @@ def main() -> int:
             ws.cell(row, COL_STATUS).value = status
             if a.sw_version:
                 ws.cell(row, COL_VERSION).value = a.sw_version
-            ws.cell(row, COL_NOTES).value = text
+            ws.cell(row, COL_NOTES).value = merge_notes(text, ws.cell(row, COL_NOTES).value,
+                                                        a.label)
+            if str(ws.cell(2, COL_SCOPE).value or "").strip() == "Scope" and not ws.cell(row, COL_SCOPE).value:
+                from access_needed import scope
+                ws.cell(row, COL_SCOPE).value = scope(str(ws.cell(row, COL_ACCESS).value or ""))
             for c in (COL_STATUS, COL_VERSION, COL_NOTES):
                 ws.cell(row, c)._style = copy.copy(ws.cell(ref, c)._style)
             ws.cell(row, COL_NOTES).alignment = Alignment(wrap_text=True, vertical="top")

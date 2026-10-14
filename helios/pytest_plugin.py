@@ -24,6 +24,8 @@ MARKERS = [
     "disruptive: changes rack state (link/agent/controller); needs --allow-disruptive",
     "stress: loads the device under test but restores it afterwards",
     "manual: needs a physical/thermal stimulus; needs --run-manual",
+    "datapath(tools=[], min_computes=1): what the datapath pre-flight must find on each tray "
+    "(tools: transferbench, rccl_tests, rccl_smoke) and how many healthy trays the test needs",
 ]
 
 
@@ -121,20 +123,32 @@ def computes(rack, pytestconfig):
 
 
 @pytest.fixture
-def datapath_ready(rack, computes, inventory, pytestconfig):
-    """Fail fast (no traffic) when the IFoE fabric is known-broken; see helios/preflight.py.
-    Result cached per set of computes for the session. Disable: thresholds.datapath.preflight.enabled: false."""
+def datapath_ready(rack, computes, inventory, pytestconfig, request):
+    """Datapath pre-flight (helios/preflight.py) before any IFoE traffic. Unhealthy trays - unreachable, GPUs not
+    ACTIVE / not openable / busy, a tool the test declares missing, a black-holed port - are REMOVED from this
+    test's ``computes`` (the same list object the test receives) and recorded as ``excluded_trays``; the test is
+    blocked ("pre-flight failed") only for rack-wide problems or when fewer than ``min_computes`` trays remain.
+    Cached per (trays, tools) for the session. Disable: thresholds.datapath.preflight.enabled: false."""
     if inventory.th("datapath.preflight.enabled", True) is False:
         return
     from . import preflight
 
+    m = request.node.get_closest_marker("datapath")
+    tools = tuple(sorted((m.kwargs.get("tools") if m else None) or ()))
+    need = int((m.kwargs.get("min_computes") if m else None) or 1)
     cache = pytestconfig.__dict__.setdefault("_helios_preflight", {})
-    key = tuple(sorted(c.name for c in computes))
+    key = (tuple(sorted(c.name for c in computes)), tools, need)
     if key not in cache:
-        cache[key] = preflight.run(rack, computes, inventory)
-    if cache[key]:
+        cache[key] = preflight.assess(rack, computes, inventory, tools, need)
+    a = cache[key]
+    if a.problems:
         pytest.fail("datapath pre-flight failed - not starting IFoE traffic (it would hang or be meaningless):\n"
-                    + "\n".join(f"  - {p}" for p in cache[key]), pytrace=False)
+                    + "\n".join(f"  - {p}" for p in a.problems), pytrace=False)
+    if a.excluded:
+        computes[:] = [c for c in computes if c.name not in a.excluded]
+        request.node.user_properties.append(("excluded_trays", dict(sorted(a.excluded.items()))))
+        logging.getLogger("helios").warning("datapath pre-flight: %d tray(s) excluded, running on %s:\n%s", len(a.excluded),
+                    ",".join(c.name for c in computes), "\n".join(f"  - {v}" for v in a.excluded.values()))
 
 
 @pytest.fixture
@@ -210,6 +224,11 @@ def pytest_runtest_makereport(item, call):
         if rep.when == "setup" and rep.failed:
             # a pre-flight (datapath / RDMA / AFM rack health) refused to start: not a test failure
             outcome = "blocked" if "pre-flight failed" in (rep.longreprtext or "") else "error"
+        excluded = dict(item.user_properties).get("excluded_trays")
+        if outcome == "passed" and excluded:
+            # passed, but only on the trays the pre-flight kept: not a full-rack PASS
+            outcome = "partial"
+            msg = "passed on the remaining trays; excluded: " + "; ".join(excluded.values())
         suite, test, desc = _describe(item)
         item.config._helios_reports.append({
             "tc_id": tc_id(item) or "",
@@ -251,9 +270,10 @@ def pytest_sessionfinish(session):
         w = csv.writer(f)
         w.writerow(["tc_id", "verdict", "passed", "failed", "skipped", "error", "blocked"])
         for tc, outs in sorted(by_tc.items()):
-            n = {k: outs.count(k) for k in ("passed", "failed", "skipped", "error", "blocked")}
+            n = {k: outs.count(k) for k in ("passed", "failed", "skipped", "error", "blocked", "partial")}
             verdict = ("FAIL" if n["failed"] or n["error"] else
                        "BLOCKED" if n["blocked"] else
+                       "PARTIAL" if n["partial"] else
                        "PASS" if n["passed"] and not n["skipped"] else
                        "SKIP" if not n["passed"] else "PARTIAL")
             w.writerow([tc, verdict, n["passed"], n["failed"], n["skipped"], n["error"], n["blocked"]])

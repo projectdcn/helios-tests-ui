@@ -6,13 +6,43 @@ failures in ``checks`` and returns the measurements; the caller asserts.
 """
 from __future__ import annotations
 
+import ipaddress
 import re
+import socket
+import uuid
+from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor, wait
 
 import pytest
 
 from .compute import render
 from .parsers import parse_bandwidth, parse_rccl, parse_size
 from .rack import Checks, fan_out
+
+
+def use_sudo(inventory) -> bool:
+    """commands.datapath.sudo: run the traffic tools (TransferBench, RCCL) with sudo - for an account that is not in
+    the 'render' group and so cannot open /dev/kfd (g02-g17 tenant-hpe: 'no ROCm-capable device is detected')."""
+    return bool(inventory.cmd("datapath.sudo", False))
+
+
+def run_on(node, cmd: str, inventory, timeout: float):
+    return node.run(cmd, timeout=timeout, sudo=use_sudo(inventory))
+
+
+def addr(node) -> str:
+    """IP address of a compute for cross-tray rendezvous (master address, NCCL_COMM_ID, host lists): resolved on the
+    runner, because the trays themselves may not resolve each other's names (g02-g17 *.enclave-d, 14 Oct).
+    host.extra.data_addr overrides."""
+    h = str(node.host.extra.get("data_addr") or node.host.host)
+    try:
+        ipaddress.ip_address(h)
+        return h
+    except ValueError:
+        pass
+    try:
+        return socket.gethostbyname(h)
+    except OSError:
+        return h
 
 
 def template(inventory, key: str) -> str:
@@ -176,18 +206,52 @@ def transferbench_in_domain(computes, inventory, checks: Checks, size: str | Non
     min_bw = inventory.th("datapath.transferbench.in_domain_min_gbps")
 
     def run(c):
-        return c.run(render(tmpl, name=c.name, gpus=c.gpus, **kw), timeout=timeout)
+        return run_on(c, render(tmpl, name=c.name, gpus=c.gpus, **kw), inventory, timeout)
 
     return {c.name: _tb_check(c.name, r, exc, regexes, min_bw, checks)
             for c, r, exc in fan_out(run, computes, _workers(inventory, "parallel_computes", len(computes), True))}
 
 
-def run_ranks(jobs: list[tuple], timeout: float) -> list:
+class RankAborted(RuntimeError):
+    """A rank killed because another rank of the same job failed first."""
+
+
+def run_ranks(jobs: list[tuple], timeout: float, sudo: bool = False, abort_on_fail: bool = True) -> list:
     """Start every (node, command) at once (one SSH channel each) and wait for all of them.
-    For socket-bootstrapped multi-rank tools (TransferBench TB_RANK, RCCL NCCL_COMM_ID) —
-    no node-to-node SSH or MPI needed. Returns [(node, CmdResult | None, exc | None)] in order."""
-    return [(job[0], r, exc) for job, r, exc in
-            fan_out(lambda j: j[0].run(j[1], timeout=timeout), jobs, len(jobs))]
+    For socket-bootstrapped multi-rank tools (TransferBench TB_RANK, RCCL NCCL_COMM_ID) - no node-to-node SSH or
+    MPI needed. Returns [(node, CmdResult | None, exc | None)] in order.
+
+    abort_on_fail: as soon as one rank fails, the others are killed (they would otherwise wait for their peer
+    until the timeout - 300 s per tray pair on g02-g17, 14 Oct); they come back as RankAborted."""
+    tag = uuid.uuid4().hex[:12]
+    cmds = [f"HELIOS_RUN={tag} {cmd}" for _, cmd in jobs]       # marks this job's processes for pkill
+    out: list = [None] * len(jobs)
+    aborted_by: str | None = None
+    with ThreadPoolExecutor(max_workers=max(1, len(jobs))) as ex:
+        futs = {ex.submit(node.run, cmd, timeout=timeout, sudo=sudo): i for i, ((node, _), cmd) in enumerate(zip(jobs, cmds))}
+        pending = set(futs)
+        while pending:
+            done, pending = wait(pending, return_when=FIRST_COMPLETED)
+            for f in done:
+                i = futs[f]
+                try:
+                    r, exc = f.result(), None
+                except Exception as e:  # noqa: BLE001 - reported per rank
+                    r, exc = None, e
+                out[i] = (jobs[i][0], r, exc)
+                failed = exc is not None or not r.ok
+                if failed and abort_on_fail and aborted_by is None and pending:
+                    aborted_by = jobs[i][0].name
+                    for j in {futs[p] for p in pending}:
+                        try:   # [N] keeps pkill from matching its own command line
+                            jobs[j][0].run(f"pkill -TERM -f 'HELIOS_RU[N]={tag}'", timeout=30, sudo=sudo)
+                        except Exception:  # noqa: BLE001 - best effort; the remote timeout still applies
+                            pass
+    if aborted_by:
+        for i, (node, r, exc) in enumerate(out):
+            if node.name != aborted_by and exc is None and r is not None and not r.ok:
+                out[i] = (node, None, RankAborted(f"killed after the rank on {aborted_by} failed"))
+    return out
 
 
 def _tb_multirank(pairs, inventory, checks, regexes, kw, timeout, min_bw) -> dict:
@@ -196,9 +260,9 @@ def _tb_multirank(pairs, inventory, checks, regexes, kw, timeout, min_bw) -> dic
     out = {}
     for a, b in pairs:
         tag = f"{a.name}->{b.name}"
-        jobs = [(node, render(tmpl, rank=r, num_ranks=2, master_addr=a.host.host, name=node.name, gpus=node.gpus, **kw))
+        jobs = [(node, render(tmpl, rank=r, num_ranks=2, master_addr=addr(a), name=node.name, gpus=node.gpus, **kw))
                 for r, node in enumerate((a, b))]
-        res = run_ranks(jobs, timeout)
+        res = run_ranks(jobs, timeout, sudo=use_sudo(inventory))
         for node, r, exc in res[1:]:
             checks.check(not exc and r.ok, f"{tag}: worker rank on {node.name} failed: {exc or f'rc={r.rc} {r.tail()!r}'}")
         _, r0, exc0 = res[0]
@@ -225,8 +289,8 @@ def transferbench_cross_domain(computes, inventory, checks: Checks, size: str | 
 
     def run(pair):
         a, b = pair
-        return a.run(render(tmpl, src_name=a.name, dst_name=b.name, src_host=a.host.host, dst_host=b.host.host,
-                            gpus=a.gpus, **kw), timeout=timeout)
+        return run_on(a, render(tmpl, src_name=a.name, dst_name=b.name, src_host=addr(a), dst_host=addr(b),
+                                gpus=a.gpus, **kw), inventory, timeout)
 
     return {f"{a.name}->{b.name}": _tb_check(f"{a.name}->{b.name}", r, exc, regexes, min_bw, checks)
             for (a, b), r, exc in fan_out(run, pairs, _workers(inventory, "parallel_pairs", len(pairs), False))}
@@ -268,7 +332,7 @@ def rccl_in_domain(computes, inventory, checks: Checks, collective: str) -> dict
     kw = _rccl_kw(inventory)
 
     def run(c):
-        return c.run(render(tmpl, collective=collective, gpus=c.gpus, name=c.name, **kw), timeout=timeout)
+        return run_on(c, render(tmpl, collective=collective, gpus=c.gpus, name=c.name, **kw), inventory, timeout)
 
     busbw = {}
     for c, r, exc in fan_out(run, computes, _workers(inventory, "parallel_computes", len(computes), True)):
@@ -284,7 +348,7 @@ def rccl_cross_domain(computes, inventory, checks: Checks, collective: str) -> f
     if len(computes) < 2:
         pytest.skip("cross-domain RCCL needs >= 2 computes")
     timeout = float(inventory.cmd("rccl.timeout_s", 900))
-    hostlist = ",".join(f"{c.host.host}:{c.gpus}" for c in computes)
-    r = computes[0].run(render(tmpl, collective=collective, hostlist=hostlist, np=sum(c.gpus for c in computes),
-                               nodes=len(computes), **_rccl_kw(inventory)), timeout=timeout)
+    hostlist = ",".join(f"{addr(c)}:{c.gpus}" for c in computes)
+    r = run_on(computes[0], render(tmpl, collective=collective, hostlist=hostlist, np=sum(c.gpus for c in computes),
+                                   nodes=len(computes), **_rccl_kw(inventory)), inventory, timeout)
     return check_rccl(f"cross[{len(computes)} nodes]", r, collective, inventory, checks, "rccl_cross")

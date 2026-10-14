@@ -100,11 +100,13 @@ def test_in_domain_after_datapath_reset_partial_stations(computes, inventory, ch
     _reset_then_traffic("in", True, computes, inventory, checks, record_property)
 
 
+@pytest.mark.datapath(min_computes=2)
 @pytest.mark.tc("TC-RAS-reset-003")
 def test_cross_domain_after_datapath_reset_all_ports(computes, inventory, checks, record_property):
     _reset_then_traffic("cross", False, computes, inventory, checks, record_property)
 
 
+@pytest.mark.datapath(min_computes=2)
 @pytest.mark.tc("TC-RAS-reset-004")
 def test_cross_domain_after_datapath_reset_partial_stations(computes, inventory, checks, record_property):
     _reset_then_traffic("cross", True, computes, inventory, checks, record_property)
@@ -147,16 +149,19 @@ def _power_event(kind, rack, computes, inventory, checks, record_property):
     checks.assert_all()
 
 
+@pytest.mark.datapath(min_computes=2)
 @pytest.mark.tc("TC-RAS-reset-007")
 def test_os_reboot_one_node(rack, computes, inventory, checks, record_property):
     _power_event("reboot", rack, computes, inventory, checks, record_property)
 
 
+@pytest.mark.datapath(min_computes=2)
 @pytest.mark.tc("TC-RAS-reset-008")
 def test_dc_cycle_one_node(rack, computes, inventory, checks, record_property):
     _power_event("dc_cycle", rack, computes, inventory, checks, record_property)
 
 
+@pytest.mark.datapath(min_computes=2)
 @pytest.mark.tc("TC-RAS-reset-009")
 def test_ac_cycle_one_node(rack, computes, inventory, checks, record_property):
     _power_event("ac_cycle", rack, computes, inventory, checks, record_property)

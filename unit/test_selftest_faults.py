@@ -203,8 +203,9 @@ FAULTS = {
     "tb_worker_rank_fails": (lambda d: _edit_rule(d, "TB_RANK=[1-9]", rc=1, stderr="connect to master failed"),
                              {"TC-AFM-003", "TC-RAS-reset-003", "TC-RAS-reset-004", "TC-RAS-reset-007",
                               "TC-RAS-reset-008", "TC-RAS-reset-009"}),
+    # one bad tray: the pre-flight excludes c2 - single-tray cases run on c1 as PARTIAL, two-tray cases are BLOCKED
     "gpu_not_active": (lambda d: _edit(d / "afmctl_device_c2.json", r'"config_phase": "ACTIVE"', '"config_phase": "PROVIDER"'),
-                       {"TC-BU-011", *GATED_TRAFFIC}),  # pre-flight blocks all traffic tests
+                       {"TC-BU-011", *GATED_TRAFFIC}),
     "ping_no_summary": (lambda d: _edit(d / "afmctl_ping.txt", r"Summary:(.|\n)*", "ERR - Failed to start ping test\n"),
                         {"TC-AFM-001", "TC-HW-017", *GATED_TRAFFIC}),
     # MR3 failure mode: one plane silently drops a port's ingress while links/LLDP/VLAN look healthy
@@ -237,6 +238,10 @@ FAULTS = {
     "rdma_nic_link_down": (lambda d: _edit(d / "rdma_link.txt", r"ionic_2/1 state ACTIVE physical_state LINK_UP",
                                            "ionic_2/1 state DOWN physical_state DISABLED"), IBS_ALL),
     "perftest_without_rocm": (lambda d: _edit(d / "perftest_help.txt", r".*use_rocm.*\n", ""), IBS_ALL),
+    # the tools a datapath test declares are missing on every tray (g02-g17: TransferBench not installed on 7 trays):
+    # the pre-flight excludes all trays for exactly those tests -> BLOCKED; tests without declared tools still run
+    "tools_missing": (lambda d: _edit_rule(d, "^command -v", rc=1),
+                      {"TC-AFM-002", "TC-AFM-003", "TC-AFM-004", "TC-AFM-005A", "SMOKE-RCCL-1N", "SMOKE-RCCL-MN"}),
     "thermalctld_down": (lambda d: _edit_rule(d, "thermalctld", stdout="thermalctld   EXITED\n"), {"TC-SWH-004"}),
 }
 

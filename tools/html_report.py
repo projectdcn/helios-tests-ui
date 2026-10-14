@@ -35,7 +35,7 @@ SUITE_NAMES = OrderedDict([
     ("scaleout/test_rdma_perftest", "Scale-out RDMA (TC-IBS)"),
 ])
 STATUS = {"passed": ("PASS", "pass"), "failed": ("FAIL", "fail"), "error": ("ERROR", "fail"),
-          "blocked": ("BLOCKED", "blocked"), "skipped": ("SKIP", "skip")}
+          "blocked": ("BLOCKED", "blocked"), "skipped": ("SKIP", "skip"), "partial": ("PARTIAL", "blocked")}
 
 
 def load_runs(dirs: list[Path]) -> list[dict]:
@@ -47,7 +47,9 @@ def load_runs(dirs: list[Path]) -> list[dict]:
             log = d / r["log"] if r.get("log") else None
             r["_log"] = log.read_text(errors="replace") if log and log.exists() else ""
             prev = items.get(r["nodeid"])
-            if prev is None or prev["outcome"] == "skipped" or r["outcome"] != "skipped":
+            # an executed result beats a skip or a pre-flight block; a later run beats an earlier one otherwise
+            # (an earlier BLOCKED must not hide a later run's skip reason)
+            if prev is None or prev["outcome"] in ("skipped", "blocked") or r["outcome"] not in ("skipped", "blocked"):
                 items[r["nodeid"]] = r
     return list(items.values())
 
@@ -90,6 +92,7 @@ def plan_verdicts(items: list[dict]) -> dict[str, str]:
     for tc, outs in by.items():
         v[tc] = ("FAIL" if any(o in ("failed", "error") for o in outs) else
                  "BLOCKED" if "blocked" in outs else
+                 "PARTIAL" if "partial" in outs else
                  "PASS" if all(o == "passed" for o in outs) else
                  "SKIP" if all(o == "skipped" for o in outs) else "PASS")
     return v
@@ -290,7 +293,7 @@ pre.logpre .lvl-note {{ color: #9aa7b4; font-style: italic; }}
             log = r.get("_log", "").rstrip()
             nlines = log.count("\n") + 1 if log else 0
             fail = ""
-            if r["outcome"] in ("failed", "error", "blocked") and r.get("message"):
+            if r["outcome"] in ("failed", "error", "blocked", "partial") and r.get("message"):
                 fail = f'<pre class="failpre">{esc(r["message"])}</pre>'
             props = ""
             if r.get("properties"):

@@ -118,8 +118,10 @@ class SshTransport:
         import paramiko
 
         if self.via_exec:
-            # one jump connection per rack host: sshd's MaxSessions (10) refuses more channels on a shared one
-            return _jump_client(self.jump, self.connect_timeout, tag=self.host.name)
+            # one shared jump connection used for at most jump.sessions (2) commands at a time: the g02-g17 jump
+            # host allows 2 sessions per connection (measured 13 Oct) and throttles bursts of logins, so commands
+            # queue here. Fine for small read-only runs; run big or parallel suites ON the jump host instead.
+            return _jump_client(self.jump, max(self.connect_timeout, 60))
         h = self.host
         client = paramiko.SSHClient()
         client.load_system_host_keys()
@@ -155,9 +157,18 @@ class SshTransport:
             remote = ("ssh -q -o BatchMode=yes -o ControlMaster=auto -o ControlPath=~/.ssh/helios-cm-%C "
                       f"-o ControlPersist=600 -o ConnectTimeout={int(self.connect_timeout)} -p {h.port} "
                       f"{shlex.quote(target)} {shlex.quote(remote)}")
-        start = time.monotonic()
         log.debug("[%s] $ %s", self.host.name, full)
-        chan = self._ensure().get_transport().open_session(timeout=self.connect_timeout)
+        client = self._ensure()                    # connecting (queued behind other jump logins) is not run time
+        sem = _JUMP_SEMS.get(id(client)) if self.via_exec else None
+        if sem:
+            sem.acquire()
+        start = time.monotonic()
+        try:
+            chan = client.get_transport().open_session(timeout=self.connect_timeout)
+        except Exception:
+            if sem:
+                sem.release()
+            raise
         try:
             chan.exec_command(remote)
             out, err = bytearray(), bytearray()
@@ -189,6 +200,8 @@ class SshTransport:
             rc = chan.recv_exit_status()
         finally:
             chan.close()
+            if sem:
+                sem.release()
         res = CmdResult(self.host.name, cmd, rc, out.decode(errors="replace"),
                         err.decode(errors="replace"), time.monotonic() - start)
         if rc == 124:
@@ -302,6 +315,7 @@ class ReplayTransport:
 
 
 _JUMPS: dict[tuple, Any] = {}
+_JUMP_SEMS: dict[int, threading.Semaphore] = {}   # id(jump client) -> concurrent-session limit
 _JUMP_LOCK = threading.Lock()
 
 
@@ -324,6 +338,8 @@ def _jump_client(jump: dict, timeout: float, tag: str = ""):
         c.get_transport().set_keepalive(30)
         log.debug("jump host %s@%s:%s connected", key[2], key[0], key[1])
         _JUMPS[key] = c
+        _JUMP_SEMS[id(c)] = threading.Semaphore(int(jump.get("sessions", 2)))
+        time.sleep(float(jump.get("login_gap_s", 0.3)))   # space out logins (sshd MaxStartups)
         return c
 
 

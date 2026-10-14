@@ -293,8 +293,9 @@ Summary:
   Non-IFoE        : 35/35 PASS, 0/35 fail (0.00% loss)
 """, name="afmctl_ping.txt", regex=True)
 # TransferBench socket multi-rank: rank 0 prints the results, workers print nothing
-rules.append({"cmd": r"^TB_NUM_RANKS=\d+ TB_RANK=0 ", "rc": 0, "file": "transferbench.txt"})  # same output as single-node
-add(r"^TB_NUM_RANKS=\d+ TB_RANK=[1-9]", "", regex=True)
+# (multi-rank jobs carry a HELIOS_RUN=<tag> marker so a failed job's other ranks can be killed)
+rules.append({"cmd": r"^(HELIOS_RUN=\w+ )?TB_NUM_RANKS=\d+ TB_RANK=0 ", "rc": 0, "file": "transferbench.txt"})
+add(r"^(HELIOS_RUN=\w+ )?TB_NUM_RANKS=\d+ TB_RANK=[1-9]", "", regex=True)
 add(r"RcclSmokeTest", """RcclSmokeTest v0.36 (96e7ac2)
 Running single-node smoke test
 GPUs      : 4
@@ -402,8 +403,20 @@ add(r"^docker logs --since \d+s device-metrics-exporter", 'time="2026-10-12T10:0
 # ------------------------------------------------- IFoE driver / GPU health (computes)
 add("amd-smi list", "".join(f"GPU: {i}\n    BDF: 0000:{0x11 + i:02x}:00.0\n    UUID: 1234-{i}\n" for i in range(4)),
     name="amd_smi_list.txt")
+# datapath pre-flight (helios/preflight.py): GPU access/visibility, other GPU users, tools installed
+add("amd-smi list --json", _json.dumps([{"gpu": i, "bdf": f"0000:{0x11 + i:02x}:00.0"} for i in range(4)]),
+    name="amd_smi_list.json")
+add("amd-smi process --json", _json.dumps([{"gpu": i, "process_list": [{"process_info": "No running processes detected"}]}
+                                          for i in range(4)]), name="amd_smi_process.json")
+add(r"^command -v \S+ >/dev/null 2>&1 \|\| test -x \S+$", "", regex=True)
+add(r"^pkill -TERM -f 'HELIOS_RU\[N\]=\w+'$", "", regex=True)
 add(r"^modprobe (-r )?ifoe$", "", regex=True)
 add("lsmod | grep -q '^ifoe '", "", rcs=[1, 0])   # unloaded after unload, loaded after load
+
+# pre-flight probes first: broad traffic rules (RcclSmokeTest, *_perf) would otherwise match "command -v <tool>"
+_first = [r for r in rules if r["cmd"].startswith(("^command\\ -v", "^command -v", "^pkill", "^amd\\-smi\\ list\\ \\-\\-json",
+                                                   "^amd\\-smi\\ process"))]
+rules[:] = _first + [r for r in rules if r not in _first]
 
 OUT.mkdir(exist_ok=True)
 for name, text in files.items():

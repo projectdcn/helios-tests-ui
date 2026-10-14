@@ -14,7 +14,7 @@ import random
 
 import pytest
 
-from helios.datapath import run_ranks
+from helios.datapath import addr, run_on, run_ranks, use_sudo
 from helios.parsers import parse_smoketest
 from helios.rack import fan_out
 
@@ -46,13 +46,14 @@ def _judge(tag: str, r, checks, allow_oom: bool) -> None:
     checks.check(r.ok, f"{tag}: exit code {r.rc}")
 
 
+@pytest.mark.datapath(tools=["rccl_smoke"])
 @pytest.mark.tc("SMOKE-RCCL-1N")
 def test_rccl_smoke_single_node(datapath_ready, computes, inventory, checks):
     """Each compute tray on its own: all local GPUs, all collectives x 1KB/4MB/1GB."""
     cmd = " ".join(x for x in (_cfg(inventory, "env", ""), _bin(inventory), _cfg(inventory, "args", "")) if x)
     timeout = float(_cfg(inventory, "timeout_s", 600))
     allow_oom = bool(_cfg(inventory, "allow_oom_skip", False))
-    for c, r, exc in fan_out(lambda c: c.run(cmd, timeout=timeout), computes):
+    for c, r, exc in fan_out(lambda c: run_on(c, cmd, inventory, timeout), computes):
         if exc:
             checks.fail(f"{c.name}: {exc}")
             continue
@@ -60,6 +61,7 @@ def test_rccl_smoke_single_node(datapath_ready, computes, inventory, checks):
     checks.assert_all()
 
 
+@pytest.mark.datapath(tools=["rccl_smoke"], min_computes=2)
 @pytest.mark.tc("SMOKE-RCCL-MN")
 def test_rccl_smoke_multi_node(datapath_ready, computes, inventory, checks):
     """One rank per GPU across all selected computes (cross-domain over the scale-up fabric)."""
@@ -68,7 +70,7 @@ def test_rccl_smoke_multi_node(datapath_ready, computes, inventory, checks):
     binary = _bin(inventory)
     env, args = _cfg(inventory, "env", ""), _cfg(inventory, "args", "")
     port = int(_cfg(inventory, "port", random.randint(20000, 60000)))
-    master = computes[0].host.host
+    master = addr(computes[0])
     nranks = sum(c.gpus for c in computes)
     jobs, rank = [], 0
     for c in computes:
@@ -77,7 +79,7 @@ def test_rccl_smoke_multi_node(datapath_ready, computes, inventory, checks):
                      f"--nranks {nranks} --rank {rank} --device {dev}", args]
             jobs.append((c, " ".join(p for p in parts if p)))
             rank += 1
-    results = run_ranks(jobs, float(_cfg(inventory, "timeout_s", 600)))
+    results = run_ranks(jobs, float(_cfg(inventory, "timeout_s", 600)), sudo=use_sudo(inventory))
     for i, (node, r, exc) in enumerate(results[1:], start=1):
         checks.check(not exc and r.ok, f"rank {i} on {node.name} failed: {exc or f'rc={r.rc} {r.tail(300)!r}'}")
     node0, r0, exc0 = results[0]

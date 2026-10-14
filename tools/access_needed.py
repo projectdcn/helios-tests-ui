@@ -191,6 +191,18 @@ def classify(case: dict, auto: dict) -> str:
     return SW_CMP + " (est.)"
 
 
+def scope(access: str) -> str | None:
+    """Scope column (J): where a case runs - Switch, Compute, Switch + Compute, or Switch (AFM API) (the AFM
+    controller runs on the switch trays) - derived from its Access needed value."""
+    a = (access or "").lower()
+    sw, cp = "switch" in a or a.startswith("mch"), "compute" in a or a.startswith("mch")
+    if sw and cp:
+        return "Switch + Compute"
+    if sw or cp:
+        return "Switch" if sw else "Compute"
+    return "Switch (AFM API)" if "afm" in a else None
+
+
 def table() -> dict[str, str]:
     cases = yaml.safe_load((ROOT / "testplan" / "manifest.yaml").read_text())["cases"]
     auto = automated()
@@ -198,21 +210,22 @@ def table() -> dict[str, str]:
 
 
 def rack_validated(run_dirs: list[Path]) -> set[str]:
-    """Plan IDs that executed on a real rack (PASS or FAIL - not SKIP/BLOCKED) in any of these runs."""
+    """Plan IDs that were run on a real rack in any of these runs - whatever the verdict: a case skipped on the rack
+    for a platform reason (e.g. no PSU fans on a busbar-fed switch) is still automated and attempted."""
     import csv
 
     out = set()
     for d in run_dirs:
         for f in list(d.glob("tc_summary.csv")) + list(d.glob("*/tc_summary.csv")):
             for r in csv.DictReader(open(f)):
-                if r["verdict"] in ("PASS", "FAIL", "PARTIAL"):
+                if r["verdict"] in ("PASS", "FAIL", "PARTIAL", "SKIP", "BLOCKED"):
                     out.add(r["tc_id"])
     return out
 
 
 def automation_values(validated: set[str]) -> dict[str, str]:
-    """Automaton(Yes/No/Inprogress): Yes = automated and executed on a rack; Inprogress = automated, not yet run
-    on a rack; No = not automated."""
+    """Automaton(Yes/No/Inprogress): Yes = automated and run on a rack (any result, including Skipped); Inprogress =
+    automated, never run on a rack; No = not automated."""
     auto = automated()
     cases = yaml.safe_load((ROOT / "testplan" / "manifest.yaml").read_text())["cases"]
     return {c["id"]: ("Yes" if c["id"] in validated else "Inprogress") if c["id"] in auto else "No" for c in cases}
@@ -279,8 +292,8 @@ def main() -> int:
     ap.add_argument("--dry-run", action="store_true")
     ap.add_argument("--summary", action="store_true", help="print counts per access class and exit")
     ap.add_argument("--automation", nargs="*", type=Path, metavar="RUN_DIR",
-                    help="also rewrite column D (Automaton Yes/No/Inprogress) from the code; Yes = executed on a rack "
-                         "in one of these result folders (e.g. results/mr3-*)")
+                    help="also rewrite column D (Automaton Yes/No/Inprogress) from the code; Yes = run on a rack (any "
+                         "result, Skipped included) in one of these result folders (e.g. results/g02-g17-*)")
     a = ap.parse_args()
     access = table()
     if a.summary or not a.workbooks:
