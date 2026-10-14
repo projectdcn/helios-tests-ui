@@ -282,6 +282,18 @@ def build(items: list[dict], args) -> str:
                     f'</div><div class="label">Not run / not automated</div></div>' if plan_rows is not None else "")
     executed = kp["PASS"] + kp["FAIL"]
     rate = (100.0 * kp["PASS"] / executed) if executed else 0.0
+    auto_pill = auto_card = ""
+    if plan_rows is not None:      # automation coverage (tools/coverage.py) in the hero pills + KPI cards
+        from coverage import coverage
+        cov = coverage()
+        ca, ct = cov["total"]
+        lv_chips = "".join(f'<span class="chip">{esc(lv)} {a}/{t} ({100.0 * a / t:.0f}%)</span>'
+                           for lv, (a, t) in cov["by_level"].items() if t)
+        auto_pill = (f'<div class="pill"><div><div class="cap">Automated</div>'
+                     f'<div class="val">{ca} / {ct} cases ({100.0 * ca / ct:.0f}%) &middot; {ct - ca} not automated</div>'
+                     f'{lv_chips}<a class="chip" href="#coverage" style="color:#fff">coverage &rarr;</a></div></div>')
+        auto_card = (f'<div class="kpi-card"><div class="num" style="color:var(--accent);">{100.0 * ca / ct:.0f}%</div>'
+                     f'<div class="label">Automated ({ca} / {ct})</div></div>')
     suites: "OrderedDict[str, list[dict]]" = OrderedDict((k, []) for k in SUITE_NAMES)
     for r in items:
         suites.setdefault(r["suite"], []).append(r)
@@ -358,7 +370,7 @@ pre.logpre .lvl-note {{ color: #9aa7b4; font-style: italic; }}
 .viz .pill .val {{ font-size:17px; font-weight:800; color:#fff; }}
 .viz .chip {{ display:inline-block; border-radius:20px; font-size:11px; padding:2px 10px; font-weight:600;
               background:rgba(255,255,255,0.15); color:#fff; border:1px solid rgba(255,255,255,0.3); margin:6px 6px 0 0; }}
-.viz .kpi-grid {{ display:grid; grid-template-columns:repeat(6,1fr); gap:14px; margin-bottom:28px; }}
+.viz .kpi-grid {{ display:grid; grid-template-columns:repeat(auto-fit,minmax(120px,1fr)); gap:14px; margin-bottom:28px; }}
 .viz .kpi-card {{ background:var(--card); border:1px solid var(--border); border-radius:12px; padding:16px 18px; }}
 .viz .kpi-card .num {{ font-size:32px; font-weight:800; }}
 .viz .kpi-card .label {{ color:var(--muted); font-size:11px; text-transform:uppercase; letter-spacing:.08em; margin-top:2px; }}
@@ -391,10 +403,11 @@ pre.logpre .lvl-note {{ color: #9aa7b4; font-style: italic; }}
         <span class="chip">{rate:.0f}% pass rate (executed)</span></div></div>
       <div class="pill"><div><div class="cap">Not executed</div><div class="val">{kp['PENDING']} pending &middot; {kp['BLOCKED']} blocked &middot; {kp['SKIP']} skipped &middot; {kp['N/A']} N/A{not_run_txt}</div>
         <span class="chip">blocked = datapath pre-flight refused traffic</span></div></div>
+      {auto_pill}
     </div>
   </div>
   <div class="kpi-grid">
-    <div class="kpi-card"><div class="num" style="color:var(--accent);">{n_cases}</div><div class="label">Test cases</div></div>{not_run_card}
+    <div class="kpi-card"><div class="num" style="color:var(--accent);">{n_cases}</div><div class="label">Test cases</div></div>{auto_card}{not_run_card}
     <div class="kpi-card"><div class="num" style="color:var(--pass);">{kp['PASS']}</div><div class="label">Passed</div></div>
     <div class="kpi-card"><div class="num" style="color:var(--fail);">{kp['FAIL']}</div><div class="label">Failed</div></div>
     <div class="kpi-card"><div class="num" style="color:var(--blocked);">{kp['PENDING'] + kp['BLOCKED']}</div><div class="label">Pending / blocked</div></div>
