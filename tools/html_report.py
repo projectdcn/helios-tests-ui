@@ -407,8 +407,9 @@ pre.logpre .lvl-note {{ color: #9aa7b4; font-style: italic; }}
         {f'<span class="chip">+{len(extra)} extra evidence test(s): {esc(", ".join(extra))}</span>' if extra else ''}
         <span class="chip">{len(suites)} suites</span><span class="chip">{len(runs)} run(s)</span></div></div>
       <div class="pill"><div><div class="cap">Executed result</div>
-        <div class="val" style="color:{'#86efac' if kp['FAIL'] == 0 else '#fecaca'};">{kp['PASS']} / {executed} PASS</div>
-        <span class="chip">{rate:.0f}% pass rate (executed)</span></div></div>
+        <div class="val" style="color:{'#86efac' if kp['FAIL'] == 0 else '#fecaca'};">{n_exec} executed &middot; {kp['PASS']} PASS &middot; {kp['FAIL']} FAIL</div>
+        <span class="chip">{n_exec - executed} pending / skipped / N/A</span>
+        <span class="chip">{rate:.0f}% pass rate ({kp['PASS']} of {executed} with a pass/fail verdict)</span></div></div>
       <div class="pill"><div><div class="cap">Not executed</div><div class="val">{kp['PENDING']} pending &middot; {kp['BLOCKED']} blocked &middot; {kp['SKIP']} skipped &middot; {kp['N/A']} N/A{not_run_txt}</div>
         <span class="chip">blocked = datapath pre-flight refused traffic</span></div></div>
       {auto_pill}
@@ -463,7 +464,7 @@ pre.logpre .lvl-note {{ color: #9aa7b4; font-style: italic; }}
     options: {{ responsive: true, maintainAspectRatio: false, cutout: '70%', plugins: {{ legend: {{ position: 'bottom', labels: {{ boxWidth: 12 }} }} }} }},
     plugins: [{{ id: 'ct', beforeDraw: function (c) {{ var a=c.chartArea, x=(a.left+a.right)/2, y=(a.top+a.bottom)/2, ctx=c.ctx;
       ctx.save(); ctx.font='bold 24px Segoe UI'; ctx.fillStyle='#e2e8f0'; ctx.textAlign='center'; ctx.textBaseline='middle';
-      ctx.fillText('{rate:.0f}%', x, y-8); ctx.font='12px Segoe UI'; ctx.fillStyle='#94a3b8'; ctx.fillText('executed pass', x, y+14); ctx.restore(); }} }}] }});
+      ctx.fillText('{rate:.0f}%', x, y-8); ctx.font='12px Segoe UI'; ctx.fillStyle='#94a3b8'; ctx.fillText('pass rate', x, y+14); ctx.restore(); }} }}] }});
   new Chart(document.getElementById('vizSuiteBar'), {{ type: 'bar',
     data: {{ labels: {json.dumps(suite_labels)}, datasets: [
       {{ label: 'Pass', data: {json.dumps([b[0] for b in bars])}, backgroundColor: P, borderRadius: 3 }},
