@@ -287,6 +287,13 @@ def build(items: list[dict], args) -> str:
     auto_pill = auto_card = ""
     # cases that ran on the rack = any status other than not run / not automated (pass, fail, pending, skip, N/A)
     n_exec = n_cases - kp["NOT RUN"] - kp["NOT AUTOMATED"]
+    detail = f"{kp['PENDING']} pending &middot; {kp['BLOCKED']} blocked &middot; {kp['SKIP']} skipped &middot; {kp['N/A']} N/A"
+    if plan_rows is not None:   # whole plan: pending / skipped / N/A ran on the rack and count as executed
+        not_exec_val = f"{kp['NOT RUN'] + kp['NOT AUTOMATED']}: {kp['NOT RUN']} automated, not run &middot; {kp['NOT AUTOMATED']} not automated"
+        not_exec_chips = '<span class="chip">not run = mostly disruptive cases awaiting approval, MCH-rack or lab-equipment cases</span>'
+    else:
+        not_exec_val = detail
+        not_exec_chips = '<span class="chip">blocked = datapath pre-flight refused traffic</span>'
     exec_txt = f" &middot; {n_exec} executed" if plan_rows is not None else ""
     exec_card = (f'<div class="kpi-card"><div class="num" style="color:var(--accent2);">{n_exec}</div>'
                  f'<div class="label">Executed ({100.0 * n_exec / n_cases:.0f}% of plan)</div></div>'
@@ -408,10 +415,10 @@ pre.logpre .lvl-note {{ color: #9aa7b4; font-style: italic; }}
         <span class="chip">{len(suites)} suites</span><span class="chip">{len(runs)} run(s)</span></div></div>
       <div class="pill"><div><div class="cap">Executed result</div>
         <div class="val" style="color:{'#86efac' if kp['FAIL'] == 0 else '#fecaca'};">{n_exec} executed &middot; {kp['PASS']} PASS &middot; {kp['FAIL']} FAIL</div>
-        <span class="chip">{n_exec - executed} pending / skipped / N/A</span>
+        <span class="chip">{n_exec - executed} without a pass/fail verdict: {kp['PENDING']} pending, {kp['SKIP']} skipped, {kp['N/A']} N/A</span>
         <span class="chip">{rate:.0f}% pass rate ({kp['PASS']} of {executed} with a pass/fail verdict)</span></div></div>
-      <div class="pill"><div><div class="cap">Not executed</div><div class="val">{kp['PENDING']} pending &middot; {kp['BLOCKED']} blocked &middot; {kp['SKIP']} skipped &middot; {kp['N/A']} N/A{not_run_txt}</div>
-        <span class="chip">blocked = datapath pre-flight refused traffic</span></div></div>
+      <div class="pill"><div><div class="cap">Not executed</div><div class="val">{not_exec_val}</div>
+        {not_exec_chips}</div></div>
       {auto_pill}
     </div>
   </div>
