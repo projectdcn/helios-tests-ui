@@ -695,21 +695,21 @@ class Handler(BaseHTTPRequestHandler):
             msg = json.loads(data)
             opts = msg["watch-options"]
         except (ValueError, KeyError, TypeError):
-            _write_frame(sock, 1, json.dumps({"error": "invalid watch options"}).encode())
+            _write_frame(sock, 1, _error_event("invalid AggWatchOptions: invalid character in watch options"))
             return _close(sock)
         kinds, rv_of = set(), {}
         for o in opts:
             g, k = o.get("group"), o.get("kind")
             known = {"cluster": set(CLUSTER_KINDS.values()), "monitoring": {"AlertPolicy"}}
             if k not in known.get(g, set()):
-                _write_frame(sock, 1, json.dumps({"error": f"unknown kind {g}/{k}"}).encode())
+                _write_frame(sock, 1, _error_event(f"unknown kind {g}/{k}"))
                 continue
             kinds.add((g, k))
             rv = ((o.get("options") or {}).get("meta") or {}).get("resource-version")
             if rv is not None and "ws_rv_ignored" not in st.f:
                 rv_of[(g, k)] = int(rv)
         if not opts:
-            _write_frame(sock, 1, json.dumps({"error": "empty watch options"}).encode())
+            _write_frame(sock, 1, _error_event("stream error: rpc error: code = Unknown desc = invalid watch options"))
             return _close(sock)
         w = {"kinds": kinds, "q": queue.Queue(), "close": False}
         with st.lock:
@@ -729,6 +729,9 @@ class Handler(BaseHTTPRequestHandler):
         try:
             if initial:
                 _write_frame(sock, 1, json.dumps({"events": initial}).encode())
+            if kinds and "no_listing_control" not in st.f:   # real AFM: end-of-list marker
+                _write_frame(sock, 1, json.dumps({"events": [{"type": "Control", "control": {
+                    "code": 1, "message": "Listing for watch complete"}}]}).encode())
             sock.settimeout(0.2)
             while True:
                 try:
@@ -754,6 +757,12 @@ class Handler(BaseHTTPRequestHandler):
                 if w in st.watchers:
                     st.watchers.remove(w)
             _close(sock)
+
+
+def _error_event(msg: str) -> bytes:
+    """Error as real AFM sends it on the watch stream (seen on MR3, AICC-797)."""
+    return json.dumps({"events": [{"type": "Error", "object": {"result": {"Str": "Error"}, "message": [msg],
+                                                               "code": 500}}]}).encode()
 
 
 def _recv_exact(sock, n: int) -> bytes:

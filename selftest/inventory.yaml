@@ -32,6 +32,7 @@ computes:
 afm:
   url: https://helios-afm.lab.example
   fake: true            # tests/afm run against selftest/fake_afm.py (in-process HTTPS + WebSocket)
+  rbac_reads_denied: true   # the fake enforces read RBAC; MR3 AICC-797 does not
   fake_faults: []
   fake_topology: {switches: 1, computes: 2, time_scale: 0.05}
   verify_tls: false

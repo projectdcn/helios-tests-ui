@@ -180,7 +180,28 @@ def table() -> dict[str, str]:
     return {c["id"]: classify(c, auto) for c in cases}
 
 
-def write(wb_path: Path, access: dict[str, str], dry: bool) -> None:
+def rack_validated(run_dirs: list[Path]) -> set[str]:
+    """Plan IDs that executed on a real rack (PASS or FAIL - not SKIP/BLOCKED) in any of these runs."""
+    import csv
+
+    out = set()
+    for d in run_dirs:
+        for f in list(d.glob("tc_summary.csv")) + list(d.glob("*/tc_summary.csv")):
+            for r in csv.DictReader(open(f)):
+                if r["verdict"] in ("PASS", "FAIL", "PARTIAL"):
+                    out.add(r["tc_id"])
+    return out
+
+
+def automation_values(validated: set[str]) -> dict[str, str]:
+    """Automaton(Yes/No/Inprogress): Yes = automated and executed on a rack; Inprogress = automated, not yet run
+    on a rack; No = not automated."""
+    auto = automated()
+    cases = yaml.safe_load((ROOT / "testplan" / "manifest.yaml").read_text())["cases"]
+    return {c["id"]: ("Yes" if c["id"] in validated else "Inprogress") if c["id"] in auto else "No" for c in cases}
+
+
+def write(wb_path: Path, access: dict[str, str], dry: bool, automation: dict[str, str] | None = None) -> None:
     lock = wb_path.with_name("~$" + wb_path.name)
     if lock.exists() and not dry:
         print(f"refusing: {wb_path.name} is open in Excel ({lock.name} exists) - save and close it first")
@@ -211,11 +232,18 @@ def write(wb_path: Path, access: dict[str, str], dry: bool) -> None:
                 missing.append(tid)
                 continue
             counts[val.split(" (")[0]] += 1
+            if automation is not None and sheet == "Testcases":
+                av = automation.get(key) or automation.get(tid)
+                if av:
+                    counts[f"Automation={av}"] += 1
+                    if not dry:
+                        ws.cell(r, 4).value = av
             if not dry:
                 ws.cell(r, col).value = val
                 ws.cell(r, col)._style = copy.copy(ws.cell(r, hdr_ref)._style)
                 ws.cell(r, col).alignment = Alignment(wrap_text=True, vertical="top")
-    print(f"{wb_path.name}: {sum(counts.values())} rows {'would get' if dry else 'got'} an access value")
+    print(f"{wb_path.name}: {sum(v for k, v in counts.items() if not k.startswith('Automation='))} rows "
+          f"{'would get' if dry else 'got'} an access value")
     for k, n in counts.most_common():
         print(f"  {n:>4}  {k}")
     if missing:
@@ -233,6 +261,9 @@ def main() -> int:
     ap.add_argument("workbooks", type=Path, nargs="*")
     ap.add_argument("--dry-run", action="store_true")
     ap.add_argument("--summary", action="store_true", help="print counts per access class and exit")
+    ap.add_argument("--automation", nargs="*", type=Path, metavar="RUN_DIR",
+                    help="also rewrite column D (Automaton Yes/No/Inprogress) from the code; Yes = executed on a rack "
+                         "in one of these result folders (e.g. results/mr3-*)")
     a = ap.parse_args()
     access = table()
     if a.summary or not a.workbooks:
@@ -242,8 +273,9 @@ def main() -> int:
             for k, n in Counter(access[i].replace(" (est.)", "") for i in ids).most_common():
                 print(f"  {n:>4}  {k}")
         return 0
+    automation = automation_values(rack_validated(a.automation)) if a.automation is not None else None
     for wb in a.workbooks:
-        write(wb, access, a.dry_run)
+        write(wb, access, a.dry_run, automation)
     return 0
 
 

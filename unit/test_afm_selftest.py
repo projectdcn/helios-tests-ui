@@ -172,6 +172,7 @@ LIFECYCLE_FAULTS = [
     ("configdone_stuck", {"TC-RAS-reset-006"}),
     ("no_readmit", {"TC-NA-019"}),
     ("configdone_stuck", {"TC-NA-016"}),
+    ("no_listing_control", {"TC-CTL-006"}),      # real AFM ends the initial list with a Control event
 ]
 # controls run alongside a fault and must still PASS (the fault is outside what they check)
 CONTROLS = {"one_failure_per_gpu": {"TC-E2E-048", "TC-E2E-137"}, "no_vpod_events": {"TC-E2E-030"},

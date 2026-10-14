@@ -18,6 +18,35 @@ FP = f"{CLUSTER}/failoverpolicies"
 
 # ------------------------------------------------------------------ RBAC
 
+def _write_probes(t: str, tag: str) -> list[tuple]:
+    """(group, method, path, body) - one harmless create per group, cleaned up with _probe_cleanup."""
+    return [
+        ("auth", "POST", f"{AUTH}/tenant/{t}/roles", {"kind": "Role", "api-version": "v1",
+                                                     "meta": {"name": f"{tag}-probe", "tenant": t},
+                                                     "spec": {"permissions": [perm("cluster", "Pod", ("read",))]}}),
+        ("monitoring", "POST", f"{MONITORING}/alertPolicies", {"meta": {"name": f"{tag}-probe"},
+                                                              "spec": {"resource": "Event", "enable": False}}),
+        ("cluster", "POST", FP, {"meta": {"name": f"{tag}-probe"},
+                                 "spec": {"datafabric-reconfig": "manual", "link-fail-threshold": 10}}),
+    ]
+
+
+def _probe_cleanup(t: str, group: str, tag: str) -> str:
+    return {"auth": f"{AUTH}/tenant/{t}/roles/{tag}-probe", "monitoring": f"{MONITORING}/alertPolicies/{tag}-probe",
+            "cluster": f"{FP}/{tag}-probe"}[group]
+
+
+def _reads(afm, user, t, granted: set, checks, record_property):
+    """Record what the user can READ in groups it was not granted. MR3 (AICC-797) answers 200 for any
+    authenticated user; inventory afm.rbac_reads_denied: true asserts 403 instead (strict read RBAC)."""
+    probes = {"auth": f"{AUTH}/tenant/{t}/users", "monitoring": f"{MONITORING}/alerts", "cluster": f"{CLUSTER}/computenodes"}
+    got = {g: user.raw("GET", path, relogin=False).status_code for g, path in probes.items() if g not in granted}
+    record_property("reads_of_ungranted_groups", got)
+    if afm.cfg.get("rbac_reads_denied"):     # inventory afm.rbac_reads_denied: true
+        for g, code in got.items():
+            checks.check(code == 403, f"read of ungranted group {g} -> HTTP {code}, expected 403")
+
+
 def _cluster_role_rbac(afm, make_user, uniq, checks, record_property):
     t = afm.tenant
     name = uniq("u")
@@ -25,10 +54,15 @@ def _cluster_role_rbac(afm, make_user, uniq, checks, record_property):
                                                   "actions": ["read"]}])
     checks.check(user.raw("GET", f"{CLUSTER}/computenodes").status_code == 200, "cluster-role user: GET computenodes != 200")
     checks.check(user.raw("GET", "/events/v1/events?page-size=5").status_code == 200, "cluster-role user: GET events != 200")
-    r = user.raw("GET", f"{AUTH}/tenant/{t}/users", relogin=False)
-    checks.check(r.status_code == 403, f"cluster-role user: GET auth users -> HTTP {r.status_code}, expected 403")
-    r = user.raw("GET", f"{MONITORING}/alerts", relogin=False)
-    checks.check(r.status_code == 403, f"cluster-role user: GET monitoring alerts -> HTTP {r.status_code}, expected 403")
+    # writes outside the granted groups must be denied
+    for what, method, path, body in _write_probes(t, name):
+        if what == "cluster":
+            continue
+        r = user.raw(method, path, body, relogin=False)
+        checks.check(r.status_code == 403, f"cluster-role user: {what} write ({method} {path}) -> HTTP {r.status_code}, expected 403")
+        if r.status_code < 300:
+            afm.delete_quiet(_probe_cleanup(t, what, name))
+    _reads(afm, user, t, {"cluster"}, checks, record_property)
     # bad login is rejected and counted
     bad = afm.as_user(name, pw + "x").login_raw()
     checks.check(bad.status_code == 401, f"wrong password login -> HTTP {bad.status_code}, expected 401")
@@ -50,8 +84,9 @@ def _cluster_role_rbac(afm, make_user, uniq, checks, record_property):
 @pytest.mark.l2
 @pytest.mark.tc("TC-AFM-043")
 def test_cluster_role_rbac(afm, make_user, uniq, checks, record_property):
-    """User + cluster/all + Event/read role: cluster and events 200, auth + monitoring 403; wrong password
-    -> 401 and failed-login-attempts > 0; role update granting auth/read takes effect."""
+    """User + cluster/all + Event/read role: cluster and events readable, writes in the auth and monitoring groups
+    denied (403); wrong password -> 401 and failed-login-attempts > 0; role update granting auth/read takes
+    effect."""
     _cluster_role_rbac(afm, make_user, uniq, checks, record_property)
     checks.assert_all()
 
@@ -67,20 +102,24 @@ def test_cluster_role_bad_login(afm, make_user, uniq, checks, record_property):
 @pytest.mark.l2
 @pytest.mark.tc("TC-CTL-046")
 def test_auth_monitoring_workload_roles(afm, make_user, uniq, checks, record_property):
-    """One user per group role: auth -> users list 200; monitoring -> alerts 200; workload -> cluster 403.
-    Every role user is denied the groups it was not granted."""
+    """One user per group role (auth, monitoring, workload): each can write (create) in its own group and is
+    denied writes (403) in the others; reads of other groups are recorded (strict with
+    inventory afm.rbac_reads_denied)."""
     t = afm.tenant
-    probes = {"auth": f"{AUTH}/tenant/{t}/users", "monitoring": f"{MONITORING}/alerts",
-              "cluster": f"{CLUSTER}/computenodes"}
     seen = {}
     for group in ("auth", "monitoring", "workload"):
-        u, _ = make_user(uniq(group[:4]), [perm(group)])
-        for g, path in probes.items():
-            code = u.raw("GET", path, relogin=False).status_code
-            seen[f"{group}->{g}"] = code
-            want = 200 if g == group else 403
-            checks.check(code == want, f"{group}-role user GET {path} -> HTTP {code}, expected {want}")
-    record_property("matrix", seen)
+        name = uniq(group[:4])
+        u, _ = make_user(name, [perm(group)])
+        for g, method, path, body in _write_probes(t, name):
+            code = u.raw(method, path, body, relogin=False).status_code
+            seen[f"{group} writes {g}"] = code
+            if code < 300:
+                afm.delete_quiet(_probe_cleanup(t, g, name))
+            want_ok = g == group
+            checks.check((code < 300) == want_ok,
+                         f"{group}-role user {method} {path} -> HTTP {code}, expected {'allowed' if want_ok else '403'}")
+        _reads(afm, u, t, {group} if group != "workload" else set(), checks, record_property)
+    record_property("write_matrix", seen)
     checks.assert_all()
 
 
@@ -104,8 +143,16 @@ def _audit(afm, selector: str, page: int = 200) -> list[dict]:
                      f"&sort-order=desc&page-size={page}")
 
 
+def _controller_now(afm) -> str:
+    """Newest audit record's creation-time: a cutoff on the controller's clock (MR3's controller is ~8 s behind
+    the runner, so a runner-clock cutoff missed fresh records)."""
+    evs = afm.items("/audit/v1/events?sort-by=meta.creation-time&sort-order=desc&page-size=1")
+    t = ((evs[0].get("meta") or {}).get("creation-time") if evs else "") or ""
+    return t.split(".")[0].rstrip("Z") + "Z" if t else datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
 def _audit_crud(afm, uniq, cleanup, checks, record_property):
-    start = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    start = _controller_now(afm)
     afm.as_user(afm.username, afm.password).login()  # a fresh Login audit record
     name = uniq("audit")
     path = f"{FP}/{name}"
@@ -181,7 +228,15 @@ def _metric(afm, kind: str, field: str, selectors=None, window="1h", group_by_fi
         q["selectors"] = [{"requirements": selectors}]
     if group_by_field:
         q["group-by-field"] = group_by_field
-    res = afm.post("/telemetry/v1/metrics", {"tenant": None, "namespace": None, "queries": [q]})
+    body = {"tenant": None, "namespace": None, "queries": [q]}
+    for attempt in range(8):                 # AFM rate-limits metric queries: 413 "query rate limit exceeded"
+        r = afm.raw("POST", "/telemetry/v1/metrics", body)
+        if r.status_code != 413:
+            break
+        time.sleep(min(2 ** attempt * 0.5, 10))
+    if r.status_code >= 400:
+        raise AssertionError(f"metrics query {kind}.{field} -> HTTP {r.status_code}: {r.text[:200]}")
+    res = r.json()
     return ((res or {}).get("results") or [{}])[0].get("series") or []
 
 

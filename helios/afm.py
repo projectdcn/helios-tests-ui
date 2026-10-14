@@ -254,9 +254,11 @@ class Watch:
 
     def __init__(self, ws):
         self.ws = ws
-        self.events: list[dict] = []
-        self.errors: list[str] = []  # non-event frames (server error messages)
+        self.events: list[dict] = []      # object events: Created / Updated / Deleted with a kind
+        self.controls: list[dict] = []    # {"type":"Control","control":{"code":1,"message":"Listing for watch complete"}}
+        self.errors: list[str] = []       # {"type":"Error",...} events and non-event frames
         self.closed = False
+        self.closed_at: float | None = None
 
     @staticmethod
     def options(*kinds: str, meta: dict | None = None) -> dict:
@@ -284,11 +286,11 @@ class Watch:
             return None
         except (websocket.WebSocketConnectionClosedException, ConnectionError, OSError) as e:
             log.debug("AFM WS< closed: %s", e)
-            self.closed = True
+            self.closed, self.closed_at = True, time.monotonic()
             return None
         if op == websocket.ABNF.OPCODE_CLOSE:
             log.debug("AFM WS< close frame %r", data[:200])
-            self.closed = True
+            self.closed, self.closed_at = True, time.monotonic()
             return None
         if op not in (websocket.ABNF.OPCODE_TEXT, websocket.ABNF.OPCODE_BINARY):
             return []
@@ -301,18 +303,41 @@ class Watch:
         if not isinstance(frame, dict) or "events" not in frame:
             self.errors.append(text[:300])
             return []
-        evs = frame.get("events") or []
+        evs = []
+        for e in frame.get("events") or []:
+            t = e.get("type")
+            if t == "Control":
+                self.controls.append(e)
+            elif t == "Error" or not e.get("kind"):
+                self.errors.append(json.dumps(e)[:300])
+            else:
+                evs.append(e)
         self.events.extend(evs)
         return evs
 
-    def collect(self, duration: float, until: Callable[[list[dict]], bool] | None = None) -> list[dict]:
-        """Read frames for up to ``duration`` s, stopping early when ``until(all events)`` or the server closes."""
+    def collect(self, duration: float, until: Callable[[list[dict]], bool] | None = None,
+                ping_every: float | None = None) -> list[dict]:
+        """Read frames for up to ``duration`` s, stopping early when ``until(all events)`` or the server closes.
+        ``ping_every``: send a WebSocket ping that often (keepalive)."""
         end = time.monotonic() + duration
+        next_ping = time.monotonic() + ping_every if ping_every else None
         while not self.closed and time.monotonic() < end:
-            self.recv(end - time.monotonic())
+            wait = end - time.monotonic()
+            if next_ping:
+                wait = min(wait, max(0.05, next_ping - time.monotonic()))
+            self.recv(wait)
+            if next_ping and time.monotonic() >= next_ping and not self.closed:
+                try:
+                    self.ws.ping()
+                except Exception:  # noqa: BLE001 - closed underneath us
+                    pass
+                next_ping = time.monotonic() + ping_every
             if until and until(self.events):
                 break
         return self.events
+
+    def listing_complete(self) -> bool:
+        return any("listing" in str((c.get("control") or {}).get("message", "")).lower() for c in self.controls)
 
     def close(self) -> None:
         try:

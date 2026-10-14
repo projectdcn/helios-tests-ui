@@ -282,17 +282,20 @@ def test_multi_kind_crud_ctl(afm, watch, uniq, cleanup, checks):
 @pytest.mark.tc("TC-CTL-006")
 def test_single_kind_watch_kinds(afm, watch, checks, record_property):
     """A single-kind watch works for each cluster kind (ComputeNode, SwitchNode, VPod, FailoverPolicy, Pod):
-    every connection returns that kind's current objects and nothing else."""
+    every connection returns that kind's current objects, then a Control event ("Listing for watch complete",
+    as AFM sends it), and no object of another kind."""
     lists = {"ComputeNode": afm.computes(), "SwitchNode": afm.switches(), "VPod": afm.vpods(),
              "FailoverPolicy": afm.items(FP), "Pod": afm.items(f"{CLUSTER}/pods")}
     got = {}
     for kind, objs in lists.items():
         want = {o["meta"]["name"] for o in objs}
         w = watch(f"cluster/{kind}")
-        w.collect(watch.event_wait, lambda evs, k=kind, wn=want: wn <= set(ev_names(evs, "Created", k)))
+        w.collect(watch.event_wait, lambda evs, k=kind, wn=want, w=w: wn <= set(ev_names(evs, "Created", k))
+                  and w.listing_complete())
         names = set(ev_names(w.events, "Created", kind))
         got[kind] = len(names)
         checks.check(want <= names, f"{kind}: missing {sorted(want - names)[:10]}")
+        checks.check(w.listing_complete(), f"{kind}: no Control 'Listing for watch complete' event")
         checks.check({e.get("kind") for e in w.events} <= {kind}, f"{kind} watch delivered {({e.get('kind') for e in w.events})}")
         w.close()
     record_property("initial_counts", got)
@@ -393,11 +396,16 @@ def test_client_disconnect(afm, watch, checks):
 @pytest.mark.l2
 @pytest.mark.tc("TC-AFM-AGGW-020")
 def test_idle_connection_alive(afm, inventory, watch, uniq, cleanup, checks, record_property):
-    """Subscribed connection idle for thresholds.afm.aggwatch.idle_s (120 s) is still open and delivers a new event."""
+    """Subscribed connection idle for thresholds.afm.aggwatch.idle_s (120 s) is still open and delivers a new event.
+    MR3 (AICC-797) closed it after ~32 s with "stream error: EOF"; set thresholds.afm.aggwatch.idle_ping_s to send
+    WebSocket pings while idle and see whether a keepalive changes that."""
     idle = float(inventory.th("afm.aggwatch.idle_s", 120))
+    ping = inventory.th("afm.aggwatch.idle_ping_s")          # optional client keepalive pings
     w = watch("monitoring/AlertPolicy")
-    w.collect(idle)
-    record_property("closed_while_idle", w.closed)
+    t0 = time.monotonic()
+    w.collect(idle, ping_every=float(ping) if ping else None)
+    record_property("idle", {"closed": w.closed, "after_s": round((w.closed_at or time.monotonic()) - t0, 1),
+                             "server_errors": w.errors[-2:], "pings_every_s": ping})
     checks.check(not w.closed, f"server closed the subscribed connection within {idle:.0f}s idle")
     if not w.closed:
         name = uniq("ap")

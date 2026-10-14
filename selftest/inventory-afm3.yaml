@@ -18,6 +18,7 @@ computes:
 afm:
   url: https://helios-afm.lab.example
   fake: true
+  rbac_reads_denied: true   # the fake enforces read RBAC; MR3 AICC-797 does not
   fake_topology: {switches: 3, computes: 3, time_scale: 0.05}
   fake_faults: []
   verify_tls: false
