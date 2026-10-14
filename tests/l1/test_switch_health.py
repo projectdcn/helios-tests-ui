@@ -28,7 +28,7 @@ from helios.afmctl import parse_port_description
 from helios.parsers import to_float
 from helios.rack import fan_out
 
-pytestmark = pytest.mark.l1
+# level per test (TC-SWH-038/045/046/047 are L2)
 
 DEFAULT_CONTAINERS = ["database", "pmon", "lldp", "database{n}", "swss{n}", "syncd{n}", "lldp{n}", "afm-agent"]
 DEFAULT_REBOOT_CAUSES = [r"User issued '?(warm-|fast-)?reboot", r"^reboot$", r"warm-reboot", r"fast-reboot",
@@ -37,6 +37,7 @@ DEFAULT_REBOOT_CAUSES = [r"User issued '?(warm-|fast-)?reboot", r"^reboot$", r"w
 
 # ------------------------------------------------------------------ TC-SWH-037
 
+@pytest.mark.l1
 @pytest.mark.tc("TC-SWH-037")
 def test_port_config_matches_cabling(switch, inventory, checks, record_property):
     """Every port described as a GPU link is a trunk, admin up and a VLAN member; with
@@ -78,6 +79,7 @@ def _profile(sw) -> dict:
     return {"version": sw.sonic_version(), "images": images, "port_layout": layout, "vlans": vlans}
 
 
+@pytest.mark.l2
 @pytest.mark.tc("TC-SWH-038")
 def test_switches_configured_consistently(rack, inventory, checks, record_property):
     """Every switch matches the majority on the SONiC build, the AFM agent image (and controller image where it
@@ -119,6 +121,7 @@ def _majority(what, vals: dict, checks, limit: int = 10) -> None:
 
 # ------------------------------------------------------------------ TC-SWH-039
 
+@pytest.mark.l1
 @pytest.mark.tc("TC-SWH-039")
 def test_transceivers_and_dom(switch, inventory, checks, record_property):
     """A module is present on every cabled fabric port and its DOM readings are within the limits. Skips when no
@@ -158,6 +161,7 @@ def test_transceivers_and_dom(switch, inventory, checks, record_property):
 
 # ------------------------------------------------------------------ TC-SWH-040
 
+@pytest.mark.l1
 @pytest.mark.tc("TC-SWH-040")
 def test_fec_health(switch, inventory, checks, record_property):
     """Uncorrectable FEC codewords do not increase over thresholds.switch.fec_window_s (30 s) on any up fabric
@@ -200,6 +204,7 @@ def _ts(iso: str) -> float | None:
         return None
 
 
+@pytest.mark.l1
 @pytest.mark.tc("TC-SWH-041")
 def test_critical_containers_running(switch, inventory, checks, record_property):
     """The critical containers run (per ASIC where named with {n}; afm-controller on afm.controller_nodes), none
@@ -235,6 +240,7 @@ def test_critical_containers_running(switch, inventory, checks, record_property)
 
 # ------------------------------------------------------------------ TC-SWH-042
 
+@pytest.mark.l1
 @pytest.mark.tc("TC-SWH-042")
 def test_no_unexpected_reboot_or_crash(switch, inventory, checks, record_property):
     """The last reboot cause is an expected one (user / warm / fast reboot, config reload) and /var/core holds no
@@ -282,6 +288,7 @@ def _short(line: str, n: int = 220) -> str:
     return re.sub(r"\s+", " ", line)[:n]
 
 
+@pytest.mark.l1
 @pytest.mark.tc("TC-SWH-043")
 def test_no_kernel_hardware_errors(switch, inventory, checks, record_property):
     """No hardware-error signature in the kernel messages of the last log_window_h hours: PCIe AER, machine check,
@@ -294,6 +301,7 @@ def test_no_kernel_hardware_errors(switch, inventory, checks, record_property):
     checks.assert_all()
 
 
+@pytest.mark.l1
 @pytest.mark.tc("TC-SWH-044")
 def test_no_new_syslog_errors(switch, inventory, checks, record_property):
     """No CRIT/ALERT/EMERG message, and no ERR message from syncd / orchagent / SAI / AFM agent that is not listed in
@@ -318,6 +326,7 @@ def test_no_new_syslog_errors(switch, inventory, checks, record_property):
     checks.assert_all()
 
 
+@pytest.mark.l2
 @pytest.mark.tc("TC-SWH-045")
 def test_fabric_links_stable(switch, inventory, checks, record_property):
     """Every fabric port that is oper up at the start stays up for thresholds.switch.link_watch_s (120 s), sampled every
@@ -340,6 +349,7 @@ def test_fabric_links_stable(switch, inventory, checks, record_property):
     checks.assert_all()
 
 
+@pytest.mark.l2
 @pytest.mark.tc("TC-SWH-046")
 def test_pfc_qos_consistent_no_storm(switch, inventory, checks, record_property):
     """PFC / QoS: every fabric port has the same PORT_QOS_MAP settings (and pfc_enable = thresholds.switch.pfc_enable
@@ -378,6 +388,7 @@ def test_pfc_qos_consistent_no_storm(switch, inventory, checks, record_property)
     checks.assert_all()
 
 
+@pytest.mark.l2
 @pytest.mark.tc("TC-SWH-047")
 def test_running_config_saved(switch, inventory, checks, record_property):
     """The running CONFIG_DB of the host and of every ASIC equals the saved /etc/sonic/config_db*.json (tables in

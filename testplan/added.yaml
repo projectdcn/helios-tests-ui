@@ -9,7 +9,7 @@ cases:
   category: switch-hw
   origin: added 2026-10-14
 - id: TC-SWH-038
-  level: L1
+  level: L2
   title: 'Switch trays configured consistently: same SONiC build, AFM agent/controller images, port speed/MTU/role layout
     and VLAN set on every switch'
   category: switch-hw
@@ -48,18 +48,18 @@ cases:
   category: switch-hw
   origin: added 2026-10-14
 - id: TC-SWH-045
-  level: L1
+  level: L2
   title: 'Fabric links stable: no oper-state change on any up fabric port over a watch window'
   category: switch-hw
   origin: added 2026-10-14
 - id: TC-SWH-046
-  level: L1
+  level: L2
   title: 'PFC / QoS consistent and healthy: same PFC and QoS maps on every fabric port and switch, no PFC storm (pause
     counters and PFC watchdog not growing)'
   category: switch-hw
   origin: added 2026-10-14
 - id: TC-SWH-047
-  level: L1
+  level: L2
   title: Running configuration matches the saved configuration (no unsaved changes that a reboot would revert)
   category: switch-hw
   origin: added 2026-10-14
