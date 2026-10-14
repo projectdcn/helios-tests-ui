@@ -9,6 +9,7 @@ from collections import Counter
 
 import pytest
 
+from helios.afm import conditions_ok
 from helios.afmctl import parse_port_description
 
 pytestmark = [pytest.mark.l2]
@@ -22,7 +23,7 @@ def _afm_computes(ops) -> dict[int, dict]:
         if slot is None:
             continue
         accs = {g.get("index"): g.get("acc-id") for g in ops.gpu_info(c).values()}
-        out[int(slot)] = {"name": c["meta"]["name"], "accs": accs,
+        out[int(slot)] = {"name": c["meta"]["name"], "accs": accs, "healthy": conditions_ok(c),
                           "admitted": (c.get("status") or {}).get("admission-phase") == "admitted"}
     return out
 
@@ -40,30 +41,40 @@ def _switch_fabric(sw) -> dict:
 
 @pytest.mark.tc("TC-SWH-048")
 def test_afm_and_switch_topology_agree(ops, checks, record_property):
-    """For every switch: each AFM-admitted compute's GPUs are cabled (port descriptions) with at least one up port
-    per GPU, the accelerator id in the description equals AFM's acc-id for that slot/GPU, and no port cabled to a
-    compute AFM does not admit is in service (VLAN member)."""
+    """For every switch: the accelerator ids in the port descriptions of each slot are exactly AFM's acc-ids for that
+    compute (the GPU numbering may differ - g02-g17 descriptions and AFM gpu-info order a tray's 4 GPUs differently),
+    every accelerator of an admitted and healthy compute has at least one up cabled port, and no port cabled to a
+    compute AFM does not admit is in service (VLAN member). Admitted-but-unhealthy computes are recorded."""
     if ops.rack is None or not ops.rack.switches:
         pytest.skip("no switch SSH in this inventory")
     comps = _afm_computes(ops)
     admitted = {s for s, c in comps.items() if c["admitted"]}
-    record_property("afm_computes", {"admitted": sorted(admitted), "not_admitted": sorted(set(comps) - admitted)})
+    healthy = {s for s in admitted if comps[s]["healthy"]}
+    record_property("afm_computes", {"admitted": sorted(admitted), "admitted_unhealthy": sorted(admitted - healthy),
+                                     "not_admitted": sorted(set(comps) - admitted)})
     for sw in ops.rack.switches.values():
         fab = _switch_fabric(sw)
-        cabled_up: dict[tuple[int, int], int] = Counter()
+        desc_accs: dict[int, set] = {}
+        up_accs: set = set()
         for ns, f in fab.items():
             for port, (slot, gpu, acc, _gp) in f["desc"].items():
-                where = f"{sw.name}/{ns}: {port} (Slot{slot}/GPU{gpu}[{acc}])"
-                c = comps.get(slot)
-                if c and gpu in c["accs"]:
-                    checks.check(c["accs"][gpu] == acc, f"{where}: AFM says acc-id {c['accs'][gpu]} for slot {slot} GPU{gpu}")
-                if slot in admitted and f["oper"].get(port):
-                    cabled_up[(slot, gpu)] += 1
-                if slot not in admitted:
-                    checks.check(port not in f["members"], f"{where}: in service (VLAN member) but AFM does not admit slot {slot}")
-        for slot in sorted(admitted):
-            for gpu in sorted(comps[slot]["accs"]):
-                checks.check(cabled_up[(slot, gpu)] > 0, f"{sw.name}: admitted {comps[slot]['name']} GPU{gpu} has no up cabled port")
+                desc_accs.setdefault(slot, set()).add(acc)
+                if f["oper"].get(port):
+                    up_accs.add(acc)
+                if slot in comps and slot not in admitted:
+                    checks.check(port not in f["members"],
+                                 f"{sw.name}/{ns}: {port} (Slot{slot}) in service (VLAN member) but AFM does not admit slot {slot}")
+        for slot, accs in sorted(desc_accs.items()):
+            c = comps.get(slot)
+            if c is None:
+                checks.fail(f"{sw.name}: ports cabled to slot {slot} (accelerators {sorted(accs)}) but AFM has no compute in that slot")
+                continue
+            afm_accs = set(c["accs"].values())
+            checks.check(accs <= afm_accs, f"{sw.name}: slot {slot} cabled accelerators {sorted(accs)} vs AFM {c['name']} "
+                                           f"acc-ids {sorted(afm_accs)}")
+        for slot in sorted(healthy):
+            missing = sorted(a for a in comps[slot]["accs"].values() if a not in up_accs)
+            checks.check(not missing, f"{sw.name}: healthy {comps[slot]['name']} accelerators {missing} have no up cabled port")
     checks.assert_all()
 
 
