@@ -156,7 +156,7 @@ def _prolonged(ops, links, checks, record_property, asics):
     checks.check(ops.vpod_state(sysv) in TERMINAL, f"{sysv} {ops.vpod_state(sysv)} with the link(s) down")
     extra = ops.oper_down(sw) - before_down - {(ns, p) for ns, p, _ in picks}
     checks.check(not extra, f"shutting {[p for _, p, _ in picks]} also took down {sorted(extra)} (coupled ports)")
-    evs = wait_for(lambda: [e for e in ops.events("link_down", since)
+    evs = ops.wait(lambda: [e for e in ops.events("link_down", since)
                             if any(p in str(e) for _, p, _ in picks)], 60, 10)
     checks.check(evs, "no link_down event for the shut port(s)")
     for ns, port, _ in picks:
@@ -221,7 +221,7 @@ def test_vpod_auto_reconfigure_on_link_down(ops, afm_ready, links, checks, recor
     checks.check(ops.vpod_state(sysv) != "needdatafabricreconfiguration", "automatic policy waited for manual action")
     links.restore(sw, ns, port, checks)
     _restored(ops, checks, sysv, base)
-    checks.check(wait_for(lambda: not (ops.failed_gpu_ports() - before), 120, 10), "GPU port still PortFailed after restore")
+    checks.check(ops.wait(lambda: not (ops.failed_gpu_ports() - before), 120, 10), "GPU port still PortFailed after restore")
     checks.assert_all()
 
 
@@ -335,11 +335,11 @@ def test_link_down_reconciliation(ops, afm_ready, links, checks, record_property
         time.sleep(float(ops.th("agent_settle_s", 30)))
     finally:
         ops.afm_agent(sw, "start")
-    checks.check(wait_for(lambda: ops.switch_ready(name), 300, 10), f"{name} not healthy after agent start")
+    checks.check(ops.wait(lambda: ops.switch_ready(name), 300, 10), f"{name} not healthy after agent start")
     t = ops.link_fail_threshold(sysv) * _scale(ops) + 120 * _scale(ops)
     ok = wait_for(lambda: (ops.planes(sysv)[1] or 0) < (base[1] or 0), t, 5)
     checks.check(ok, f"planes {ops.planes(sysv)} never dropped below baseline {base}: link-down not reconciled")
-    checks.check(wait_for(lambda: [e for e in ops.events("link_down", since) if port in str(e)], 60, 10),
+    checks.check(ops.wait(lambda: [e for e in ops.events("link_down", since) if port in str(e)], 60, 10),
                  f"no link_down event for {port} after reconciliation")
     links.restore(sw, ns, port, checks)
     _restored(ops, checks, sysv, base)
@@ -368,7 +368,7 @@ def test_vpod_degraded_on_link_down_during_create(ops, afm_ready, links, uniq, c
         record_property("state_with_link_down", st)
         checks.check(st == "degraded", f"{user} {st} when created with a link down, expected degraded")
         links.restore(sw, ns, port, checks)
-        ok = wait_for(lambda: ops.planes(user)[1] == ops.planes(user)[0] or ops.vpod_state(user) == "online", 300, 10)
+        ok = ops.wait(lambda: ops.planes(user)[1] == ops.planes(user)[0] or ops.vpod_state(user) == "online", 300, 10)
         checks.check(ok or ops.vpod_state(user) in TERMINAL, f"{user} not recovered after the port came back")
     finally:
         links.restore_all()
@@ -399,7 +399,7 @@ def test_switch_decommission_readmit_with_port_down(ops, afm_ready, links, check
         r = ops.afm.raw("DELETE", f"{CLUSTER}/switchnodes/{name}")
         checks.check(r.status_code in (200, 204), f"DELETE -> HTTP {r.status_code}")
         ops.reset_switch_identity(sw)
-        checks.check(wait_for(lambda: ops.switch_ready(name), float(ops.th("switch_readmit_s", 600)), 15),
+        checks.check(ops.wait(lambda: ops.switch_ready(name), float(ops.th("switch_readmit_s", 600)), 15),
                      f"{name} not re-admitted")
     finally:
         links.restore(sw, ns, port, checks)
@@ -410,6 +410,6 @@ def test_switch_decommission_readmit_with_port_down(ops, afm_ready, links, check
             elif ph != "admitted":
                 ops.afm.raw("DELETE", f"{CLUSTER}/switchnodes/{name}")
                 ops.reset_switch_identity(sw)
-            wait_for(lambda: ops.switch_ready(name), 600, 15)
+            ops.wait(lambda: ops.switch_ready(name), 600, 15)
     _restored(ops, checks, sysv, base)
     checks.assert_all()

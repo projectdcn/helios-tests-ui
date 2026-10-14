@@ -35,6 +35,11 @@ class AfmOps:
         v = self.inv.th(f"afm.{key}", default) if self.inv is not None else default
         return default if v is None else v
 
+    def wait(self, fn, timeout: float, interval: float = 10, what: str = ""):
+        """wait_for with rack seconds scaled by thresholds.afm.time_scale (1 on a rack; small in the self-test)."""
+        k = float(self.th("time_scale", 1))
+        return wait_for(fn, timeout * k, max(0.05, interval * k), what)
+
     # ================================================================ read helpers
     def compute(self, name: str) -> dict:
         return self.afm.get(f"{CN}/{name}")
@@ -94,11 +99,11 @@ class AfmOps:
         def ok():
             seen["s"] = self.vpod_state(name)
             return seen["s"] in states or seen["s"] in fail_states
-        wait_for(ok, timeout, float(self.th("poll_s", 10)), f"vPOD {name} in {states}")
+        self.wait(ok, timeout, float(self.th("poll_s", 10)), f"vPOD {name} in {states}")
         return seen["s"]
 
     def wait_pending_clear(self, name: str, timeout: float = 300) -> bool:
-        return bool(wait_for(lambda: not (self.vpod(name).get("status") or {}).get("pending-ops"), timeout,
+        return bool(self.wait(lambda: not (self.vpod(name).get("status") or {}).get("pending-ops"), timeout,
                              float(self.th("poll_s", 10)), f"{name} pending-ops empty"))
 
     # ================================================================ vPOD membership
@@ -139,7 +144,7 @@ class AfmOps:
         slot = mine[0]["slot-id"] if mine else None
         keep = [g for g in self.vpod_gpus(vpod) if g.get("slot-id") != slot]
         self._put_vpod_gpus(vpod, keep)
-        ok = wait_for(lambda: self.membership(compute) <= {""}, float(self.th("membership_timeout_s", 120)),
+        ok = self.wait(lambda: self.membership(compute) <= {""}, float(self.th("membership_timeout_s", 120)),
                       float(self.th("poll_s", 10)),
                       f"{compute} GPUs out of {vpod}")
         if not ok:
@@ -169,7 +174,7 @@ class AfmOps:
             if r.status_code in (200, 204, 404) or time.monotonic() >= end:
                 break
             time.sleep(float(self.th("retry_interval_s", 10)))
-        return bool(wait_for(lambda: self.afm.raw("GET", f"{VP}/{name}").status_code == 404, 60, 5, f"{name} gone"))
+        return bool(self.wait(lambda: self.afm.raw("GET", f"{VP}/{name}").status_code == 404, 60, 5, f"{name} gone"))
 
     # ================================================================ compute lifecycle
     def compute_phase(self, name: str) -> str | None:
@@ -186,7 +191,7 @@ class AfmOps:
                 and bool(gi) and all(g.get("oper-state") == "Ready" for g in gi.values()))
 
     def wait_compute_ready(self, name: str, timeout: float | None = None) -> bool:
-        return bool(wait_for(lambda: self.compute_ready(name), timeout or float(self.th("readmit_timeout_s", 300)),
+        return bool(self.wait(lambda: self.compute_ready(name), timeout or float(self.th("readmit_timeout_s", 300)),
                              10, f"{name} admitted+healthy+GPUs Ready"))
 
     def reconfigure(self, name: str, retry_412_s: float = 180):
@@ -220,7 +225,7 @@ class AfmOps:
             and conditions_ok(r.json())
 
     def wait_switch_phase(self, name: str, phase: str, timeout: float = 300) -> bool:
-        return bool(wait_for(lambda: self.switch_phase(name) == phase, timeout, 10, f"{name} {phase}"))
+        return bool(self.wait(lambda: self.switch_phase(name) == phase, timeout, 10, f"{name} {phase}"))
 
     def leader_ip(self) -> str | None:
         return (self.afm.cluster().get("status") or {}).get("leader")
@@ -346,7 +351,7 @@ class AfmOps:
         return out
 
     def wait_oper(self, sw, ns, port, state: str, timeout: float = 60) -> bool:
-        return bool(wait_for(lambda: self.port_oper(sw, ns, port) == state, timeout, 2, f"{port} {state}"))
+        return bool(self.wait(lambda: self.port_oper(sw, ns, port) == state, timeout, 2, f"{port} {state}"))
 
     def oper_down(self, sw) -> set[tuple]:
         return {(ns, r.get("Interface")) for ns in sw.namespaces() for r in sw.interfaces_status(ns)

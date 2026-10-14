@@ -53,7 +53,7 @@ def _run(tmp_path: Path, faults: str = "", tcs: set[str] | None = None,
         return {row["tc_id"]: row["verdict"] for row in csv.DictReader(f)}
 
 
-# Disruptive lifecycle cases against the 3-switch / 3-compute fake (selftest/inventory-afm3.yaml, switch
+# Disruptive lifecycle and link cases against the 3-switch / 3-compute fake (selftest/inventory-afm3.yaml, switch
 # "SSH" simulated by selftest/fake_rack.py). One product fault per entry; each run is limited to its IDs
 # because a fault that breaks the rack correctly turns every later case BLOCKED.
 LIFECYCLE_FAULTS = [
@@ -73,6 +73,12 @@ LIFECYCLE_FAULTS = [
     ("reconfig_decom_ok", {"TC-AFM-RC-019", "TC-AFM-RC-020"}),
     ("unhealthy_reconf_ok", {"TC-AFM-RC-017"}),
     ("planes_no_drop", {"TC-AFM-023", "TC-AFM-026"}),
+    # fabric links (tests/afm/test_afm_links.py)
+    ("coupled_ports", {"TC-AFM-011"}),           # full rack: shutting one port also dropped a neighbour
+    ("coupled_ports", {"TC-AFM-012"}),
+    ("manual_auto", {"TC-AFM-016", "TC-AFM-041", "TC-AFM-042"}),   # manual policy reconfigures on its own
+    ("timer_ignored", {"TC-AFM-040"}),           # PortFailed before link-fail-threshold
+    ("no_reconcile", {"TC-AFM-017"}),            # link change during agent outage never learnt
 ]
 
 
@@ -80,14 +86,14 @@ def test_healthy_fake_all_pass(tmp_path):
     verdicts = _run(tmp_path)
     bad = {k: v for k, v in verdicts.items() if v not in ("PASS", "SKIP")}
     assert not bad, bad
-    assert sum(v == "PASS" for v in verdicts.values()) >= 80
+    assert sum(v == "PASS" for v in verdicts.values()) >= 93
 
 
 def test_healthy_fake_3switch_all_pass(tmp_path):
     verdicts = _run(tmp_path, inventory="inventory-afm3.yaml")
     bad = {k: v for k, v in verdicts.items() if v != "PASS" and k != "TC-AFM-035A"}  # 035A = one-switch only
     assert not bad, bad
-    assert len(verdicts) >= 95
+    assert len(verdicts) >= 107
 
 
 @pytest.mark.parametrize("fault,tcs", LIFECYCLE_FAULTS, ids=[f"{f}-{sorted(t)[0]}" for f, t in LIFECYCLE_FAULTS])

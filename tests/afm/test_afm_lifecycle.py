@@ -13,7 +13,7 @@ import time
 
 import pytest
 
-from helios.afm import CLUSTER, conditions_ok, wait_for
+from helios.afm import CLUSTER, conditions_ok
 from helios.afm_ops import CN, SN, TERMINAL, AfmOps
 
 FP = f"{CLUSTER}/failoverpolicies"
@@ -45,7 +45,7 @@ def _baseline(ops, checks, record_property):
 
 def _planes_restored(ops, checks, sysv, base, timeout=None):
     timeout = timeout or float(ops.th("plane_restore_s", 900))
-    ok = wait_for(lambda: (ops.planes(sysv)[1] or 0) >= (base[1] or 0), timeout, 30, "available planes restored")
+    ok = ops.wait(lambda: (ops.planes(sysv)[1] or 0) >= (base[1] or 0), timeout, 30, "available planes restored")
     checks.check(ok, f"{sysv} available planes {ops.planes(sysv)} below baseline {base} after {timeout:.0f}s "
                      "(full-rack product issue: Reconcile needed)")
 
@@ -82,14 +82,14 @@ def test_compute_agent_restart(ops, afm_ready, checks, record_property):
     if sw is None:
         checks.assert_all()
     ops.afm_agent(sw, "restart")
-    moved = wait_for(lambda: (lambda h: h[1] and (h[1] != pid or h[0] is not sw))(ops.slot_host(slot)),
+    moved = ops.wait(lambda: (lambda h: h[1] and (h[1] != pid or h[0] is not sw))(ops.slot_host(slot)),
                      float(ops.th("agent_respawn_s", 480)), 5, f"slot {slot} sb-node-agent respawned")
     new_sw, new_pid = ops.slot_host(slot)
     record_property("sb_node_agent", {"before": f"{sw.name}/{pid}", "after": f"{getattr(new_sw, 'name', None)}/{new_pid}"})
     checks.check(moved, f"slot {slot} sb-node-agent did not restart (PID {pid} on {sw.name})")
     checks.check(ops.wait_compute_ready(name), f"{name} not admitted+healthy after the agent restart")
     if new_sw is not None:
-        h = wait_for(lambda: (new_sw.agent_api(13000 + slot, "/api/health") or {}).get("is-connected") is True,
+        h = ops.wait(lambda: (new_sw.agent_api(13000 + slot, "/api/health") or {}).get("is-connected") is True,
                      120, 10, "agent connected")
         checks.check(h, f"slot {slot} agent /api/health not is-connected on {new_sw.name}")
     checks.assert_all()
@@ -108,7 +108,7 @@ def test_compute_agent_stop_and_health(ops, afm_ready, checks, record_property):
     t0 = time.monotonic()
     try:
         ops.signal_sb_agent(sw, pid, "STOP")
-        down = wait_for(lambda: not conditions_ok(ops.compute(name)), float(ops.th("agent_down_detect_s", 600)), 20,
+        down = ops.wait(lambda: not conditions_ok(ops.compute(name)), float(ops.th("agent_down_detect_s", 600)), 20,
                         f"{name} unhealthy")
         record_property("detect_s", round(time.monotonic() - t0, 1))
         checks.check(down, f"{name} still healthy {ops.th('agent_down_detect_s', 600)}s after SIGSTOP")
@@ -117,7 +117,7 @@ def test_compute_agent_stop_and_health(ops, afm_ready, checks, record_property):
         sw2, pid2 = ops.slot_host(slot)
         ops.signal_sb_agent(sw2 or sw, pid2 or pid, "CONT")
     checks.check(ops.wait_compute_ready(name, 180), f"{name} not healthy within 180s of SIGCONT")
-    ev = wait_for(lambda: [e for e in ops.events("computenode_healthy", since) if name in str(e)], 120, 10)
+    ev = ops.wait(lambda: [e for e in ops.events("computenode_healthy", since) if name in str(e)], 120, 10)
     checks.check(ev, f"no computenode_healthy event for {name} after resume")
     checks.assert_all()
 
@@ -133,14 +133,14 @@ def test_switch_agent_restart(ops, afm_ready, checks):
         ops.afm_agent(sw, "restart")
     for s in ops.afm.switches():
         n = s["meta"]["name"]
-        checks.check(wait_for(lambda n=n: ops.switch_ready(n), 300, 10), f"{n} not admitted+healthy")
+        checks.check(ops.wait(lambda n=n: ops.switch_ready(n), 300, 10), f"{n} not admitted+healthy")
     computes = {c["spec"]["slot-id"] for c in ops.afm.computes()}
 
     def slots_ok():
         seen = [slot for sw in ops.rack.switches.values() for slot in ops.sb_agents(sw)]
         return len(seen) == len(set(seen)) and set(seen) >= computes
     if computes:
-        checks.check(wait_for(slots_ok, 480, 15), "sb-node-agent slots not unique/complete after restart")
+        checks.check(ops.wait(slots_ok, 480, 15), "sb-node-agent slots not unique/complete after restart")
     _all_computes_ready(ops, checks)
     st = ops.wait_vpod(ops.system_vpod_name(), timeout=600)
     checks.check(st in TERMINAL, f"system vPOD {st} 600s after the agent restart")
@@ -158,14 +158,14 @@ def test_switch_agent_stop_start(ops, afm_ready, checks, record_property):
     t0 = time.monotonic()
     try:
         ops.afm_agent(sw, "stop")
-        down = wait_for(lambda: not conditions_ok(ops.switch(name)), float(ops.th("agent_down_detect_s", 600)), 20)
+        down = ops.wait(lambda: not conditions_ok(ops.switch(name)), float(ops.th("agent_down_detect_s", 600)), 20)
         record_property("detect_s", round(time.monotonic() - t0, 1))
         checks.check(down, f"{name} still healthy after afm-agent stop")
-        ev = wait_for(lambda: [e for e in ops.events("switchnode_unreachable", since) if name in str(e)], 120, 10)
+        ev = ops.wait(lambda: [e for e in ops.events("switchnode_unreachable", since) if name in str(e)], 120, 10)
         checks.check(ev, f"no switchnode_unreachable event for {name}")
     finally:
         ops.afm_agent(sw, "start")
-    checks.check(wait_for(lambda: ops.switch_ready(name), 300, 10), f"{name} not healthy after afm-agent start")
+    checks.check(ops.wait(lambda: ops.switch_ready(name), 300, 10), f"{name} not healthy after afm-agent start")
     _all_computes_ready(ops, checks)
     st = ops.wait_vpod(ops.system_vpod_name(), timeout=600)
     checks.check(st in TERMINAL, f"system vPOD {st} after agent start")
@@ -181,9 +181,9 @@ def test_switch_agent_container_restart(ops, afm_ready, checks):
     before = set(ops.sb_agents(sw))
     sw.run("docker restart afm-agent", sudo=True, timeout=300)
     if before:
-        ok = wait_for(lambda: set().union(*(ops.sb_agents(s) for s in ops.rack.switches.values())) >= before, 480, 10)
+        ok = ops.wait(lambda: set().union(*(ops.sb_agents(s) for s in ops.rack.switches.values())) >= before, 480, 10)
         checks.check(ok, f"sb-node-agent slots {sorted(before)} not all back after the container restart")
-    checks.check(wait_for(lambda: ops.switch_ready(target["meta"]["name"]), 300, 10), "switch not healthy")
+    checks.check(ops.wait(lambda: ops.switch_ready(target["meta"]["name"]), 300, 10), "switch not healthy")
     _all_computes_ready(ops, checks)
     checks.check(ops.wait_vpod(ops.system_vpod_name(), timeout=600) in TERMINAL, "system vPOD not online/degraded")
     checks.assert_all()
@@ -205,7 +205,7 @@ def test_non_leader_controller_restart(ops, afm_ready, checks, record_property):
         pytest.skip(f"{len(members)} controller(s): no non-leader to restart")
     target = next(m for m in members if m != leader)
     ops.restart_controller(ops.ssh_by_ip(target))
-    ok = wait_for(lambda: _cluster_ok(ops, len(members)), 180, 10)
+    ok = ops.wait(lambda: _cluster_ok(ops, len(members)), 180, 10)
     record_property("leader", {"before": leader, "after": ops.leader_ip()})
     checks.check(ok, f"cluster not healthy with {len(members)} started members 180s after restarting {target}")
     checks.check(ops.leader_ip() == leader, f"leader changed {leader} -> {ops.leader_ip()} on a non-leader restart")
@@ -221,7 +221,7 @@ def test_leader_controller_restart(ops, afm_ready, checks, record_property):
         pytest.skip(f"{len(members)} controller(s): restarting the only controller is an outage, not a failover")
     ops.restart_controller(ops.ssh_by_ip(leader))
     t0 = time.monotonic()
-    ok = wait_for(lambda: _cluster_ok(ops, len(members)) and ops.leader_ip() not in (None, ""), 180, 5)
+    ok = ops.wait(lambda: _cluster_ok(ops, len(members)) and ops.leader_ip() not in (None, ""), 180, 5)
     record_property("leader", {"before": leader, "after": ops.leader_ip(), "s": round(time.monotonic() - t0, 1)})
     checks.check(ok, "cluster not healthy 180s after restarting the leader controller")
     checks.assert_all()
@@ -270,7 +270,7 @@ def test_vpod_crud(ops, afm_ready, uniq, cleanup, checks, record_property):
             ops.add_gpus(sysv, moved)
     checks.check(ops.wait_vpod(sysv) in TERMINAL, f"{sysv} not online/degraded after re-add")
     for n in names:
-        checks.check(wait_for(lambda n=n: ops.membership(n) == {sysv}, 120, 10), f"{n} not back in {sysv}")
+        checks.check(ops.wait(lambda n=n: ops.membership(n) == {sysv}, 120, 10), f"{n} not back in {sysv}")
     _planes_restored(ops, checks, sysv, base)
     checks.assert_all()
 
@@ -324,7 +324,7 @@ def test_vpod_delete_clears_static_mac_agent_down(ops, afm_ready, uniq, checks, 
         checks.check(ops.delete_vpod(user), f"{user} not deleted with agents down")
         _agents(ops, "start")
         for s in ops.afm.switches():
-            checks.check(wait_for(lambda n=s["meta"]["name"]: ops.switch_ready(n), 300, 10), f"{s['meta']['name']} not healthy")
+            checks.check(ops.wait(lambda n=s["meta"]["name"]: ops.switch_ready(n), 300, 10), f"{s['meta']['name']} not healthy")
         left = {sw.name: ops.static_macs(sw) for sw in ops.rack.switches.values()}
         record_property("static_macs_after", left)
         # the system vPOD still owns its MACs; only count when every compute was moved out
@@ -361,7 +361,7 @@ def test_vpod_reconcile_fails_agent_down(ops, afm_ready, uniq, checks, record_pr
                      f"{user} {ops.vpod_state(user)} after Reconcile with agents down, expected configurationfailed")
         _agents(ops, "start")
         for s in ops.afm.switches():
-            wait_for(lambda n=s["meta"]["name"]: ops.switch_ready(n), 300, 10)
+            ops.wait(lambda n=s["meta"]["name"]: ops.switch_ready(n), 300, 10)
         ops.afm.raw("POST", f"{CLUSTER}/vpods/{user}/Reconcile", {})
         st = ops.wait_vpod(user, timeout=float(ops.th("agent_recover_s", 300)))
         checks.check(st in TERMINAL, f"{user} {st} after Reconcile with agents running")
@@ -408,13 +408,13 @@ def _decommission_cycle(ops, checks, record_property, *, force: bool, between=No
         checks.check(r.status_code == 412, f"DELETE of admitted {name} -> HTTP {r.status_code}, expected 412")
         r = ops.afm.raw("POST", f"{CN}/{name}/Decommission", {"force-decommission": True} if force else {})
         checks.check(r.status_code == 200, f"Decommission -> HTTP {r.status_code}: {r.text[:200]}")
-        ok = wait_for(lambda: ops.compute_phase(name) == "decommissioned", 300, 10)
+        ok = ops.wait(lambda: ops.compute_phase(name) == "decommissioned", 300, 10)
         checks.check(ok, f"{name} {ops.compute_phase(name)} 300s after Decommission")
         if between:
             between(name)
         r = ops.afm.raw("DELETE", f"{CN}/{name}")
         checks.check(r.status_code in (200, 204), f"DELETE decommissioned {name} -> HTTP {r.status_code}")
-        checks.check(wait_for(lambda: ops.compute_phase(name) == "absent", 60, 5), f"{name} still listed after DELETE")
+        checks.check(ops.wait(lambda: ops.compute_phase(name) == "absent", 60, 5), f"{name} still listed after DELETE")
     finally:
         if ops.compute_phase(name) != "admitted":
             if ops.compute_phase(name) != "absent":
@@ -423,7 +423,7 @@ def _decommission_cycle(ops, checks, record_property, *, force: bool, between=No
         else:
             ops.add_gpus(sysv, entries)
     checks.check(ops.wait_vpod(sysv) in TERMINAL, f"{sysv} not online/degraded after readmit")
-    checks.check(wait_for(lambda: ops.membership(name) == {sysv}, 180, 10), f"{name} not back in {sysv}")
+    checks.check(ops.wait(lambda: ops.membership(name) == {sysv}, 180, 10), f"{name} not back in {sysv}")
     _planes_restored(ops, checks, sysv, base)
 
 
@@ -467,7 +467,7 @@ def test_reconfigure_during_decommissioning(ops, afm_ready, checks, record_prope
         record_property("responses", [r1.status_code, f"{r2.status_code} {r2.text[:150]}"])
         checks.check(r1.status_code == 200, f"Decommission -> HTTP {r1.status_code}")
         checks.check(r2.status_code != 200, "Reconfigure during decommissioning accepted (200)")
-        wait_for(lambda: ops.compute_phase(name) == "decommissioned", 300, 10)
+        ops.wait(lambda: ops.compute_phase(name) == "decommissioned", 300, 10)
     finally:
         if ops.compute_phase(name) != "admitted":
             ops.afm.raw("DELETE", f"{CN}/{name}")
@@ -520,7 +520,7 @@ def test_reconfigure_then_remove_from_vpod(ops, afm_ready, checks, record_proper
     finally:
         if entries:
             ops.add_gpus(sysv, entries)
-    checks.check(wait_for(lambda: ops.membership(name) == {sysv}, 180, 10), f"{name} not back in {sysv}")
+    checks.check(ops.wait(lambda: ops.membership(name) == {sysv}, 180, 10), f"{name} not back in {sysv}")
     _planes_restored(ops, checks, sysv, base)
     checks.assert_all()
 
@@ -535,7 +535,7 @@ def test_reconfigure_unhealthy_compute(ops, afm_ready, checks, record_property):
     sw, pid = ops.slot_host(slot)
     try:
         ops.signal_sb_agent(sw, pid, "STOP")
-        checks.check(wait_for(lambda: not conditions_ok(ops.compute(name)), float(ops.th("agent_down_detect_s", 600)), 20),
+        checks.check(ops.wait(lambda: not conditions_ok(ops.compute(name)), float(ops.th("agent_down_detect_s", 600)), 20),
                      f"{name} never went unhealthy")
         r = ops.reconfigure(name)  # retries the 'already in progress' 412 guard; a real rejection is final
         record_property("reconfigure", f"HTTP {r.status_code} {r.text[:200]}")
@@ -567,7 +567,7 @@ def test_reconfigure_degraded_vpod(ops, afm_ready, checks, record_property):
 
 def _readmit_switch(ops, name: str, sw, checks):
     ops.reset_switch_identity(sw)
-    checks.check(wait_for(lambda: ops.switch_ready(name), float(ops.th("switch_readmit_s", 600)), 15),
+    checks.check(ops.wait(lambda: ops.switch_ready(name), float(ops.th("switch_readmit_s", 600)), 15),
                  f"{name} not re-admitted+healthy after agent identity reset")
 
 
@@ -581,7 +581,7 @@ def _switch_recover(ops, name, sw, checks):
         _readmit_switch(ops, name, sw, checks)
     elif ph == "absent":
         _readmit_switch(ops, name, sw, checks)
-    wait_for(lambda: ops.switch_ready(name), 600, 15)
+    ops.wait(lambda: ops.switch_ready(name), 600, 15)
 
 
 def _switch_case(ops, checks, record_property, steps, *, controller=False):
@@ -599,7 +599,7 @@ def _switch_case(ops, checks, record_property, steps, *, controller=False):
         for s in ops.rack.switches.values():
             ops.afm_agent(s, "start")
     checks.check(ops.switch_ready(name), f"{name} not admitted+healthy at the end")
-    checks.check(wait_for(lambda: ops.vlan_count(sw) >= vlans0, 300, 15),
+    checks.check(ops.wait(lambda: ops.vlan_count(sw) >= vlans0, 300, 15),
                  f"{name}: {ops.vlan_count(sw)} VLANs, {vlans0} before (AIFM-1901 VLAN wipe?)")
     _all_computes_ready(ops, checks)
     checks.check(ops.wait_vpod(sysv) in TERMINAL, f"{sysv} not online/degraded")
@@ -625,12 +625,12 @@ def _decommission(ops, checks, name, force=False, expect="decommissioned"):
 def _delete(ops, checks, name):
     r = ops.afm.raw("DELETE", f"{SN}/{name}")
     checks.check(r.status_code in (200, 204), f"DELETE switch -> HTTP {r.status_code}")
-    checks.check(wait_for(lambda: ops.switch_phase(name) == "absent", 60, 5), f"{name} still listed")
+    checks.check(ops.wait(lambda: ops.switch_phase(name) == "absent", 60, 5), f"{name} still listed")
 
 
 def _restart_leader(ops):
     ops.restart_controller(ops.ssh_by_ip(ops.leader_ip()))
-    wait_for(lambda: conditions_ok(ops.afm.cluster()) and ops.leader_ip(), 180, 5)
+    ops.wait(lambda: conditions_ok(ops.afm.cluster()) and ops.leader_ip(), 180, 5)
 
 
 @pytest.mark.tc("TC-AFM-023")
@@ -641,11 +641,11 @@ def test_switch_drain_reactivate(ops, afm_ready, checks, record_property):
         sysv = ops.system_vpod_name()
         before = ops.planes(sysv)
         _drain(ops, checks, name)
-        checks.check(wait_for(lambda: (ops.planes(sysv)[1] or 0) < (before[1] or 0), 120, 10),
+        checks.check(ops.wait(lambda: (ops.planes(sysv)[1] or 0) < (before[1] or 0), 120, 10),
                      f"available planes did not drop on drain ({before} -> {ops.planes(sysv)})")
         r = _post(ops, name, "ReactivateSwitchNode")
         checks.check(r.status_code == 200, f"Reactivate -> HTTP {r.status_code}")
-        checks.check(wait_for(lambda: ops.switch_ready(name), 600, 15), f"{name} not admitted+healthy after reactivate")
+        checks.check(ops.wait(lambda: ops.switch_ready(name), 600, 15), f"{name} not admitted+healthy after reactivate")
     _switch_case(ops, checks, record_property, steps)
     checks.assert_all()
 
@@ -657,7 +657,7 @@ def test_switch_decommission_and_delete(ops, afm_ready, checks, record_property)
     def steps(name, sw):
         _drain(ops, checks, name)
         _decommission(ops, checks, name)
-        checks.check(wait_for(lambda: ops.vlan_count(sw) == 0, 120, 10), f"{name}: {ops.vlan_count(sw)} VLANs after decommission")
+        checks.check(ops.wait(lambda: ops.vlan_count(sw) == 0, 120, 10), f"{name}: {ops.vlan_count(sw)} VLANs after decommission")
         checks.check(ops.static_macs(sw) == 0, f"{name}: static MACs left after decommission")
         _delete(ops, checks, name)
         _readmit_switch(ops, name, sw, checks)
@@ -703,7 +703,7 @@ def test_switch_drain_restart_controller(ops, afm_ready, checks, record_property
         _restart_leader(ops)
         checks.check(ops.switch_phase(name) == "drained", f"{name} {ops.switch_phase(name)} after controller restart")
         _post(ops, name, "ReactivateSwitchNode")
-        checks.check(wait_for(lambda: ops.switch_ready(name), 600, 15), f"{name} not healthy after reactivate")
+        checks.check(ops.wait(lambda: ops.switch_ready(name), 600, 15), f"{name} not healthy after reactivate")
     _switch_case(ops, checks, record_property, steps)
     checks.assert_all()
 
@@ -756,7 +756,7 @@ def test_switch_drain_agent_down(ops, afm_ready, checks, record_property):
     contrary to the plan title); after the agent starts, Reactivate restores the switch."""
     def steps(name, sw):
         ops.afm_agent(sw, "stop")
-        wait_for(lambda: not conditions_ok(ops.switch(name)), float(ops.th("agent_down_detect_s", 600)), 20)
+        ops.wait(lambda: not conditions_ok(ops.switch(name)), float(ops.th("agent_down_detect_s", 600)), 20)
         r = _post(ops, name, "DrainSwitchNode")
         time.sleep(float(ops.th("agent_settle_s", 30)))
         record_property("drain", {"http": r.status_code, "phase": ops.switch_phase(name)})
@@ -774,9 +774,9 @@ def test_switch_decommission_agent_down(ops, afm_ready, checks, record_property)
     decommissioned; agent started, DELETE, readmit."""
     def steps(name, sw):
         ops.afm_agent(sw, "stop")
-        wait_for(lambda: not conditions_ok(ops.switch(name)), float(ops.th("agent_down_detect_s", 600)), 20)
+        ops.wait(lambda: not conditions_ok(ops.switch(name)), float(ops.th("agent_down_detect_s", 600)), 20)
         _post(ops, name, "DecommissionSwitchNode")
-        ph = wait_for(lambda: (lambda p: p if p in ("decommission_failed", "decommissioned") else None)(ops.switch_phase(name)), 300, 10)
+        ph = ops.wait(lambda: (lambda p: p if p in ("decommission_failed", "decommissioned") else None)(ops.switch_phase(name)), 300, 10)
         record_property("phase_with_agent_down", ph)
         checks.check(ph == "decommission_failed", f"{name} {ph} after Decommission with agent down")
         _decommission(ops, checks, name, force=True)
@@ -793,7 +793,7 @@ def test_switch_delete_agent_down(ops, afm_ready, checks, record_property):
     planes restored without a manual Reconcile (full rack: stuck - product issue)."""
     def steps(name, sw):
         ops.afm_agent(sw, "stop")
-        wait_for(lambda: not conditions_ok(ops.switch(name)), float(ops.th("agent_down_detect_s", 600)), 20)
+        ops.wait(lambda: not conditions_ok(ops.switch(name)), float(ops.th("agent_down_detect_s", 600)), 20)
         _decommission(ops, checks, name, force=True)
         _delete(ops, checks, name)
         _readmit_switch(ops, name, sw, checks)
@@ -806,7 +806,7 @@ def test_switch_force_decommission_agent_down(ops, afm_ready, checks, record_pro
     """Agent stopped, force-decommission -> decommissioned; agent started; DELETE; readmit."""
     def steps(name, sw):
         ops.afm_agent(sw, "stop")
-        wait_for(lambda: not conditions_ok(ops.switch(name)), float(ops.th("agent_down_detect_s", 600)), 20)
+        ops.wait(lambda: not conditions_ok(ops.switch(name)), float(ops.th("agent_down_detect_s", 600)), 20)
         _decommission(ops, checks, name, force=True)
         ops.afm_agent(sw, "start")
         _delete(ops, checks, name)
