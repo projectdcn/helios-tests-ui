@@ -3,7 +3,9 @@
 TC-BU-003  every GPU has an active IFCP session (IFCP up on every LINK_UP port, no errors)
 TC-SBM-062 link-level control messaging is bidirectional (local ll_up + peer enabled, neither in error)
 TC-E2E-062 topology matches cabling: the IFCP-discovered switch peer of every GPU port is the switch port
-           whose CONFIG_DB description ('To ComputeTray Slot<s>/GPU<g>[<acc>]/Port<p>') names it.
+           whose CONFIG_DB description ('To ComputeTray Slot<s>/GPU<g>[<acc>]/Port<p>') names it: same port id,
+           one compute slot per tray, and the accelerator ids related by one consistent renumbering (the
+           descriptions may number a tray's GPUs differently from AFM).
            peer_port_id is switch-global (looked up across ASIC namespaces); peer_device_id identifies the
            switch: inventory `slot_id` per switch, default = position in the inventory starting at 1.
 """
@@ -11,7 +13,7 @@ from __future__ import annotations
 
 import pytest
 
-from helios.afmctl import Afmctl, parse_port_description
+from helios.afmctl import Afmctl, check_acc_renumbering, parse_port_description
 from helios.rack import fan_out
 
 pytestmark = pytest.mark.l2
@@ -79,6 +81,7 @@ def test_topology_matches_cabling(rack, computes, checks, record_property):
             for port, d in sw.port_descriptions(ns).items():
                 desc[(sw.name, port)] = d
     checked = 0
+    pairs, slots, tray_of = [], {}, {}
     for cname, gpus in _collect(computes, checks).items():
         for bdf, (acc, ports) in gpus.items():
             for p in (p for p in ports if _up(p)):
@@ -94,9 +97,14 @@ def test_topology_matches_cabling(rack, computes, checks, record_property):
                 cab = parse_port_description(d or "")
                 if checks.check(cab, f"{tag}: peer {sw.name} Ethernet{peer} has no cabling description"):
                     checked += 1
-                    checks.check((str(cab[2]), cab[3]) == (str(acc), int(p["id"])),
-                                 f"{tag}: cabled to {sw.name} Ethernet{peer}, which the topology registers as "
-                                 f"acc {cab[2]} port {cab[3]}")
+                    checks.check(cab[3] == int(p["id"]), f"{tag}: cabled to {sw.name} Ethernet{peer}, which the topology "
+                                                         f"registers as acc {cab[2]} port {cab[3]}")
+                    pairs.append((acc, cab[2], f"{tag} -> {sw.name} Ethernet{peer}"))
+                    tray_of[str(acc)] = cname
+                    slots.setdefault(cname, set()).add(cab[0])
+    for cname, s in sorted(slots.items()):
+        checks.check(len(s) == 1, f"{cname}: GPU ports cabled to several compute slots {sorted(s)}")
+    record_property("acc_renumbering", check_acc_renumbering(pairs, checks, "IFCP peers vs port descriptions", tray_of))
     record_property("ports_checked", checked)
     checks.check(checked, "no GPU ports checked")
     checks.assert_all()

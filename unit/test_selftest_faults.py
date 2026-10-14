@@ -176,9 +176,9 @@ FAULTS = {
     "set_next_boot_fails": (lambda d: _edit_rule(d, "set-next-boot ", rc=1, stderr="Error: image not found"),
                             {"TC-SWA-129"}),
     "lldpd_down": (lambda d: _edit(d / "supervisor_lldp0.txt", r"^lldpd(\s+)RUNNING", r"lldpd\1EXITED "),
-                   {"TC-SWA-223", "TC-SWA-140"}),
+                   {"TC-SWA-223", "TC-SWA-140", "TC-SWH-057"}),   # 057: lldpd is a critical process
     "syncd_not_recovering": (lambda d: _edit(d / "supervisor_syncd0.txt", r"^syncd(\s+)RUNNING", r"syncd\1FATAL  "),
-                             {"TC-SWA-141"}),
+                             {"TC-SWA-141", "TC-SWH-057"}),   # 057: syncd is a critical process
     "port_speed_mismatch": (lambda d: _edit_rule(d, "sonic-db-cli -n asic0 CONFIG_DB keys 'PORT",
                                                  stdout="Ethernet0 400000 400000\nEthernet8 400000 200000\n"),
                             {"TC-HW-002"}),

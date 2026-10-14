@@ -189,7 +189,7 @@ def pytest_runtest_protocol(item, nextitem):
     handler = _ItemLog()
     cmd_log = logging.getLogger("helios.cmd")
     cmd_log.addHandler(handler)
-    started = time.strftime("%Y-%m-%d %H:%M:%S")
+    started = time.strftime("%Y-%m-%d %H:%M:%S UTC", time.gmtime())   # one clock for runs from the Mac and the jump host
     try:
         yield
     finally:

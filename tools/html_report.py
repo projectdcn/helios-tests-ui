@@ -18,7 +18,7 @@ import json
 import sys
 import re
 from collections import Counter, OrderedDict
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 SUITE_NAMES = OrderedDict([
@@ -34,17 +34,36 @@ SUITE_NAMES = OrderedDict([
     ("ras/test_ras_reset", "RAS reset (TC-RAS-reset)"),
     ("ifoe/test_ifoe_driver", "IFoE driver (TC-AFM-LU / TC-HW-017)"),
     ("scaleout/test_rdma_perftest", "Scale-out RDMA (TC-IBS)"),
+    ("l1/test_switch_health", "Switch health - added checks (TC-SWH-037..059)"),
+    ("afm/test_afm_api", "AFM API"),
+    ("afm/test_afm_api_more", "AFM API - more"),
+    ("afm/test_afm_compute", "AFM compute nodes (TC-BU / TC-SEQ)"),
+    ("afm/test_afm_rbac_audit", "AFM RBAC + audit"),
+    ("afm/test_aggwatch", "AggWatch"),
+    ("afm/test_afm_reconfigure", "AFM Reconfigure"),
+    ("afm/test_afm_sideband_more", "Sideband placement (TC-SBM)"),
+    ("afm/test_afm_switch_fabric", "Switch fabric vs AFM (TC-SWH-048 / 050)"),
 ])
 STATUS = {"passed": ("PASS", "pass"), "failed": ("FAIL", "fail"), "error": ("ERROR", "fail"),
           "blocked": ("BLOCKED", "blocked"), "skipped": ("SKIP", "skip"), "partial": ("PARTIAL", "blocked")}
 
 
-def load_runs(dirs: list[Path]) -> list[dict]:
+def to_utc(started: str, offset_h: float | None) -> str:
+    """'YYYY-mm-dd HH:MM:SS' in the runner's clock -> '... UTC'. Already-UTC stamps (plugin >= 14 Oct) pass through;
+    an unknown offset leaves the stamp as is (no ' UTC' suffix)."""
+    if not started or started.endswith(" UTC") or offset_h is None:
+        return started
+    t = datetime.strptime(started, "%Y-%m-%d %H:%M:%S") - timedelta(hours=offset_h)
+    return t.strftime("%Y-%m-%d %H:%M:%S") + " UTC"
+
+
+def load_runs(dirs: list[Path], tz: dict[str, float] | None = None) -> list[dict]:
     items: "OrderedDict[str, dict]" = OrderedDict()
     for d in dirs:
         rows = list(csv.DictReader(open(d / "tc_results.csv", newline="")))
         for r in rows:
             r["_run"] = d.name
+            r["started"] = to_utc(r.get("started", ""), (tz or {}).get(d.name))
             log = d / r["log"] if r.get("log") else None
             r["_log"] = log.read_text(errors="replace") if log and log.exists() else ""
             prev = items.get(r["nodeid"])
@@ -147,14 +166,39 @@ def workbook_all_rows(wb_path) -> list[dict]:
     return out
 
 
+def earlier(r: dict) -> bool:
+    """Not run with the current build, but the workbook keeps notes from the earlier (10-12 Oct) runs."""
+    return r["status"] in ("NOT RUN", "NOT AUTOMATED") and bool(r["note"].strip())
+
+
+def dim_matrix(rows: list[dict], key: str, label: str) -> str:
+    """Status counts per value of a workbook column (Scope / Origin), one row per value plus a total."""
+    order = [o for o in ("PASS", "FAIL", "PARTIAL", "PENDING", "SKIP", "N/A", "NOT RUN", "NOT AUTOMATED")
+             if any(r["status"] == o for r in rows)]
+    vals = sorted({r[key] or "(blank)" for r in rows}, key=lambda v: (-sum(1 for r in rows if (r[key] or "(blank)") == v), v))
+    h = [f'<table><thead><tr><th>{esc(label)}</th>' + "".join(f'<th class="num">{esc(o)}</th>' for o in order) +
+         '<th class="num">Total</th></tr></thead><tbody>']
+    for v in vals + ["All"]:
+        sel = [r for r in rows if v == "All" or (r[key] or "(blank)") == v]
+        c = Counter(r["status"] for r in sel)
+        b = "<b>" if v == "All" else ""
+        h.append(f'<tr><td>{b}{esc(v)}</td>' + "".join(f'<td class="num">{b}{c.get(o, 0)}</td>' for o in order) +
+                 f'<td class="num">{b}{len(sel)}</td></tr>')
+    h.append("</tbody></table>")
+    return "\n".join(h)
+
+
 def all_cases_section(rows: list[dict], wb_name: str) -> str:
     """Whole-plan overview: counts, level x status matrix, and a filterable table of every case."""
     order = ["PASS", "FAIL", "PARTIAL", "PENDING", "SKIP", "N/A", "NOT RUN", "NOT AUTOMATED"]
     cls = {"PASS": "pass", "FAIL": "fail", "PENDING": "blocked", "PARTIAL": "blocked", "SKIP": "skip", "N/A": "skip"}
     levels = sorted({r["level"] for r in rows})
+    n_earlier = sum(1 for r in rows if earlier(r))
     h = [f'<h2 id="plan">Test plan overview - every case in {esc(wb_name)} ({len(rows)})</h2>',
          '<p class="desc">Executed cases show the reviewed status from the workbook. <b>NOT RUN</b> = automated but not yet run on '
-         'this rack (mostly disruptive cases awaiting approval, MCH-rack or equipment cases); <b>NOT AUTOMATED</b> = no test '
+         'this rack with the current build (mostly disruptive cases awaiting approval, MCH-rack or equipment cases); '
+         f'{n_earlier} of them carry notes from the 10-12 Oct runs on the earlier build (AFM 0.1.0-AICC-817) but no status in '
+         'the workbook - marked "earlier notes only". <b>NOT AUTOMATED</b> = no test '
          'yet (needs AMD input, equipment or manual work).</p>',
          '<table><thead><tr><th>Level</th>' + "".join(f'<th class="num">{esc(o)}</th>' for o in order) +
          '<th class="num">Total</th></tr></thead><tbody>']
@@ -165,6 +209,8 @@ def all_cases_section(rows: list[dict], wb_name: str) -> str:
         h.append(f'<tr><td>{b}{esc(lv)}</td>' + "".join(f'<td class="num">{b}{c.get(o, 0)}</td>' for o in order) +
                  f'<td class="num">{b}{len(sel)}</td></tr>')
     h.append("</tbody></table>")
+    h.append('<h3>By scope (where the case runs from)</h3>' + dim_matrix(rows, "scope", "Scope"))
+    h.append('<h3>By origin</h3>' + dim_matrix(rows, "origin", "Origin"))
     h.append('<div class="toggles"><input id="pf" type="search" placeholder="Filter: ID, title, scope, notes..." '
              'style="padding:5px 8px;min-width:260px;font-size:12px"> <select id="ps" style="font-size:12px;padding:4px">'
              '<option value="">All statuses</option>' + "".join(f'<option>{esc(o)}</option>' for o in order) +
@@ -174,10 +220,11 @@ def all_cases_section(rows: list[dict], wb_name: str) -> str:
              '<th>Origin</th><th>Automation</th><th>Status</th><th>Latest execution note</th></tr></thead><tbody>')
     for r in rows:
         h.append(f'<tr data-s="{esc(r["status"])}" data-l="{esc(r["level"])}"><td class="mono">{esc(r["id"])}</td>'
-                 f'<td>{esc(r["level"])}</td><td>{esc(r["title"][:160])}</td><td>{esc(r["scope"])}</td>'
-                 f'<td>{esc(r["disruptive"])}</td><td>{esc("Added" if r["origin"].startswith("Added") else r["origin"])}</td>'
-                 f'<td>{esc(r["automation"])}</td><td><span class="{cls.get(r["status"], "")}">{esc(r["status"])}</span></td>'
-                 f'<td class="reason">{esc(r["note"][:400])}</td></tr>')
+                 f'<td>{esc(r["level"])}</td><td>{esc(r["title"])}</td><td>{esc(r["scope"])}</td>'
+                 f'<td>{esc(r["disruptive"])}</td><td>{esc(r["origin"])}</td>'
+                 f'<td>{esc(r["automation"])}</td><td><span class="{cls.get(r["status"], "")}">{esc(r["status"])}</span>'
+                 + ('<br><span class="desc">earlier notes only</span>' if earlier(r) else '') + '</td>'
+                 f'<td class="reason">{esc(r["note"] if len(r["note"]) <= 400 else r["note"][:400] + " ...")}</td></tr>')
     h.append("</tbody></table>")
     h.append("""<script>
 (function () {
@@ -236,9 +283,11 @@ def coverage_section(plan_rows: list[dict] | None) -> str:
     row_ids = {r["code"] for r in plan_rows or []}
     shared = sorted(a for a, (t, _f) in ROW_ALIASES.items() if a != t and a in row_ids)
     other = sorted({c["id"] for c in cases} - row_ids - set(shared) - {c["id"] for c in cases if c["id"].startswith("TC-IBS-")})
-    recon = (f'The workbook\'s Testcases sheet has {len(plan_rows)} rows ({len(row_ids)} distinct IDs); the difference: '
-             f'TC-IBS-* are on the mortaro sheet, {", ".join(shared)} are cases whose workbook row carries another or no ID'
-             + (f', and <b>{", ".join(other)} are in the plan manifest but have no row in the workbook</b>' if other else "")
+    ibs = sorted(c["id"] for c in cases if c["id"].startswith("TC-IBS-") and c["id"] not in row_ids)
+    recon = (f'The workbook\'s Testcases sheet has {len(plan_rows)} case rows, one per case ({", ".join(shared)} sit on a '
+             f'row whose TID is shared with another case or blank; the report maps each row to its case). '
+             f'{t - len(row_ids)} plan cases have no row there: {len(ibs)} TC-IBS-* (on the mortaro sheet)'
+             + (f' and <b>{", ".join(other)}</b> (in the plan manifest, missing from the workbook)' if other else "")
              + '.') if plan_rows else ""
     h = [f'<h2 id="coverage">Automation coverage - {a} of {t} cases automated ({100.0 * a / t:.0f}%)</h2>',
          f'<p class="desc">From <span class="mono">tools/coverage.py</span>: a case is automated when a test carries its '
@@ -272,7 +321,8 @@ def build(items: list[dict], args) -> str:
     for k, (st, _note, _title) in reviewed.items():
         verdicts[k] = st
     kp = Counter(v for k, v in verdicts.items() if k in plan_ids)
-    plan_rows = workbook_all_rows(args.workbook) if getattr(args, "all_cases", False) and args.workbook else None
+    wb_rows = {r["code"]: r for r in workbook_all_rows(args.workbook)} if getattr(args, "workbook", None) else {}
+    plan_rows = list(wb_rows.values()) if getattr(args, "all_cases", False) and args.workbook else None
     if plan_rows is not None:      # whole test plan: counts follow the workbook rows, not only what ran
         kp = Counter(r["status"] for r in plan_rows)
     n_cases = len(plan_rows) if plan_rows is not None else len(verdicts) - len(extra)
@@ -285,15 +335,26 @@ def build(items: list[dict], args) -> str:
     executed = kp["PASS"] + kp["FAIL"]
     rate = (100.0 * kp["PASS"] / executed) if executed else 0.0
     auto_pill = auto_card = ""
+    # pass / fail / pending / skip cards; the whole-plan view already shows them in the "Executed result" pill
+    outcome_cards = "" if plan_rows is not None else (
+        f'<div class="kpi-card"><div class="num" style="color:var(--pass);">{kp["PASS"]}</div><div class="label">Passed</div></div>'
+        f'<div class="kpi-card"><div class="num" style="color:var(--fail);">{kp["FAIL"]}</div><div class="label">Failed</div></div>'
+        f'<div class="kpi-card"><div class="num" style="color:var(--blocked);">{kp["PENDING"] + kp["BLOCKED"]}</div><div class="label">Pending / blocked</div></div>'
+        f'<div class="kpi-card"><div class="num" style="color:var(--skip);">{kp["SKIP"] + kp["N/A"]}</div><div class="label">Skipped / N/A</div></div>')
     # cases that ran on the rack = any status other than not run / not automated (pass, fail, pending, skip, N/A)
     n_exec = n_cases - kp["NOT RUN"] - kp["NOT AUTOMATED"]
     detail = f"{kp['PENDING']} pending &middot; {kp['BLOCKED']} blocked &middot; {kp['SKIP']} skipped &middot; {kp['N/A']} N/A"
     if plan_rows is not None:   # whole plan: pending / skipped / N/A ran on the rack and count as executed
         not_exec_val = f"{kp['NOT RUN'] + kp['NOT AUTOMATED']}: {kp['NOT RUN']} automated, not run &middot; {kp['NOT AUTOMATED']} not automated"
-        not_exec_chips = '<span class="chip">not run = mostly disruptive cases awaiting approval, MCH-rack or lab-equipment cases</span>'
-    else:
+        n_earlier = sum(1 for r in plan_rows if earlier(r))
+        not_exec_chips = ('<span class="chip">not run = mostly disruptive cases awaiting approval, MCH-rack or lab-equipment cases</span>'
+                          f'<span class="chip">{n_earlier} of the not-run cases have notes from the 10-12 Oct runs on the earlier build, no status</span>')
+    else:                       # every case here ran: the third pill is the cases without a pass/fail verdict
         not_exec_val = detail
         not_exec_chips = '<span class="chip">blocked = datapath pre-flight refused traffic</span>'
+    not_exec_cap = "Not executed" if plan_rows is not None else "No pass/fail verdict"
+    no_verdict_chip = (f'<span class="chip">{n_exec - executed} without a pass/fail verdict: {kp["PENDING"]} pending, '
+                       f'{kp["SKIP"]} skipped, {kp["N/A"]} N/A</span>' if plan_rows is not None else "")
     exec_txt = f" &middot; {n_exec} executed" if plan_rows is not None else ""
     exec_card = (f'<div class="kpi-card"><div class="num" style="color:var(--accent2);">{n_exec}</div>'
                  f'<div class="label">Executed ({100.0 * n_exec / n_cases:.0f}% of plan)</div></div>'
@@ -315,6 +376,9 @@ def build(items: list[dict], args) -> str:
     suites = OrderedDict((k, v) for k, v in suites.items() if v)
     runs = sorted({r["_run"] for r in items})
     started = sorted(r["started"] for r in items if r.get("started"))
+    if started and not all(x.endswith(" UTC") for x in started):   # mixed / unknown runner clocks: say so
+        started = [x.replace(" UTC", "") for x in started]
+        started[-1] += " (runner clocks, not normalised - see --tz)"
 
     def suite_counts(rows):
         c = Counter(STATUS.get(r["outcome"], ("?", ""))[0] for r in rows)
@@ -408,26 +472,23 @@ pre.logpre .lvl-note {{ color: #9aa7b4; font-style: italic; }}
     <div class="viz-title">{esc(args.title)} &mdash; Visual Dashboard</div>
     <div style="color:rgba(255,255,255,0.85);font-size:13px;">{esc(args.subtitle)} &nbsp;|&nbsp; Runs: {esc(", ".join(runs))}
       &nbsp;|&nbsp; Executed {esc(started[0] if started else "")} &rarr; {esc(started[-1] if started else "")}
-      &nbsp;|&nbsp; Generated {datetime.now().strftime("%Y-%m-%d %H:%M")}</div>
+      &nbsp;|&nbsp; Generated {datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M")} UTC</div>
     <div class="hero-pills">
       <div class="pill"><div><div class="cap">Test cases</div><div class="val">{n_cases} plan cases{exec_txt} &middot; {len(items)} executions</div>
         {f'<span class="chip">+{len(extra)} extra evidence test(s): {esc(", ".join(extra))}</span>' if extra else ''}
         <span class="chip">{len(suites)} suites</span><span class="chip">{len(runs)} run(s)</span></div></div>
       <div class="pill"><div><div class="cap">Executed result</div>
         <div class="val" style="color:{'#86efac' if kp['FAIL'] == 0 else '#fecaca'};">{n_exec} executed &middot; {kp['PASS']} PASS &middot; {kp['FAIL']} FAIL</div>
-        <span class="chip">{n_exec - executed} without a pass/fail verdict: {kp['PENDING']} pending, {kp['SKIP']} skipped, {kp['N/A']} N/A</span>
+        {no_verdict_chip}
         <span class="chip">{rate:.0f}% pass rate ({kp['PASS']} of {executed} with a pass/fail verdict)</span></div></div>
-      <div class="pill"><div><div class="cap">Not executed</div><div class="val">{not_exec_val}</div>
+      <div class="pill"><div><div class="cap">{not_exec_cap}</div><div class="val">{not_exec_val}</div>
         {not_exec_chips}</div></div>
       {auto_pill}
     </div>
   </div>
   <div class="kpi-grid">
     <div class="kpi-card"><div class="num" style="color:var(--accent);">{n_cases}</div><div class="label">Test cases</div></div>{auto_card}{exec_card}{not_run_card}
-    <div class="kpi-card"><div class="num" style="color:var(--pass);">{kp['PASS']}</div><div class="label">Passed</div></div>
-    <div class="kpi-card"><div class="num" style="color:var(--fail);">{kp['FAIL']}</div><div class="label">Failed</div></div>
-    <div class="kpi-card"><div class="num" style="color:var(--blocked);">{kp['PENDING'] + kp['BLOCKED']}</div><div class="label">Pending / blocked</div></div>
-    <div class="kpi-card"><div class="num" style="color:var(--skip);">{kp['SKIP'] + kp['N/A']}</div><div class="label">Skipped / N/A</div></div>
+    {outcome_cards}
     <div class="kpi-card"><div class="num" style="color:var(--accent2);">{len(items)}</div><div class="label">Test items</div></div>
   </div>
   <div class="charts-row">
@@ -447,15 +508,24 @@ pre.logpre .lvl-note {{ color: #9aa7b4; font-style: italic; }}
         h.append(all_cases_section(plan_rows, Path(args.workbook).name))
     elif reviewed:
         cls = {"PASS": "pass", "FAIL": "fail", "PENDING": "blocked", "SKIP": "skip", "PARTIAL": "blocked", "N/A": "skip"}
+        here = [dict(r, status=reviewed[r["code"]][0]) for r in wb_rows.values() if r["code"] in reviewed]
         h.append(f'<h2>Test plan status (reviewed, from {esc(Path(args.workbook).name)})</h2>'
                  '<p class="desc">Status as recorded in the workbook. Where it differs from the raw test verdict in the '
-                 'sections below (e.g. Pending for a failure caused by the test environment), the note says why.</p>'
-                 '<table><thead><tr><th>Plan ID</th><th>Title</th><th>Status</th><th>Execution notes</th></tr></thead><tbody>')
+                 'sections below (e.g. Pending for a failure caused by the test environment), the note says why. '
+                 'Scope = where the case runs from; Origin = BKC-26.12 plan or added by helios-tests.</p>')
+        if here:
+            h.append('<h3>By scope</h3>' + dim_matrix(here, "scope", "Scope"))
+            h.append('<h3>By origin</h3>' + dim_matrix(here, "origin", "Origin"))
+        h.append('<table><thead><tr><th>Plan ID</th><th>Level</th><th>Title</th><th>Scope</th><th>Origin</th><th>Disruptive</th>'
+                 '<th>Status</th><th>Execution notes</th></tr></thead><tbody>')
         for tid in sorted(reviewed, key=lambda t: (t.split("-")[1], t)):
             st, note, title = reviewed[tid]
             raw = plan_verdicts([r for r in items if r["tc_id"] == tid]).get(tid, "")
             diff = f' <span class="reason">(raw test verdict: {esc(raw)})</span>' if raw and raw != st else ""
-            h.append(f'<tr><td class="mono">{esc(tid)}</td><td>{esc(title)}</td><td><span class="{cls.get(st, "")}">'
+            w = wb_rows.get(tid, {})
+            h.append(f'<tr><td class="mono">{esc(tid)}</td><td>{esc(w.get("level", ""))}</td><td>{esc(title)}</td>'
+                     f'<td>{esc(w.get("scope", ""))}</td><td>{esc(w.get("origin", ""))}</td><td>{esc(w.get("disruptive", ""))}</td>'
+                     f'<td><span class="{cls.get(st, "")}">'
                      f'{esc("PENDING" if st == "PENDING" else st)}</span>{diff}</td><td class="reason">{esc(note[:700])}</td></tr>')
         h.append("</tbody></table>")
 
@@ -485,7 +555,9 @@ pre.logpre .lvl-note {{ color: #9aa7b4; font-style: italic; }}
 </script>""")
 
     # run summary per suite
-    h.append("<h2>Run Summary</h2><table><thead><tr><th>#</th><th>Suite</th><th class=\"num\">Items</th><th class=\"num\">Pass</th>"
+    h.append("<h2>Run Summary</h2><p class=\"desc\">Per test item (one per switch / tray / parameter) with the raw pytest "
+             "verdict of the latest run. The reviewed status of each plan case (e.g. N/A for a skipped PSU-module item, Pending "
+             "for an environment failure) is the workbook's, shown in the overview above.</p><table><thead><tr><th>#</th><th>Suite</th><th class=\"num\">Items</th><th class=\"num\">Pass</th>"
              "<th class=\"num\">Fail</th><th class=\"num\">Blocked</th><th class=\"num\">Skip</th><th class=\"num\">Duration</th><th>Result</th></tr></thead><tbody>")
     for i, (key, rows) in enumerate(suites.items(), 1):
         p, f, b, s = suite_counts(rows)
@@ -506,14 +578,16 @@ pre.logpre .lvl-note {{ color: #9aa7b4; font-style: italic; }}
         h.append(f'<h2 id="s{i}">{esc(SUITE_NAMES.get(key, key))} &nbsp;[<span class="{res[1]}">{res[0]}</span>]</h2>')
         h.append(f'<div class="info"><strong>Result:</strong> {p} passed, {f} failed, {b} blocked, {s} skipped of {len(rows)} &nbsp;|&nbsp; '
                  f'<strong>Duration:</strong> {fmt_dur(dur)} &nbsp;|&nbsp; <strong>Module:</strong> <span class="mono">tests/{esc(key)}.py</span></div>')
-        h.append('<table><thead><tr><th>#</th><th>TC ID</th><th>Test</th><th>Description</th><th class="num">Duration</th><th>Status</th></tr></thead><tbody>')
+        h.append('<table><thead><tr><th>#</th><th>TC ID</th><th>Test</th><th>Description</th><th>Scope</th><th>Origin</th><th class="num">Duration</th><th>Status</th></tr></thead><tbody>')
         for j, r in enumerate(rows, 1):
             label, cls = STATUS.get(r["outcome"], (r["outcome"], ""))
             reason = ""
             if r["outcome"] in ("skipped",) and r.get("message"):
                 reason = f'<div class="reason">{esc(r["message"].removeprefix("Skipped: ")[:300])}</div>'
             h.append(f'<tr><td>{j}</td><td class="mono">{esc(r["tc_id"])}</td><td class="mono">{esc(r["test"])}</td>'
-                     f'<td class="desc">{esc(r.get("description"))}{reason}</td><td class="num">{fmt_dur(r["duration_s"])}</td>'
+                     f'<td class="desc">{esc(r.get("description"))}{reason}</td>'
+                     f'<td>{esc(wb_rows.get(r["tc_id"], {}).get("scope", ""))}</td><td>{esc(wb_rows.get(r["tc_id"], {}).get("origin", ""))}</td>'
+                     f'<td class="num">{fmt_dur(r["duration_s"])}</td>'
                      f'<td><span class="{cls}">{label}</span></td></tr>')
             log = r.get("_log", "").rstrip()
             nlines = log.count("\n") + 1 if log else 0
@@ -527,7 +601,7 @@ pre.logpre .lvl-note {{ color: #9aa7b4; font-style: italic; }}
                             f'{esc(json.dumps(json.loads(r["properties"]), indent=1)[:4000])}</pre>'
                 except ValueError:
                     pass
-            h.append(f'<tr class="logrow"><td class="logcell" colspan="6"><details class="logbox"><summary>Command log '
+            h.append(f'<tr class="logrow"><td class="logcell" colspan="8"><details class="logbox"><summary>Command log '
                      f'({nlines} lines, run {esc(r["_run"])}, started {esc(r.get("started"))})</summary>{fail}{props}'
                      f'<pre class="logpre">{colour_log(log) or "(no remote commands)"}</pre></details></td></tr>')
         h.append("</tbody></table>")
@@ -542,12 +616,15 @@ def main():
     ap.add_argument("--title", default="Helios Test Report")
     ap.add_argument("--subtitle", default="")
     ap.add_argument("--notes", type=Path)
+    ap.add_argument("--tz", action="append", default=[], metavar="RUN=HOURS",
+                    help="UTC offset of the runner clock of a run dir whose 'started' stamps have no ' UTC' suffix, "
+                         "e.g. --tz g02-g17-20261014-092828=-7 (Mac, PDT); runs on the jump host are UTC (=0)")
     ap.add_argument("--all-cases", action="store_true", help="with --workbook: cover EVERY case of the test plan "
                     "(overview counts, level x status, filterable table incl. NOT RUN / NOT AUTOMATED), not only executed ones")
     ap.add_argument("--workbook", type=Path, help="show the reviewed status (Testcases column F + notes) of each plan case "
                                                 "from this test-plan workbook instead of the raw test verdict")
     args = ap.parse_args()
-    items = load_runs(args.runs)
+    items = load_runs(args.runs, {k: float(v) for k, v in (x.split("=", 1) for x in args.tz)})
     args.output.write_text(build(items, args))
     v = Counter(plan_verdicts(items).values())
     if args.workbook:

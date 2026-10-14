@@ -52,10 +52,14 @@ def test_baseline_session_state(ops, checks, record_property):
     """Every LINK_UP GPU port on every tray has an IFCP session up (ll_up, peer enabled, no errors)."""
     counts, bad = {}, []
     for c in ops.afm.computes():
-        tray = ops.tray(c["meta"]["name"])
-        st = ops.ifcp(tray)
+        try:        # a tray that is down (no SSH / no afmctl) is one failed check, not the end of the test
+            tray = ops.tray(c["meta"]["name"])
+            st = ops.ifcp(tray)
+            sess = ops.ifcp_up(tray)
+        except Exception as e:  # noqa: BLE001
+            checks.fail(f"{c['meta']['name']}: cannot read IFCP state: {str(e).split(';')[0]}")
+            continue
         up = [k for k, v in st.items() if v["link"] == "LINK_UP"]
-        sess = ops.ifcp_up(tray)
         counts[tray.name] = f"{len(sess)}/{len(up)}"
         bad += [f"{tray.name}/{k[0]} port {k[1]}" for k in up if k not in sess]
     record_property("sessions_up", counts)

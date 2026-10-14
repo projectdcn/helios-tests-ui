@@ -53,3 +53,34 @@ def test_l2_ping_plan_uses_discovered_ids_and_common_up_ports():
     for c in pings:
         ports = re.search(r"--port (\S+)", c).group(1).split(",")
         assert "7" not in ports and len(ports) == 35  # down port excluded from the common LINK_UP set
+
+
+class _Checks:
+    def __init__(self):
+        self.failures = []
+
+    def fail(self, msg):
+        self.failures.append(msg)
+
+
+def test_acc_renumbering_within_tray_is_accepted():
+    from helios.afmctl import check_acc_renumbering
+    tray = {str(i): f"ct{i // 4 + 1:02d}" for i in range(8)}
+    c = _Checks()
+    m = check_acc_renumbering([(0, 3, "a"), (1, 2, "b"), (2, 1, "c"), (3, 0, "d"), (0, 3, "again")], c, "t", tray)
+    assert m == {"0": "3", "1": "2", "2": "1", "3": "0"} and not c.failures
+
+
+def test_acc_renumbering_shift_into_next_tray_fails():
+    from helios.afmctl import check_acc_renumbering
+    tray = {str(i): f"ct{i // 4 + 1:02d}" for i in range(8)}
+    c = _Checks()
+    check_acc_renumbering([(i, i + 1, "x") for i in range(8)], c, "t", tray)
+    assert any("not one of ct01's accelerators" in f for f in c.failures)
+
+
+def test_acc_renumbering_conflict_fails():
+    from helios.afmctl import check_acc_renumbering
+    c = _Checks()
+    check_acc_renumbering([(0, 3, "a"), (0, 2, "b"), (1, 3, "c")], c, "t")
+    assert len(c.failures) == 2

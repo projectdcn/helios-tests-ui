@@ -45,17 +45,20 @@ def test_dest_accelerator_mac(rack, computes, checks, record_property):
       * every MAC's last octet equals the port id (one switching plane per port)
       * an (accelerator, port) maps to the same MAC on every observer; no MAC is shared
     Switch side: each of those MACs is a Static FDB entry on the switch port whose
-    description ('To ComputeTray Slot<s>/GPU<g>[<acc>]/Port<p>') names that accelerator and port.
+    description ('To ComputeTray Slot<s>/GPU<g>[<acc>]/Port<p>') names that port and that accelerator - the
+    description may number accelerators differently from AFM, but only by one consistent renumbering.
     """
-    from helios.afmctl import Afmctl, parse_port_description
+    from helios.afmctl import Afmctl, check_acc_renumbering, parse_port_description
 
     observed: dict[tuple[str, int], set[str]] = {}
+    tray_of: dict[str, str] = {}
     for c, res, exc in fan_out(lambda c: (Afmctl(c).vpod_accels(), Afmctl(c).accel_addr()), computes):
         if exc:
             checks.fail(f"{c.name}: afmctl failed: {exc}")
             continue
         vpod, addr = res
         for bdf, (own, members) in vpod.items():
+            tray_of[str(own)] = c.name
             want = members - {own}
             for port, table in sorted(addr.get(bdf, {}).items()):
                 got = set(table)
@@ -81,6 +84,7 @@ def test_dest_accelerator_mac(rack, computes, checks, record_property):
             for row in sw.fdb(ns):
                 fdb[row.get("MacAddress", "").lower()] = (sw.name, ns, row.get("Port"), row.get("Type"), row.get("Vlan"))
     unmatched = 0
+    pairs = []
     for mac, (acc, port) in sorted(owner.items(), key=lambda kv: kv[1]):
         hit = fdb.get(mac)
         if not checks.check(hit, f"acc {acc} port {port}: MAC {mac} missing from switch FDB"):
@@ -90,9 +94,11 @@ def test_dest_accelerator_mac(rack, computes, checks, record_property):
         checks.check(str(typ).lower() == "static", f"{sw}/{ns} {sport}: MAC {mac} is {typ}, expected Static")
         cab = parse_port_description(desc.get((sw, ns, sport), ""))
         if checks.check(cab, f"{sw}/{ns} {sport}: no cabling description for MAC {mac}"):
-            checks.check(str(cab[2]) == acc and cab[3] == port,
-                         f"{sw}/{ns} {sport} (Vlan{vlan}): FDB has MAC {mac} for acc {acc} port {port}, "
-                         f"but the port is cabled to acc {cab[2]} port {cab[3]}")
+            # same port id; the accelerator id may follow a different numbering (checked for consistency below)
+            checks.check(cab[3] == port, f"{sw}/{ns} {sport} (Vlan{vlan}): FDB has MAC {mac} for acc {acc} port {port}, "
+                                         f"but the port is cabled to acc {cab[2]} port {cab[3]}")
+            pairs.append((acc, cab[2], f"{sw}/{ns} {sport} MAC {mac}"))
+    record_property("acc_renumbering", check_acc_renumbering(pairs, checks, "switch FDB vs port descriptions", tray_of))
     record_property("mac_entries", len(owner))
     checks.check(owner, "no accelerator addresses found on any compute")
     checks.assert_all()

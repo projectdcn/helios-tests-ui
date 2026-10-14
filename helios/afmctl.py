@@ -104,6 +104,35 @@ def parse_port_description(desc: str):
     return tuple(int(x) for x in m.groups()) if m else None
 
 
+def check_acc_renumbering(pairs, checks, what: str, tray_of: dict | None = None) -> dict[str, str]:
+    """The switch port descriptions and AFM/afmctl may number a tray's accelerators differently (on g02-g17 the
+    GPU AFM calls acc 0 is described as acc 3, ...). That is a naming convention, not a cabling fault - as long
+    as it is ONE consistent renumbering: every AFM accelerator maps to exactly one described accelerator and no
+    two AFM accelerators map to the same one - and, with ``tray_of`` ({afm acc: tray}), only WITHIN a tray: a
+    described acc must be one of that tray's own AFM accelerators (an off-by-one shift into the next tray fails).
+    ``pairs``: iterable of (afm acc, described acc, context).
+    Returns {afm acc: described acc} (record it); a conflict is a failed check naming both contexts."""
+    fwd: dict[str, tuple[str, str]] = {}
+    back: dict[str, tuple[str, str]] = {}
+    for afm, desc, ctx in pairs:
+        afm, desc = str(afm), str(desc)
+        if afm in fwd and fwd[afm][0] != desc:
+            checks.fail(f"{what}: acc {afm} is described as acc {fwd[afm][0]} ({fwd[afm][1]}) and as acc {desc} ({ctx})")
+            continue
+        if desc in back and back[desc][0] != afm:
+            checks.fail(f"{what}: described acc {desc} is AFM acc {back[desc][0]} ({back[desc][1]}) and acc {afm} ({ctx})")
+            continue
+        fwd.setdefault(afm, (desc, ctx))
+        back.setdefault(desc, (afm, ctx))
+    if tray_of:
+        tray_of = {str(k): v for k, v in tray_of.items()}
+        for afm, (desc, ctx) in fwd.items():
+            t = tray_of.get(afm)
+            if t is not None and tray_of.get(desc) != t:
+                checks.fail(f"{what}: {t} acc {afm} is described as acc {desc}, which is not one of {t}'s accelerators ({ctx})")
+    return {k: v[0] for k, v in sorted(fwd.items(), key=lambda kv: int(kv[0]) if kv[0].isdigit() else kv[0])}
+
+
 def parse_accel_addr(text: str) -> dict[str, dict[int, dict[str, str]]]:
     """`afmctl show port accelerator-addr --json` -> {bdf: {port_id: {accelerator_id: mac}}}."""
     out: dict[str, dict[int, dict[str, str]]] = {}
