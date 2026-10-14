@@ -1,0 +1,10 @@
+Ethernet0: SFP EEPROM detected
+        Identifier: OSFP 8X Pluggable Transceiver
+        ChannelMonitorValues:
+                RX1Power: -1.20dBm
+                RX2Power: -1.35dBm
+                TX1Power: 0.80dBm
+                TX2Power: 0.75dBm
+        ModuleMonitorValues:
+                Temperature: 41.25C
+                Vcc: 3.29Volts

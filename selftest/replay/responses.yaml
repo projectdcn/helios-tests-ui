@@ -46,6 +46,12 @@
 
     afm-controller
 
+    lldp
+
+    database0
+
+    database1
+
     '
 - cmd: ^show\ platform\ fan$
   rc: 0
@@ -457,6 +463,68 @@
   stdout: 'To ComputeTray Slot0/GPU0[0]/Port9
 
     '
+- cmd: ^show\ version$
+  rc: 0
+  host: ^sw
+  stdout: 'SONiC Software Version: SONiC.202505I20260915070938_x100.15
+
+    Build commit: 971b4d793
+
+    '
+- cmd: ^docker inspect -f '\{\{\.Config\.Image\}\} \{\{\.Image\}\}' afm-(agent|controller)$
+  rc: 0
+  host: ^sw
+  stdout: 'docker-afm-agent:202505I20260915070938_x100.15 sha256:ecffebaf73dd
+
+    '
+- cmd: ^docker\ inspect\ \-f\ '\{\{\.Name\}\}\ \{\{\.RestartCount\}\}\ \{\{\.State\.StartedAt\}\}'\ \$\(docker\ ps\ \-q\)$
+  rc: 0
+  host: ^sw
+  file: docker_restarts.txt
+- cmd: ^show\ system\-health\ summary$
+  rc: 0
+  host: ^sw
+  stdout: "System status summary\n\n  System status LED  green\n  Services:\n    Status: OK\n  Hardware:\n    Status: OK\n"
+- cmd: ^show\ interfaces\ transceiver\ presence\ \-n\ asic0$
+  rc: 0
+  host: ^sw
+  file: xcvr_presence_asic0.txt
+- cmd: ^show\ interfaces\ counters\ fec\-stats\ \-n\ asic0$
+  rc: 0
+  host: ^sw
+  file: fec_asic0.txt
+- cmd: ^show\ interfaces\ transceiver\ presence\ \-n\ asic1$
+  rc: 0
+  host: ^sw
+  file: xcvr_presence_asic1.txt
+- cmd: ^show\ interfaces\ counters\ fec\-stats\ \-n\ asic1$
+  rc: 0
+  host: ^sw
+  file: fec_asic1.txt
+- cmd: ^show interfaces transceiver eeprom --dom -n asic\d Ethernet\d+$
+  rc: 0
+  host: ^sw
+  file: xcvr_dom.txt
+- cmd: ^show\ reboot\-cause$
+  rc: 0
+  host: ^sw
+  stdout: 'User issued ''reboot'' command [User: admin, Time: Tue Oct 13 12:01:12 AM UTC 2026]
+
+    '
+- cmd: ^show\ reboot\-cause\ history$
+  rc: 0
+  host: ^sw
+  stdout: 'Name                 Cause   Time                             User   Comment
+
+    -------------------  ------  -------------------------------  -----  -------
+
+    2026_10_13_00_02_35  reboot  Tue Oct 13 12:01:12 AM UTC 2026  admin  N/A
+
+    '
+- cmd: ^ls\ \-1\ /var/core$
+  rc: 0
+  host: ^sw
+  stdout: ''
 - cmd: ^sonic\-installer\ list$
   rc: 0
   host: ^sw

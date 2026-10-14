@@ -1,0 +1,38 @@
+# Cases added to the test plan by helios-tests (not in AMD's BKC-26.12 workbook / manifest.yaml).
+# Hand-maintained; tools read manifest.yaml + this file (tools/plan_cases.py). In full_rack_testplan.xlsx these rows
+# carry Origin = "Added - helios-tests (<date>)" so they can be filtered.
+cases:
+- id: TC-SWH-037
+  level: L1
+  title: 'Fabric port configuration matches the cabling: every port described as a GPU link is trunk, admin up and a VLAN
+    member; uncabled ports are admin down'
+  category: switch-hw
+  origin: added 2026-10-14
+- id: TC-SWH-038
+  level: L1
+  title: 'Switch trays configured consistently: same SONiC build, AFM agent/controller images, port speed/MTU/role layout
+    and VLAN set on every switch'
+  category: switch-hw
+  origin: added 2026-10-14
+- id: TC-SWH-039
+  level: L1
+  title: Transceivers present on every cabled fabric port and DOM (Rx/Tx power, temperature, voltage) within the module
+    thresholds
+  category: switch-hw
+  origin: added 2026-10-14
+- id: TC-SWH-040
+  level: L1
+  title: 'FEC health on fabric ports: pre-FEC BER below threshold and no uncorrectable codewords'
+  category: switch-hw
+  origin: added 2026-10-14
+- id: TC-SWH-041
+  level: L1
+  title: Critical containers and services running with no recent restarts (swss/syncd/lldp per ASIC, pmon, afm-agent;
+    afm-controller on controller switches) and system health OK
+  category: switch-hw
+  origin: added 2026-10-14
+- id: TC-SWH-042
+  level: L1
+  title: No unexpected reboot and no new core files (show reboot-cause, /var/core)
+  category: switch-hw
+  origin: added 2026-10-14

@@ -1,0 +1,6 @@
+     IFACE  STATE  FEC_CORR  FEC_UNCORR  FEC_SYMBOL_ERR  FEC_PRE_BER  FEC_POST_BER  FEC_PRE_BER_MAX  FLR(O)  FLR(P) (Accuracy)
+----------  -----  --------  ----------  --------------  -----------  ------------  ---------------  ------  -----------------
+ Ethernet0  U         4,695          10           4,934      1.2e-08           nan              N/A       0                  0
+ Ethernet8  U         4,705          10           4,944      1.2e-08           nan              N/A       0                  0
+Ethernet16  U         4,715          10           4,954      1.2e-08           nan              N/A       0                  0
+Ethernet24  U         4,725          10           4,964      1.2e-08           nan              N/A       0                  0

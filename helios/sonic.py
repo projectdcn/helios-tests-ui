@@ -217,5 +217,58 @@ class SonicSwitch:
                 info["available"].append(s)
         return info
 
+    # -- health (TC-SWH-037..042) ---------------------------------------------
+    def sonic_version(self) -> str:
+        m = re.search(r"SONiC Software Version:\s*(\S+)", self.sh("show version", timeout=60))
+        return m.group(1) if m else ""
+
+    def container_image(self, name: str) -> str:
+        r = self.run(f"docker inspect -f '{{{{.Config.Image}}}} {{{{.Image}}}}' {shlex.quote(name)}", sudo=True, timeout=60)
+        return r.stdout.strip() if r.ok else ""
+
+    def container_restarts(self) -> dict[str, tuple[int, str]]:
+        """{container: (docker RestartCount, StartedAt ISO)} for every running container."""
+        out = self.run("docker inspect -f '{{.Name}} {{.RestartCount}} {{.State.StartedAt}}' $(docker ps -q)",
+                       sudo=True, timeout=120).stdout
+        res = {}
+        for line in out.splitlines():
+            toks = line.split()
+            if len(toks) == 3 and toks[1].isdigit():
+                res[toks[0].lstrip("/")] = (int(toks[1]), toks[2])
+        return res
+
+    def system_health(self) -> tuple[bool, str]:
+        """(command worked, output) of 'show system-health summary' (it crashes on some builds)."""
+        r = self.run("show system-health summary", sudo=True, timeout=120)
+        text = r.stdout + r.stderr
+        return (r.ok and "Traceback" not in text), text
+
+    def transceiver_presence(self, ns: str | None) -> dict[str, bool]:
+        rows = parse_table(self.sh(f"show interfaces transceiver presence{_ns_flag(ns)}", timeout=120))
+        return {r["Port"]: r.get("Presence", "").strip().lower() == "present" for r in rows if r.get("Port")}
+
+    def transceiver_dom(self, port: str, ns: str | None) -> dict[str, float]:
+        """Numeric DOM readings ('RX1Power' -> dBm, 'Temperature' -> C, 'Vcc' -> V ...) of one module."""
+        out = self.run(f"show interfaces transceiver eeprom --dom{_ns_flag(ns)} {shlex.quote(port)}",
+                       sudo=True, timeout=120).stdout
+        dom = {}
+        for m in re.finditer(r"^\s*([A-Za-z][\w ]*?)\s*:\s*(-?\d+(?:\.\d+)?)\s*(dBm|mW|C|Volts|V|mA)\b", out, re.M):
+            dom[m.group(1).replace(" ", "")] = float(m.group(2))
+        return dom
+
+    def fec_stats(self, ns: str | None) -> dict[str, dict[str, str]]:
+        rows = parse_table(self.sh(f"show interfaces counters fec-stats{_ns_flag(ns)}", timeout=120))
+        return {r["IFACE"]: r for r in rows if self.is_fabric_port(r.get("IFACE", ""))}
+
+    def reboot_cause(self) -> str:
+        return self.sh("show reboot-cause", timeout=60).strip()
+
+    def reboot_history(self) -> list[dict]:
+        return parse_table(self.run("show reboot-cause history", timeout=60).stdout)
+
+    def core_files(self) -> list[str]:
+        r = self.run("ls -1 /var/core", sudo=True, timeout=60)
+        return [ln.strip() for ln in r.stdout.splitlines() if ln.strip()] if r.ok else []
+
     def close(self) -> None:
         self.t.close()

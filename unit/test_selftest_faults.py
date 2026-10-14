@@ -124,7 +124,7 @@ FAULTS = {
     "asic1_missing": (lambda d: _edit_rule(d, "ip\\ netns\\ list", stdout="asic0 (id: 0)\n"),
                       {"TC-SWH-016", "TC-SWH-031", "TC-HW-013", "TC-E2E-062"}),  # asic1 FDB/descriptions unreadable
     "vlan_no_members": (lambda d: _edit_rule(d, "-n\\ asic1\\ CONFIG_DB\\ keys\\ 'VLAN_MEMBER", stdout=""),
-                        {"TC-SWH-036", "TC-SWA-079"}),  # also breaks member symmetry
+                        {"TC-SWH-036", "TC-SWA-079", "TC-SWH-037"}),  # also member symmetry; cabled ports in no VLAN
     "ping_loss": (lambda d: _edit(d / "afmctl_ping.txt", r"IFoE Request    : 35/35 PASS, 0/35 fail",
                                   "IFoE Request    : 33/35 PASS, 2/35 fail"),
                   {"TC-AFM-001", "TC-HW-017", *GATED_TRAFFIC}),  # pre-flight ping probe blocks traffic
@@ -242,6 +242,20 @@ FAULTS = {
     # the pre-flight excludes all trays for exactly those tests -> BLOCKED; tests without declared tools still run
     "tools_missing": (lambda d: _edit_rule(d, "^command -v", rc=1),
                       {"TC-AFM-002", "TC-AFM-003", "TC-AFM-004", "TC-AFM-005A", "SMOKE-RCCL-1N", "SMOKE-RCCL-MN"}),
+    # ---- added switch cases (TC-SWH-037..042)
+    "gpu_port_routed": (lambda d: _edit(d / "intf_status_asic0.txt", r"(Ethernet8\s+.*?)trunk ", r"\1routed"),
+                        {"TC-SWH-037"}),
+    "optics_low_rx": (lambda d: _edit(d / "xcvr_dom.txt", r"RX1Power: -1\.20dBm", "RX1Power: -14.20dBm"), {"TC-SWH-039"}),
+    "fec_ber_high": (lambda d: _edit(d / "fec_asic0.txt", r"1\.2e-08", "3.4e-04"), {"TC-SWH-040"}),
+    "container_restarted": (lambda d: _edit(d / "docker_restarts.txt", r"^/syncd0 0 ", "/syncd0 3 "), {"TC-SWH-041"}),
+    "container_missing": (lambda d: _edit_rule(d, "docker\\ ps\\ \\-\\-format\\ '\\{\\{\\.Names",
+                                               stdout="database\npmon\nlldp\nlldp0\nlldp1\nswss0\nswss1\nsyncd1\n"
+                                                      "afm-agent\ndatabase0\ndatabase1\n"),
+                          {"TC-SWH-041", "TC-SWH-016", "TC-SWA-141"}),   # 016/SWA-141 read the same container list
+    "kernel_panic": (lambda d: _edit_rule(d, "^show\\ reboot\\-cause$", stdout="Kernel Panic - Out of memory [Time: Tue Oct 13]\n"),
+                     {"TC-SWH-042"}),
+    "core_file": (lambda d: _edit_rule(d, "^ls\\ \\-1\\ /var/core$", stdout="syncd.1760313600.4242.core.gz\n"),
+                  {"TC-SWH-042"}),
     "thermalctld_down": (lambda d: _edit_rule(d, "thermalctld", stdout="thermalctld   EXITED\n"), {"TC-SWH-004"}),
 }
 

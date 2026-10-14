@@ -1,0 +1,6 @@
+Port        Presence
+----------  --------
+Ethernet0   Present
+Ethernet8   Present
+Ethernet16  Present
+Ethernet24  Present

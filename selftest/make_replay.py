@@ -63,7 +63,7 @@ SW = "^sw"
 add("ip netns list", "asic0 (id: 0)\nasic1 (id: 1)\n", host=SW)
 add("docker ps --format '{{.Names}}'",
     "\n".join(["database", "pmon", "lldp0", "lldp1", "swss0", "swss1", "syncd0", "syncd1", "bgp0", "bgp1",
-               "afm-agent", "afm-controller"]) + "\n", host=SW)
+               "afm-agent", "afm-controller", "lldp", "database0", "database1"]) + "\n", host=SW)
 
 fans = [["FanTray1", "N/A", "FanTray1_Fan1", "42%", "intake", "Present", "OK", "20261009 10:00:00"],
         ["FanTray1", "N/A", "FanTray1_Fan2", "41%", "intake", "Present", "OK", "20261009 10:00:00"],
@@ -156,6 +156,37 @@ for ns in NS:
 add(r"^for i in \$\(seq \$\(nproc\)\)", "", host=SW, regex=True)
 add(r"^sonic-db-cli -n asic\d CONFIG_DB hget 'PORT\|Ethernet\d+' description$",
     "To ComputeTray Slot0/GPU0[0]/Port9\n", host=SW, regex=True)
+# switch health (TC-SWH-037..042, added cases): formats as seen on g02-g17 QFX5252 (14 Oct 2026); the self-test
+# rack has pluggable modules so the DOM path is exercised (g02-g17 itself reports 'Not present' on every port)
+add("show version", "SONiC Software Version: SONiC.202505I20260915070938_x100.15\nBuild commit: 971b4d793\n", host=SW)
+add(r"^docker inspect -f '\{\{\.Config\.Image\}\} \{\{\.Image\}\}' afm-(agent|controller)$",
+    "docker-afm-agent:202505I20260915070938_x100.15 sha256:ecffebaf73dd\n", host=SW, regex=True)
+_ctrs = ["database", "database0", "database1", "pmon", "lldp", "lldp0", "lldp1", "swss0", "swss1", "syncd0", "syncd1",
+         "bgp0", "bgp1", "afm-agent", "afm-controller"]
+add("docker inspect -f '{{.Name}} {{.RestartCount}} {{.State.StartedAt}}' $(docker ps -q)",
+    "".join(f"/{c} 0 2026-10-13T00:02:{47 + i % 10:02d}.113015132Z\n" for i, c in enumerate(_ctrs)),
+    name="docker_restarts.txt", host=SW)
+add("show system-health summary", "System status summary\n\n  System status LED  green\n  Services:\n    Status: OK\n"
+    "  Hardware:\n    Status: OK\n", host=SW)
+for ns, ports in PORTS.items():
+    add(f"show interfaces transceiver presence -n {ns}", table(["Port", "Presence"], [[p, "Present"] for p in ports]),
+        name=f"xcvr_presence_{ns}.txt", host=SW)
+    fec_rows = [[p, "U", f"{4695 + 10 * i:,}", "10", f"{4934 + 10 * i:,}", "1.2e-08", "nan", "N/A", "0", "0"]
+                for i, p in enumerate(ports)]
+    add(f"show interfaces counters fec-stats -n {ns}",
+        table(["IFACE", "STATE", "FEC_CORR", "FEC_UNCORR", "FEC_SYMBOL_ERR", "FEC_PRE_BER", "FEC_POST_BER",
+               "FEC_PRE_BER_MAX", "FLR(O)", "FLR(P) (Accuracy)"], fec_rows, right={0, 2, 3, 4, 5, 6, 7, 8, 9}),
+        name=f"fec_{ns}.txt", host=SW)
+add(r"^show interfaces transceiver eeprom --dom -n asic\d Ethernet\d+$",
+    "Ethernet0: SFP EEPROM detected\n        Identifier: OSFP 8X Pluggable Transceiver\n        ChannelMonitorValues:\n"
+    "                RX1Power: -1.20dBm\n                RX2Power: -1.35dBm\n                TX1Power: 0.80dBm\n"
+    "                TX2Power: 0.75dBm\n        ModuleMonitorValues:\n                Temperature: 41.25C\n"
+    "                Vcc: 3.29Volts\n", name="xcvr_dom.txt", host=SW, regex=True)
+add("show reboot-cause", "User issued 'reboot' command [User: admin, Time: Tue Oct 13 12:01:12 AM UTC 2026]\n", host=SW)
+add("show reboot-cause history", table(["Name", "Cause", "Time", "User", "Comment"],
+    [["2026_10_13_00_02_35", "reboot", "Tue Oct 13 12:01:12 AM UTC 2026", "admin", "N/A"]]), host=SW)
+add("ls -1 /var/core", "", host=SW)
+
 IMG_CUR, IMG_OLD = "SONiC-OS-helios.202505.1", "SONiC-OS-helios.202411.3"
 add("sonic-installer list", f"Current: {IMG_CUR}\nNext: {IMG_CUR}\nAvailable:\n{IMG_CUR}\n{IMG_OLD}\n",
     name="sonic_installer_list.txt", host=SW)
@@ -261,6 +292,8 @@ for ns in NS:
                 continue
             rows.append([str(len(rows) + 1), str(100 + p * 100), acc_mac(a, p), sport, "Static"])
             descs.append(f"{sport}|To ComputeTray Slot{slot}/GPU{a - base}[{a}]/Port{p}")
+    # the listed fabric ports (interfaces status) are cabled to a tray outside the self-test rack (slot 9)
+    descs += [f"{pt}|To ComputeTray Slot9/GPU{i}[{90 + i}]/Port{i}" for i, pt in enumerate(PORTS[ns])]
     add(f"show mac -n {ns}", table(["No.", "Vlan", "MacAddress", "Port", "Type"], rows, right={0, 1}) +
         f"Total number of entries {len(rows)}\n", name=f"fdb_{ns}.txt", host=SW)
     add(rf"^for k in \$\(sonic-db-cli -n {ns} CONFIG_DB keys 'PORT\|Ethernet\*'\); do echo ", "\n".join(descs) + "\n",

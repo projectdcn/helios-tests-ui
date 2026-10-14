@@ -1,0 +1,6 @@
+Port         Presence
+-----------  --------
+Ethernet256  Present
+Ethernet264  Present
+Ethernet272  Present
+Ethernet280  Present

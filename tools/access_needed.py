@@ -22,11 +22,11 @@ from collections import Counter
 from pathlib import Path
 
 import openpyxl
-import yaml
 from openpyxl.styles import Alignment
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+from plan_cases import load_cases  # noqa: E402
 from update_testplan import ROW_ALIASES  # noqa: E402
 
 AFM = "AFM API"
@@ -204,7 +204,7 @@ def scope(access: str) -> str | None:
 
 
 def table() -> dict[str, str]:
-    cases = yaml.safe_load((ROOT / "testplan" / "manifest.yaml").read_text())["cases"]
+    cases = load_cases()
     auto = automated()
     return {c["id"]: classify(c, auto) for c in cases}
 
@@ -227,7 +227,7 @@ def automation_values(validated: set[str]) -> dict[str, str]:
     """Automaton(Yes/No/Inprogress): Yes = automated and run on a rack (any result, including Skipped); Inprogress =
     automated, never run on a rack; No = not automated."""
     auto = automated()
-    cases = yaml.safe_load((ROOT / "testplan" / "manifest.yaml").read_text())["cases"]
+    cases = load_cases()
     return {c["id"]: ("Yes" if c["id"] in validated else "Inprogress") if c["id"] in auto else "No" for c in cases}
 
 

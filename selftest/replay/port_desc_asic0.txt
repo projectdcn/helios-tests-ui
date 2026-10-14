@@ -142,3 +142,7 @@ Ethernet1410|To ComputeTray Slot1/GPU3[11]/Port14
 Ethernet1411|To ComputeTray Slot1/GPU3[11]/Port15
 Ethernet1412|To ComputeTray Slot1/GPU3[11]/Port16
 Ethernet1413|To ComputeTray Slot1/GPU3[11]/Port17
+Ethernet0|To ComputeTray Slot9/GPU0[90]/Port0
+Ethernet8|To ComputeTray Slot9/GPU1[91]/Port1
+Ethernet16|To ComputeTray Slot9/GPU2[92]/Port2
+Ethernet24|To ComputeTray Slot9/GPU3[93]/Port3

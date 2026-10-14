@@ -10,7 +10,9 @@ import sys
 from collections import Counter
 from pathlib import Path
 
-import yaml
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from plan_cases import load_cases  # noqa: E402
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -24,7 +26,7 @@ def automated_ids() -> dict[str, str]:
 
 
 def main() -> None:
-    cases = yaml.safe_load((ROOT / "testplan" / "manifest.yaml").read_text())["cases"]
+    cases = load_cases()
     done = automated_ids()
     known = {c["id"] for c in cases}
     total, auto = Counter(), Counter()

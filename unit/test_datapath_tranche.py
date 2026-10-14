@@ -91,3 +91,16 @@ def test_scope_from_access():
     assert scope("Compute SSH + datapath traffic") == "Compute"
     assert scope("AFM API + switch + compute SSH") == "Switch + Compute"
     assert scope("AFM API (disruptive)") == "Switch (AFM API)"
+
+
+def test_switch_consistency_majority():
+    """TC-SWH-038: the odd switch out is reported against the majority value."""
+    from helios.rack import Checks
+    from tests.l1.test_switch_health import _majority
+
+    c = Checks()
+    _majority("SONiC build", {"st1": "A", "st2": "A", "st3": "B"}, c)
+    assert len(c.failures) == 1 and c.failures[0].startswith("st3: SONiC build = 'B'")
+    c2 = Checks()
+    _majority("vlans", {"st1": ("Vlan100",), "st2": ("Vlan100",)}, c2)
+    assert not c2.failures
