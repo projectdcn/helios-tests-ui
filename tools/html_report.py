@@ -99,6 +99,29 @@ def plan_verdicts(items: list[dict]) -> dict[str, str]:
     return v
 
 
+WB_STATUS = {"PASS": "PASS", "FAIL": "FAIL", "PENDING": "PENDING", "SKIPPED": "SKIP", "PARTIAL": "PARTIAL"}
+
+
+def workbook_status(wb_path, ids) -> dict[str, tuple[str, str, str]]:
+    """{plan id: (reviewed status, latest note, title)} from the test-plan workbook's Testcases sheet (column F / H),
+    so the report shows the reviewed status - e.g. 'Pending' for a case that failed only because of the test
+    environment - instead of the raw test verdict."""
+    if not wb_path:
+        return {}
+    import openpyxl
+    from update_testplan import COL_NOTES, COL_STATUS, find_row
+
+    ws = openpyxl.load_workbook(wb_path, read_only=False)["Testcases"]
+    out = {}
+    for tid in ids:
+        r = find_row(ws, tid)
+        st = str(ws.cell(r, COL_STATUS).value or "").strip().upper() if r else ""
+        if st in WB_STATUS:
+            note = str(ws.cell(r, COL_NOTES).value or "").split("\n\nEarlier: ", 1)[0]
+            out[tid] = (WB_STATUS[st], note, str(ws.cell(r, 3).value or ""))
+    return out
+
+
 def build(items: list[dict], args) -> str:
     verdicts = plan_verdicts(items)
     # plan cases (AMD plan + testplan/added.yaml) vs extra evidence tests (e.g. SMOKE-RCCL-*), counted separately
@@ -109,6 +132,9 @@ def build(items: list[dict], args) -> str:
     except Exception:  # noqa: BLE001 - outside the repo: count everything
         plan_ids = set(verdicts)
     extra = sorted(k for k in verdicts if k not in plan_ids)
+    reviewed = workbook_status(getattr(args, "workbook", None), [k for k in verdicts if k in plan_ids])
+    for k, (st, _note, _title) in reviewed.items():
+        verdicts[k] = st
     kp = Counter(v for k, v in verdicts.items() if k in plan_ids)
     executed = kp["PASS"] + kp["FAIL"]
     rate = (100.0 * kp["PASS"] / executed) if executed else 0.0
@@ -219,15 +245,15 @@ pre.logpre .lvl-note {{ color: #9aa7b4; font-style: italic; }}
       <div class="pill"><div><div class="cap">Executed result</div>
         <div class="val" style="color:{'#86efac' if kp['FAIL'] == 0 else '#fecaca'};">{kp['PASS']} / {executed} PASS</div>
         <span class="chip">{rate:.0f}% pass rate (executed)</span></div></div>
-      <div class="pill"><div><div class="cap">Not executed</div><div class="val">{kp['BLOCKED']} blocked &middot; {kp['SKIP']} skipped</div>
+      <div class="pill"><div><div class="cap">Not executed</div><div class="val">{kp['PENDING']} pending &middot; {kp['BLOCKED']} blocked &middot; {kp['SKIP']} skipped</div>
         <span class="chip">blocked = datapath pre-flight refused traffic</span></div></div>
     </div>
   </div>
   <div class="kpi-grid">
-    <div class="kpi-card"><div class="num" style="color:var(--accent);">{len(verdicts)}</div><div class="label">Test cases</div></div>
+    <div class="kpi-card"><div class="num" style="color:var(--accent);">{len(verdicts) - len(extra)}</div><div class="label">Test cases</div></div>
     <div class="kpi-card"><div class="num" style="color:var(--pass);">{kp['PASS']}</div><div class="label">Passed</div></div>
     <div class="kpi-card"><div class="num" style="color:var(--fail);">{kp['FAIL']}</div><div class="label">Failed</div></div>
-    <div class="kpi-card"><div class="num" style="color:var(--blocked);">{kp['BLOCKED']}</div><div class="label">Blocked</div></div>
+    <div class="kpi-card"><div class="num" style="color:var(--blocked);">{kp['PENDING'] + kp['BLOCKED']}</div><div class="label">Pending / blocked</div></div>
     <div class="kpi-card"><div class="num" style="color:var(--skip);">{kp['SKIP']}</div><div class="label">Skipped</div></div>
     <div class="kpi-card"><div class="num" style="color:var(--accent2);">{len(items)}</div><div class="label">Test items</div></div>
   </div>
@@ -243,6 +269,19 @@ pre.logpre .lvl-note {{ color: #9aa7b4; font-style: italic; }}
             h.append(f'    <li class="{kind}">{body}</li>')
         h.append("  </ul></div>")
     h.append("</div>")
+    if reviewed:
+        cls = {"PASS": "pass", "FAIL": "fail", "PENDING": "blocked", "SKIP": "skip", "PARTIAL": "blocked"}
+        h.append(f'<h2>Test plan status (reviewed, from {esc(Path(args.workbook).name)})</h2>'
+                 '<p class="desc">Status as recorded in the workbook. Where it differs from the raw test verdict in the '
+                 'sections below (e.g. Pending for a failure caused by the test environment), the note says why.</p>'
+                 '<table><thead><tr><th>Plan ID</th><th>Title</th><th>Status</th><th>Execution notes</th></tr></thead><tbody>')
+        for tid in sorted(reviewed, key=lambda t: (t.split("-")[1], t)):
+            st, note, title = reviewed[tid]
+            raw = plan_verdicts([r for r in items if r["tc_id"] == tid]).get(tid, "")
+            diff = f' <span class="reason">(raw test verdict: {esc(raw)})</span>' if raw and raw != st else ""
+            h.append(f'<tr><td class="mono">{esc(tid)}</td><td>{esc(title)}</td><td><span class="{cls.get(st, "")}">'
+                     f'{esc("PENDING" if st == "PENDING" else st)}</span>{diff}</td><td class="reason">{esc(note[:700])}</td></tr>')
+        h.append("</tbody></table>")
 
     h.append(f"""<script>
 (function () {{
@@ -251,7 +290,7 @@ pre.logpre .lvl-note {{ color: #9aa7b4; font-style: italic; }}
   Chart.defaults.font.family = "'Segoe UI', system-ui, sans-serif";
   var P='#22c55e', F='#ef4444', B='#f97316', S='#f59e0b';
   new Chart(document.getElementById('vizDoughnut'), {{ type: 'doughnut',
-    data: {{ labels: ['Pass','Fail','Blocked','Skipped'], datasets: [{{ data: {json.dumps([kp['PASS'], kp['FAIL'], kp['BLOCKED'], kp['SKIP']])},
+    data: {{ labels: ['Pass','Fail','Pending / blocked','Skipped'], datasets: [{{ data: {json.dumps([kp['PASS'], kp['FAIL'], kp['PENDING'] + kp['BLOCKED'], kp['SKIP']])},
       backgroundColor: [P,F,B,S], borderWidth: 0, hoverOffset: 8 }}] }},
     options: {{ responsive: true, maintainAspectRatio: false, cutout: '70%', plugins: {{ legend: {{ position: 'bottom', labels: {{ boxWidth: 12 }} }} }} }},
     plugins: [{{ id: 'ct', beforeDraw: function (c) {{ var a=c.chartArea, x=(a.left+a.right)/2, y=(a.top+a.bottom)/2, ctx=c.ctx;
@@ -327,10 +366,14 @@ def main():
     ap.add_argument("--title", default="Helios Test Report")
     ap.add_argument("--subtitle", default="")
     ap.add_argument("--notes", type=Path)
+    ap.add_argument("--workbook", type=Path, help="show the reviewed status (Testcases column F + notes) of each plan case "
+                                                "from this test-plan workbook instead of the raw test verdict")
     args = ap.parse_args()
     items = load_runs(args.runs)
     args.output.write_text(build(items, args))
     v = Counter(plan_verdicts(items).values())
+    if args.workbook:
+        v = Counter(st for st, _, _ in workbook_status(args.workbook, list(plan_verdicts(items))).values())
     print(f"{args.output}: {len(items)} items, {dict(v)}, {args.output.stat().st_size / 1e6:.1f} MB")
 
 
