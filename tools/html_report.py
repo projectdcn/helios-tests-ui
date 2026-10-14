@@ -99,7 +99,7 @@ def plan_verdicts(items: list[dict]) -> dict[str, str]:
     return v
 
 
-WB_STATUS = {"PASS": "PASS", "FAIL": "FAIL", "PENDING": "PENDING", "SKIPPED": "SKIP", "PARTIAL": "PARTIAL"}
+WB_STATUS = {"PASS": "PASS", "FAIL": "FAIL", "PENDING": "PENDING", "SKIPPED": "SKIP", "PARTIAL": "PARTIAL", "N/A": "N/A"}
 
 
 def workbook_status(wb_path, ids) -> dict[str, tuple[str, str, str]]:
@@ -245,7 +245,7 @@ pre.logpre .lvl-note {{ color: #9aa7b4; font-style: italic; }}
       <div class="pill"><div><div class="cap">Executed result</div>
         <div class="val" style="color:{'#86efac' if kp['FAIL'] == 0 else '#fecaca'};">{kp['PASS']} / {executed} PASS</div>
         <span class="chip">{rate:.0f}% pass rate (executed)</span></div></div>
-      <div class="pill"><div><div class="cap">Not executed</div><div class="val">{kp['PENDING']} pending &middot; {kp['BLOCKED']} blocked &middot; {kp['SKIP']} skipped</div>
+      <div class="pill"><div><div class="cap">Not executed</div><div class="val">{kp['PENDING']} pending &middot; {kp['BLOCKED']} blocked &middot; {kp['SKIP']} skipped &middot; {kp['N/A']} N/A</div>
         <span class="chip">blocked = datapath pre-flight refused traffic</span></div></div>
     </div>
   </div>
@@ -254,7 +254,7 @@ pre.logpre .lvl-note {{ color: #9aa7b4; font-style: italic; }}
     <div class="kpi-card"><div class="num" style="color:var(--pass);">{kp['PASS']}</div><div class="label">Passed</div></div>
     <div class="kpi-card"><div class="num" style="color:var(--fail);">{kp['FAIL']}</div><div class="label">Failed</div></div>
     <div class="kpi-card"><div class="num" style="color:var(--blocked);">{kp['PENDING'] + kp['BLOCKED']}</div><div class="label">Pending / blocked</div></div>
-    <div class="kpi-card"><div class="num" style="color:var(--skip);">{kp['SKIP']}</div><div class="label">Skipped</div></div>
+    <div class="kpi-card"><div class="num" style="color:var(--skip);">{kp['SKIP'] + kp['N/A']}</div><div class="label">Skipped / N/A</div></div>
     <div class="kpi-card"><div class="num" style="color:var(--accent2);">{len(items)}</div><div class="label">Test items</div></div>
   </div>
   <div class="charts-row">
@@ -270,7 +270,7 @@ pre.logpre .lvl-note {{ color: #9aa7b4; font-style: italic; }}
         h.append("  </ul></div>")
     h.append("</div>")
     if reviewed:
-        cls = {"PASS": "pass", "FAIL": "fail", "PENDING": "blocked", "SKIP": "skip", "PARTIAL": "blocked"}
+        cls = {"PASS": "pass", "FAIL": "fail", "PENDING": "blocked", "SKIP": "skip", "PARTIAL": "blocked", "N/A": "skip"}
         h.append(f'<h2>Test plan status (reviewed, from {esc(Path(args.workbook).name)})</h2>'
                  '<p class="desc">Status as recorded in the workbook. Where it differs from the raw test verdict in the '
                  'sections below (e.g. Pending for a failure caused by the test environment), the note says why.</p>'
@@ -290,7 +290,7 @@ pre.logpre .lvl-note {{ color: #9aa7b4; font-style: italic; }}
   Chart.defaults.font.family = "'Segoe UI', system-ui, sans-serif";
   var P='#22c55e', F='#ef4444', B='#f97316', S='#f59e0b';
   new Chart(document.getElementById('vizDoughnut'), {{ type: 'doughnut',
-    data: {{ labels: ['Pass','Fail','Pending / blocked','Skipped'], datasets: [{{ data: {json.dumps([kp['PASS'], kp['FAIL'], kp['PENDING'] + kp['BLOCKED'], kp['SKIP']])},
+    data: {{ labels: ['Pass','Fail','Pending / blocked','Skipped / N/A'], datasets: [{{ data: {json.dumps([kp['PASS'], kp['FAIL'], kp['PENDING'] + kp['BLOCKED'], kp['SKIP'] + kp['N/A']])},
       backgroundColor: [P,F,B,S], borderWidth: 0, hoverOffset: 8 }}] }},
     options: {{ responsive: true, maintainAspectRatio: false, cutout: '70%', plugins: {{ legend: {{ position: 'bottom', labels: {{ boxWidth: 12 }} }} }} }},
     plugins: [{{ id: 'ct', beforeDraw: function (c) {{ var a=c.chartArea, x=(a.left+a.right)/2, y=(a.top+a.bottom)/2, ctx=c.ctx;
