@@ -1,0 +1,121 @@
+# Self-test for the lab-equipment cases (tests/afm/test_afm_equipment.py): fake controller with 4 switches (3 in
+# the quorum, the 4th is the cluster-move target) / 3 computes. LDAP/RADIUS, syslog, rollout, switch images and
+# the management-network cuts are simulated by selftest/fake_afm.py + fake_rack.py ("helios-fake ..." commands).
+#   HELIOS_SELFTEST_DIR_PW=selftest-dir-pw pytest tests/afm/test_afm_equipment.py \
+#       --inventory selftest/inventory-equip.yaml --allow-disruptive
+rack: selftest-equip
+transport:
+  kind: replay
+  dir: replay
+
+switches:
+  - {name: sw0, host: 10.0.0.80}
+  - {name: sw1, host: 10.0.0.81}
+  - {name: sw2, host: 10.0.0.82}
+  - {name: sw3, host: 10.0.0.83}
+computes:
+  - {name: c1, gpus: 4}
+  - {name: c2, gpus: 4}
+  - {name: c3, gpus: 4}
+
+afm:
+  url: https://helios-afm.lab.example
+  fake: true
+  rbac_reads_denied: true   # the fake enforces read RBAC; MR3 AICC-797 does not
+  fake_topology: {switches: 4, computes: 3, time_scale: 0.05}
+  fake_faults: []
+  verify_tls: false
+  auth:
+    kind: session
+    username: admin
+    password: selftest-admin-pw   # fake controller only
+    tenant: default
+  # fake directories (selftest/fake_afm.py State.DIRECTORY); password exported by unit/test_afm_selftest.py
+  ldap:
+    authenticator: {authenticators: {ldap: {enabled: true, servers: [{url: "ldaps://ldap.selftest:636"}], base-dn: "dc=selftest"}}}
+    username: ldapuser
+    password_env: HELIOS_SELFTEST_DIR_PW
+  radius:
+    authenticator: {authenticators: {radius: {enabled: true, servers: [{url: "radius.selftest:1812"}]}}}
+    username: raduser
+    password_env: HELIOS_SELFTEST_DIR_PW
+  syslog:
+    create:
+      path: /configs/monitoring/v1/syslogexports
+      body: {meta: {name: "{marker}"}, spec: {target: "udp://syslog.selftest:514", format: rfc5424, export: audit}}
+    check: "helios-fake syslog-grep {marker}"
+
+commands:
+  switch:   # simulated by selftest/fake_rack.py
+    sonic_upgrade: "helios-fake sonic-upgrade {image}"
+    onie_upgrade: "helios-fake onie-install {image}"
+    firmware_upgrade: "helios-fake fw-upgrade"
+    local_image_install: "sonic-installer install -y {image}"
+    failing_upgrade: "helios-fake bad-upgrade"
+  afm:
+    rollout: {path: /configs/cluster/v1/rollouts, body: {meta: {name: helios-rollout}, spec: {version: "{version}"}}}
+    cluster_move: "helios-fake cluster-move {target}"
+  mgmtnet:
+    down: "helios-fake mgmtnet down {name} {host}"
+    up: "helios-fake mgmtnet up {name} {host}"
+  ifoe:
+    unload: "modprobe -r ifoe"
+    load: "modprobe ifoe"
+    loaded_check: "lsmod | grep -q '^ifoe '"
+  l2ping:
+    mode: afmctl          # discover acc ids + LINK_UP ports via afmctl; ring pairs
+  transferbench:
+    in_domain: "TransferBench a2a {size}"
+    rank_cmd: "TB_NUM_RANKS={num_ranks} TB_RANK={rank} TB_MASTER_ADDR={master_addr} TB_SINGLE_LOG=1 TransferBench a2a {size}"
+  rccl:
+    in_domain: "{rccl_tests_dir}/build/{collective}_perf -b {min_bytes} -e {max_bytes} -f 2 -g {gpus} -n {iters}"
+    cross_domain: "mpirun -np {np} -H {hostlist} {rccl_tests_dir}/build/{collective}_perf -b {min_bytes} -e {max_bytes} -f 2 -g 1"
+  rccl_smoke:
+    bin: /opt/helios/RcclSmokeTest
+    env: NCCL_LOG_DIR=/tmp/helios-rccl-logs
+    port: 45000
+  perftest:
+    nodes: [c1, c2]
+    duration_s: 1
+    server_start_s: 0
+    timeout_margin_s: 10
+    qp_sweep: [8, 64, 256]
+    custom: {verbs: [write, read], qps: [4], pairs: [1, 2], iterations: 2}
+  ras:
+    partial_stations_down: "ras-partial-stations down {name}"
+    partial_stations_up: "ras-partial-stations up {name}"
+    dc_cycle: "ipmitool -I lanplus -H {bmc} chassis power cycle"
+    ac_cycle: "pdu-ctl cycle {pdu_outlet}"
+
+thresholds:
+  afm:
+    quorum_members: 3
+    max_not_ready_ports_per_compute: 0
+    poll_s: 0.2
+    time_scale: 0.05
+    soak_s: 20
+    soak_interval_s: 1
+    str011_cycles: 3
+    str013_flaps: 2
+    link_watch_s: 1
+    retry_interval_s: 0.2
+    agent_settle_s: 0
+    absent_hold_s: 0.3
+    plane_settle_interval_s: 0
+    plane_restore_s: 1
+    readmit_timeout_s: 5
+    switch_readmit_s: 5
+    agent_down_detect_s: 5
+    agent_respawn_s: 5
+    agent_recover_s: 5
+    versions: {n: 0.1.0-AICC-797, n_minus_1: 0.0.9-AICC-700}
+    cluster_move_target: 10.0.0.83
+    switch_reboot_s: 5
+    rollout_timeout_s: 100
+    upgrade_settle_s: 100
+    vpod_timeout_s: 5
+    membership_timeout_s: 5
+    aggwatch: {event_wait_s: 5, settle_s: 0.5, quiet_s: 2, idle_s: 3, cycles: 5, burst: 10, concurrent: 3, no_options_s: 5}
+  switch:
+    target_image: SONiC-OS-helios.2
+    local_image: /tmp/helios-local.bin

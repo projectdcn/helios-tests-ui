@@ -29,6 +29,9 @@ afm:
     tenant: default
 
 commands:
+  switch:   # simulated by selftest/fake_rack.py; real racks need out-of-band templates
+    mgmt_to_eth1: "helios-mgmt move eth1"
+    mgmt_restore: "helios-mgmt move eth0"
   ifoe:
     unload: "modprobe -r ifoe"
     load: "modprobe ifoe"
@@ -79,6 +82,8 @@ thresholds:
     agent_down_detect_s: 5
     agent_respawn_s: 5
     agent_recover_s: 5
+    mtu_low_expect: down
+    fru_json_path: /etc/sonic/fru.json
     vpod_timeout_s: 5
     membership_timeout_s: 5
     aggwatch: {event_wait_s: 5, settle_s: 0.5, quiet_s: 2, idle_s: 3, cycles: 5, burst: 10, concurrent: 3, no_options_s: 5}

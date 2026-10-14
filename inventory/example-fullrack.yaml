@@ -63,8 +63,19 @@ afm:                    # used by L2+ tranches; L1 does not need it
     username_env: HELIOS_AFM_USER
     password_env: HELIOS_AFM_PASSWORD
   endpoints: {}         # VERIFY: filled in from the AFM API reference
+  # lab-equipment cases (tests/afm/test_afm_equipment.py) skip until these exist - VERIFY all with AMD:
+  # ldap:   {authenticator: {authenticators: {ldap: {enabled: true, ...}}}, username: <dir user>, password_env: <ENV>}
+  # radius: {authenticator: {authenticators: {radius: {enabled: true, ...}}}, username: <dir user>, password_env: <ENV>}
+  # syslog: {create: {path: <export object path>, body: {meta: {name: "{marker}"}, ...}}, check: "<runner cmd, {marker}>"}
 
 commands:
+  # optional, all skip when unset (VERIFY with AMD / the lab):
+  # switch:  {port_mtu: "config interface -n {ns} mtu {port} {mtu}", mgmt_to_eth1: ..., mgmt_restore: ...,
+  #           sonic_upgrade: "... {image}", onie_upgrade: ..., firmware_upgrade: ..., local_image_install: ..., failing_upgrade: ...}
+  # afm:     {rollout: {path: ..., body: {... "{version}" ...}}, cluster_move: "... {target}", upgrade: "<runner cmd>"}
+  # mgmtnet: {down: "<runner cmd, {name} {host}>", up: "<runner cmd>"}     # out-of-band cut of a node's mgmt network
+  # mch:     {lane_mask_cmd: "cat /sys/bus/pci/devices/{bdf}/ualink/station_lane_en_bitmap", mock_driver_check: ...,
+  #           bootstrap_invalid: "<runner cmd>"}
   l2ping:
     mode: afmctl         # recommended: discover acc ids + LINK_UP ports via afmctl (no cmd template needed)
     pairs: ring          # ring (as the full-rack suite) | full (every GPU pair; slow: ~30s per ping, serial per tray)
@@ -232,3 +243,6 @@ thresholds:
     rccl: {}                                # e.g. {all_reduce_min_busbw_gbps: 150}
     rccl_cross: {}
     perftest: {min_gbps: null, qp_max_drop_pct: 10}   # per-verb override: write_min_gbps, read_min_gbps, ...
+  # MCH racks (tests/afm/test_afm_mch.py; detected from the pod rack-type, or force with enabled: true):
+  # mch: {lane_mask: 000fff333000fff333, mask_order: msb_first, planes: 18, links_per_gpu: 18,
+  #       switch_slots: [1, 2, 3], trunk_ports_per_asic: 144, tagging_mode: priority_tagged, min_gbps: null}

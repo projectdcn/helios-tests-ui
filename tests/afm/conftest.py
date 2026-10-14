@@ -55,6 +55,11 @@ def rack(inventory, afm_cfg):
 
         for slot, c in enumerate(r.computes.values()):    # inventory order = compute slot in the fake
             c.t = FakeComputeTransport(c.host, st, slot, c.t)
+        from fake_rack import FakeRunnerTransport
+
+        r.runner = FakeRunnerTransport(st, r.runner, {n: k for k, n in enumerate(r.computes)},
+                                       {n: (st.sim.switch_ips.index(sw.host.host) if sw.host.host in st.sim.switch_ips else k)
+                                        for k, (n, sw) in enumerate(r.switches.items())})
     yield r
     r.close()
 

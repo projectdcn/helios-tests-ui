@@ -57,6 +57,9 @@ def status_env(code: int, msg: str, text: str) -> dict:
 
 
 class State:
+    # fake LDAP / RADIUS directories (selftest only): directory user -> password
+    DIRECTORY = {"ldap": {"ldapuser": "selftest-dir-pw"}, "radius": {"raduser": "selftest-dir-pw"}}
+
     def __init__(self, faults: set[str], topology: dict | None = None):
         self.f = faults
         self.lock = threading.RLock()
@@ -72,6 +75,7 @@ class State:
         self.rv = __import__("itertools").count(1000)
         self.snapshot: dict | None = None
         self.recovery_key_taken = False
+        self.version = "0.1.0-AICC-797"
         self.authn = obj("AuthenticationPolicy", "authn-policy",
                          {"authenticators": {"local": {"enabled": True}},
                           "lockout": {"max-failed-login-attempts": 5, "lockout-duration-seconds": 900}})
@@ -79,13 +83,14 @@ class State:
         from fake_rack import Sim
 
         topo = topology or {}
-        self.sim = Sim(self, int(topo.get("switches", 1)), int(topo.get("computes", 2)))
+        self.sim = Sim(self, int(topo.get("switches", 1)), int(topo.get("computes", 2)), topo.get("mch"))
         self.sim.time_scale = float(topo.get("time_scale", 1))
         n_ct = int(topo.get("computes", 2))
         self.objs = {
             "ComputeNode": self.sim.computes,
             "SwitchNode": self.sim.switches,
-            "Pod": {"pod-1": obj("Pod", "pod-1", {"rack-type": "minirack", "cabling": "mr3"}, {"state": "active"})},
+            "Pod": {"pod-1": obj("Pod", "pod-1", {"rack-type": {"full": "heliosmch", "mini": "heliosmchmini"}.get(topo.get("mch"), "minirack"),
+                                              "cabling": "mr3"}, {"state": "active"})},
             "VPod": {"pod-1.system": obj("VPod", "pod-1.system",
                                          {"GPUs": [{"slot-id": s, "index": i} for s in range(n_ct) for i in range(4)],
                                           "parent-pod": "pod-1", "failover-policy": "system-failover-policy"},
@@ -95,6 +100,7 @@ class State:
             "FailoverPolicy": {"system-failover-policy": obj("FailoverPolicy", "system-failover-policy",
                                                              {"datafabric-reconfig": "automatic",
                                                               "link-fail-threshold": 10})},
+            "SyslogExport": {},
             "AlertPolicy": {"default-event-based-alerts": obj("AlertPolicy", "default-event-based-alerts",
                                                               {"resource": "Event", "enable": True})},
         }
@@ -226,7 +232,7 @@ class Handler(BaseHTTPRequestHandler):
                 if self._deny(user, "cluster", res.capitalize(), "read"):
                     return
                 if res == "version":
-                    return self._send(200, obj("Version", "version", status={"build-version": "0.1.0-AICC-797"}))
+                    return self._send(200, obj("Version", "version", status={"build-version": st.version}))
                 up = st.sim.ctrl_up
                 down = "quorum_down" in st.f or sum(up.values()) * 2 <= len(up)
                 return self._send(200, obj("Cluster", "cluster", status={
@@ -234,6 +240,19 @@ class Handler(BaseHTTPRequestHandler):
                     "quorum-status": {"members": [{"name": ip, "status": "stopped" if ("quorum_down" in st.f or not up[k])
                                                    else "started", "conditions": [{"status": "true" if up[k] else "false"}]}
                                                   for k, ip in enumerate(st.sim.quorum)]}}))
+            if res == "rollouts" and method == "POST":
+                if self._deny(user, "cluster", "Rollout", "create"):
+                    return
+                v = ((body or {}).get("spec") or {}).get("version")
+                if not v:
+                    return self._err(400, "rollout needs spec.version")
+                if "rollout_noop" not in st.f:
+                    st.version = v
+                for i in range(st.sim.n_sw):            # controllers and agents restart on the new build
+                    st.sim.agent(i, "restart")
+                st.record(user, "Create", "Rollout", (body.get("meta") or {}).get("name", "rollout"), path)
+                return self._send(200, obj("Rollout", (body.get("meta") or {}).get("name", "rollout"), body.get("spec"),
+                                           {"state": "complete"}))
             if res in ("config-snapshot", "config-restore"):
                 return self._snapshot(method, p, body, user)
             kind = CLUSTER_KINDS.get(res)
@@ -278,6 +297,8 @@ class Handler(BaseHTTPRequestHandler):
                     return
                 return self._send(200, {"kind": "AlertList", "list-meta": {"total-count": len(st.alerts)},
                                         "items": list(reversed(st.alerts))})
+            if res == "syslogexports":
+                return self._crud(method, "monitoring", "SyslogExport", name, body, user, path, action)
             if res == "alertPolicies":
                 return self._crud(method, "monitoring", "AlertPolicy", name, body, user, path, action)
             if res == "techsupport":
@@ -317,7 +338,9 @@ class Handler(BaseHTTPRequestHandler):
         if body is ValueError or not isinstance(body, dict) or "username" not in body:
             return self._err(400, "invalid login request")
         u = st.users.get(body.get("username"))
-        if not u or u["pw"] != body.get("password"):
+        if u is None:
+            return self._dir_login(body)
+        if u["pw"] != body.get("password"):
             if u:
                 s = u["obj"]["status"]
                 s["failed-login-attempts"] = int(s.get("failed-login-attempts", 0)) + 1
@@ -332,6 +355,25 @@ class Handler(BaseHTTPRequestHandler):
         if body["username"] != "admin":
             o["status"]["roles"] = st.user_roles(body["username"])
         self._send(200, o, {"Set-Cookie": f"sid={sid}{flags}", "Grpc-Metadata-Csrf-Token": secrets.token_hex(8)})
+
+    def _dir_login(self, body):
+        """Login through an enabled LDAP / RADIUS authenticator in the authn-policy (fake directories)."""
+        st = self.st
+        auths = (st.authn.get("spec") or {}).get("authenticators") or {}
+        for kind, users in st.DIRECTORY.items():
+            if not (auths.get(kind) or {}).get("enabled") or body["username"] not in users:
+                continue
+            if kind == "ldap" and "ldap_ignored" in st.f:
+                continue
+            if users[body["username"]] != body.get("password") and not (kind == "radius" and "radius_accepts_any" in st.f):
+                continue
+            sid = secrets.token_hex(16)
+            st.sessions[sid] = body["username"]
+            st.record(body["username"], "Login", "User", body["username"], "/v1/login")
+            o = obj("User", body["username"], {"type": kind}, {"authenticators": [kind], "roles": []})
+            return self._send(200, o, {"Set-Cookie": f"sid={sid}; Path=/; Secure; HttpOnly; SameSite=Strict",
+                                       "Grpc-Metadata-Csrf-Token": secrets.token_hex(8)})
+        return self._send(401, {"result": {"Str": "Unauthorized"}, "message": ["Invalid username/password"], "code": 401})
 
     def _crud(self, method, group, kind, name, body, user, path, action):
         st = self.st
@@ -415,6 +457,8 @@ class Handler(BaseHTTPRequestHandler):
             sim.event("switchnode_drained", f"switch {name} drained")
         elif op == "DecommissionSwitchNode":
             force = bool(body.get("force-decommission"))
+            if ph == "admitted" and "force_decom_admitted_rejected" in st.f:
+                return self._err(412, f"switch {name} is admitted: drain it first")
             ok = force or sim.agent_up[i] or "decom_with_agent_down_ok" in st.f
             sw["status"]["admission-phase"] = "decommissioned" if ok else "decommission_failed"
             sim.event("switchnode_decommissioned", f"switch {name} {sw['status']['admission-phase']}")
@@ -433,7 +477,7 @@ class Handler(BaseHTTPRequestHandler):
             if len(p) == 6 and p[5] == "save":
                 st.snapshot = {"objs": {k: copy.deepcopy(st.objs[k]) for k in keep},
                                "users": copy.deepcopy(st.users), "roles": copy.deepcopy(st.roles),
-                               "bindings": copy.deepcopy(st.bindings)}
+                               "bindings": copy.deepcopy(st.bindings), "authn": copy.deepcopy(st.authn["spec"])}
                 name = f"snapshot-{int(time.time())}.gz"
                 return self._send(200, obj("ConfigurationSnapshot", "Default-Snapshot", {},
                                            {"last-snapshot": {"uri": f"/objstore/v1/downloads/snapshots/{name}"}}))
@@ -451,6 +495,8 @@ class Handler(BaseHTTPRequestHandler):
                 st.users["admin"] = admin
                 st.roles.clear(); st.roles.update(copy.deepcopy(st.snapshot["roles"]))
                 st.bindings.clear(); st.bindings.update(copy.deepcopy(st.snapshot["bindings"]))
+                if "restore_drops_authn" not in st.f:
+                    st.authn["spec"] = copy.deepcopy(st.snapshot["authn"])
             return self._send(200, obj("SnapshotRestore", "SnapshotRestore", (body or {}).get("spec") or {},
                                        {"status": "completed"}))
         return self._err(404, "unknown snapshot path")
@@ -497,11 +543,13 @@ class Handler(BaseHTTPRequestHandler):
             unhealthy = slot in sim.stopped or sim.slot_host(slot) is None
             c["status"]["admission-phase"] = "decommission_failed" if (unhealthy and not force
                                                                       and "decom_unhealthy_ok" not in st.f) else "decommissioned"
+            sim.lifecycle_event(c["status"]["admission-phase"], slot)
             return self._send(200, c)
         if op == "Delete":
             if ph == "admitted":
                 return self._err(412, f"compute node {name} is admitted: decommission it first")
             st.objs["ComputeNode"].pop(name)
+            sim.lifecycle_event("deleted", slot)
             return self._send(200, c)
         return self._err(404, f"unknown compute action {op}")
 

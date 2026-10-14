@@ -59,10 +59,13 @@ These use recorded SONiC and GPU outputs from `selftest/replay`, so no hardware
 is needed.
 
 ```bash
-.venv/bin/pytest unit -n 6                                                  # 219 tests: 67 L1 + 16 AFM API + 110 AFM product-fault checks (~8 min)
-.venv/bin/pytest tests --inventory selftest/inventory.yaml                  # 208 pass, 171 skip (disruptive skipped)
-.venv/bin/pytest tests --inventory selftest/inventory.yaml --allow-disruptive   # 345 pass, 34 skip (one-switch fake)
-.venv/bin/pytest tests/afm --inventory selftest/inventory-afm3.yaml --allow-disruptive   # 230 pass, 3 skip (3-switch fake; 3 opt-in/one-switch cases)
+.venv/bin/pytest unit -n 6                                                  # 293 tests: 67 L1 + 16 AFM API + 180 AFM product-fault checks + healthy fakes (~11 min)
+.venv/bin/pytest tests --inventory selftest/inventory.yaml                  # 211 pass, 243 skip (disruptive skipped)
+.venv/bin/pytest tests --inventory selftest/inventory.yaml --allow-disruptive   # 356 pass, 98 skip (one-switch fake)
+.venv/bin/pytest tests/afm --inventory selftest/inventory-afm3.yaml --allow-disruptive   # 253 pass, 55 skip (3-switch fake; MCH/equipment cases skip here)
+.venv/bin/pytest tests/afm/test_afm_mch.py --inventory selftest/inventory-mch.yaml --allow-disruptive      # 36 pass, 1 skip (heliosmch fake)
+HELIOS_SELFTEST_DIR_PW=selftest-dir-pw .venv/bin/pytest tests/afm/test_afm_equipment.py \
+    --inventory selftest/inventory-equip.yaml --allow-disruptive          # 15 pass (fake LDAP/RADIUS/syslog/upgrades/mgmt network)
 ```
 
 ### 2. On a real rack
@@ -234,7 +237,7 @@ The table has one row per category:
 `--missing` also lists every case that has **no test yet**, with its ID, level
 and title.
 
-## Coverage (325 of 542 cases)
+## Coverage (400 of 542 cases)
 
 * **TC-SWH-001…036, switch hardware.** Firmware, fans, PSUs, platform/EEPROM,
   multi-ASIC namespaces, interface state/speed/MTU, error-counter deltas,
@@ -367,6 +370,49 @@ and title.
       005/006/010…017 (hard reset = AFM Reconfigure).
     * **Not automated:** SPDM session, SelectedLink and IFCP packet-format cases. They need data
       that neither afmctl nor the node-agent API exposes (AMD tooling or packet capture).
+  * **Sideband agent placement and control path (23, `test_afm_sideband_more.py`).**
+    * **Placement**, read from each switch's afm-agent process list: one sb-node-agent per slot, spread
+      over the switches within `thresholds.afm.agent_balance_slack` (1) (SBM-135/136/050).
+    * **Redistribution:** a switch's afm-agent stopped re-homes its agents (SBM-137), rebalance after recovery
+      and after a switch delete + re-add (SBM-008/198), no thrashing after repeated flaps (SBM-009), a
+      compute's GPU set never split across switches (SBM-011).
+    * **Restarts:** pairwise concurrent afm-agent / afm-controller restarts (SBM-006), leader controller
+      flap with every agent reconnecting (SBM-099).
+    * **Lifecycle:** control path terminated on compute decommission (SBM-207: the agent exits or reports
+      is-connected false; on g02-g17 the process stays after DELETE), event trail per phase (SBM-042),
+      switch asic-info ports drop on compute delete (SBM-043), readmit with a port down (SBM-038),
+      agent host switch deleted mid-admission (SBM-045), no stale events after a switch delete (SBM-030),
+      force-decommission of an admitted switch (SBM-178).
+    * **Control plane under data-path changes:** non-sideband link down (SBM-097), VLAN/FDB creation
+      (SBM-114), CP switch down during vPOD CRUD (SBM-111), port MTU below the IFCP MTU (SBM-023,
+      `commands.switch.port_mtu`, `thresholds.afm.mtu_low` / `mtu_low_expect`).
+    * **Switch-agent start-up checks:** management IP on eth1 (BUG-019, `commands.switch.mgmt_to_eth1` /
+      `mgmt_restore`) and an invalid fru.json (BUG-020, `thresholds.afm.fru_json_path`). Both skip until set.
+  * **MCH racks (37, `test_afm_mch.py`).** These skip unless the pod rack-type contains `mch` (heliosmch /
+    heliosmchmini) or `thresholds.mch.enabled` is set. The used ports come from the lane mask
+    (`thresholds.mch.lane_mask`, default `000fff333000fff333`, one hex digit per station; `mask_order`
+    VERIFY): 6 two-port, 6 one-port and 6 empty stations = 18 used ports.
+    * **Layout (read-only):** station distribution, lane bitmask and strategy, MACs only on used ports,
+      MI450 numbering, unused ports disabled in afmctl and AFM, 18 links up per GPU, switch slot ids 1-3,
+      destination tables, path-to-port bit positions, no config or alarms on disabled ports, disabled ports
+      in telemetry without data, mini-rack trunk ports and priority tagging, no VLAN on unused lanes.
+    * **Dynamic (disruptive):** path maps per station type on link down and flap, lane mask on link
+      down, MI450 port ids in events, unused-lane flap raises no event, drain/activate used ports only,
+      reset RAS, vPOD with 18 planes, VLANs on vPOD CRUD, Reconfigure/Reconcile, degraded with a link or
+      a plane down, lifecycle unchanged, layout kept across controller/agent restarts and snapshot restore.
+    * **Traffic and templates:** L2 ping + TransferBench over 18 links, `mch.min_gbps` floor, mock IFoE
+      driver (`commands.mch.mock_driver_check`), invalid rack type at bootstrap (`commands.mch.bootstrap_invalid`),
+      AFM upgrade keeps MCH (`commands.afm.upgrade`).
+  * **Lab equipment (15, `test_afm_equipment.py`).** Each case skips until its inventory entry exists:
+    * LDAP / RADIUS login through the authn-policy (AFM-044, CTL-119) and snapshot/restore with both
+      (CTL-042): `afm.ldap` / `afm.radius` `{authenticator, username, password_env}`.
+    * Audit export to syslog (CTL-101): `afm.syslog {create: {path, body}, check}`.
+    * Upgrades: rollout N-1 and back (CTL-054, `commands.afm.rollout` + `thresholds.afm.versions`), SONiC /
+      ONIE / firmware upgrade of a switch (AFM-UPGRADE-004, HW-022, CTL-078), install from a local file
+      (SWA-128), rollback after a failed upgrade (SWA-164), cluster move (CTL-127).
+    * Management network cut and restored (`commands.mgmtnet.down` / `up`, run on the runner): compute
+      unhealthy then healthy (AFM-008), event naming the compute (E2E-093), other controllers stable
+      (BUG-003), leader moves and the old leader rejoins (CTL-050).
   * **Built from the g02-g17 procedures, with their script bugs fixed** (see `helios/afm_ops.py`):
     * membership is checked per GPU
     * a slot's agent is re-located on every poll
@@ -377,8 +423,12 @@ and title.
     * `selftest/fake_afm.py` is an in-process HTTPS + WebSocket AFM. `selftest/fake_rack.py` simulates
       the rack behind it (agents, controllers, admission, vPOD membership, planes, links) and the switch
       SSH the disruptive cases drive.
-    * `unit/test_afm_selftest.py` injects 16 API faults and 110 product faults (lifecycle, links, failover,
-      controller, regression, compute side, IFCP, traffic), including
+    * The fake also has an MCH mode (`fake_topology.mch: full | mini`; 36 IFoE ports per GPU, the lane mask's
+      18 used) and simulates the lab equipment (directory logins, syslog server, rollout, switch images,
+      management-network cuts through a fake runner). Inventories: `selftest/inventory-mch.yaml`,
+      `inventory-mchmini.yaml`, `inventory-equip.yaml`.
+    * `unit/test_afm_selftest.py` injects 16 API faults and 180 product faults (lifecycle, links, failover,
+      controller, regression, compute side, IFCP, traffic, sideband placement, MCH, lab equipment), including
       the full-rack issues (stale planes after readmit, VLAN wipe AIFM-1901, coupled ports). Each one must
       fail exactly the cases that should catch it.
 
@@ -414,6 +464,12 @@ is unset skips with the key name; it never guesses:
   description must be up (mini racks leave most ports admin-up but uncabled)
 * `thresholds.switch.port_speed_overrides` (e.g. 100G uplinks),
   `psu_identity_exempt_re` / `psu_load_balance` (busbar-fed trays)
+* MCH and lab-equipment cases (commented in `inventory/example-fullrack.yaml`):
+  `thresholds.mch.*` and `commands.mch.*`; `afm.ldap` / `afm.radius` / `afm.syslog`;
+  `commands.switch.*` upgrade templates with `thresholds.switch.target_image` / `local_image`;
+  `commands.afm.rollout` / `cluster_move` / `upgrade` with `thresholds.afm.versions` / `cluster_move_target`;
+  `commands.mgmtnet.down` / `up`; `commands.switch.mgmt_to_eth1` / `mgmt_restore` and
+  `thresholds.afm.fru_json_path` (BUG-019/020)
 
 
 ## Plan ID fixes

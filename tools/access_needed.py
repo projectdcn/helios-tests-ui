@@ -56,6 +56,16 @@ ID_ACCESS = {
     "TC-RAS-reset-009": TRAFFIC + " + PDU",
     "TC-CTL-059": SW, "TC-BUG-022": SW, "TC-E2E-118": SW, "TC-BUG-021": SW + " + switch reboot",
 }
+# automated cases that also need lab equipment (they skip until the inventory provides it)
+EQUIPMENT = {
+    "tests/afm/test_afm_mch.py": "MCH rack (18-link)",
+    "TC-AFM-044": "LDAP server", "TC-CTL-119": "RADIUS server", "TC-CTL-042": "LDAP + RADIUS servers",
+    "TC-CTL-101": "syslog server",
+    **{t: "upgrade images" for t in ("TC-CTL-054", "TC-CTL-078", "TC-CTL-127", "TC-SWA-128", "TC-SWA-164",
+                                     "TC-HW-022", "TC-AFM-UPGRADE-004")},
+    **{t: "out-of-band mgmt network control" for t in ("TC-AFM-008", "TC-E2E-093", "TC-BUG-003", "TC-CTL-050",
+                                                       "TC-BUG-019")},
+}
 
 # not automated: (category, title regex) -> access, first match wins
 RULES = [
@@ -156,17 +166,24 @@ def automated() -> dict[str, tuple[str, bool, str]]:
     return out
 
 
+def classify_auto(f: str, disr: bool, extra: str) -> str:
+    if f.startswith("tests/afm/"):
+        if extra.startswith("NOAFM"):
+            return extra[len("NOAFM + "):].replace("compute SSH", "Compute SSH").replace("switch", "Switch", 1)
+        return AFM + extra if extra else (AFM + " (disruptive)" if disr else AFM)
+    return FILE_ACCESS.get(f, SW_CMP)
+
+
 def classify(case: dict, auto: dict) -> str:
     tid = case["id"]
     if tid in ID_ACCESS:
         return ID_ACCESS[tid]
     if tid in auto:
         f, disr, extra = auto[tid]
-        if f.startswith("tests/afm/"):
-            if extra.startswith("NOAFM"):
-                return extra[len("NOAFM + "):].replace("compute SSH", "Compute SSH").replace("switch", "Switch", 1)
-            return AFM + extra if extra else (AFM + " (disruptive)" if disr else AFM)
-        return FILE_ACCESS.get(f, SW_CMP)
+        need = EQUIPMENT.get(tid) or EQUIPMENT.get(f)
+        if need:
+            return f"{need} + " + classify_auto(f, disr, extra)
+        return classify_auto(f, disr, extra)
     title = case.get("title") or ""
     for cat, rx, access in RULES:
         if (cat is None or case.get("category") == cat) and re.search(rx, title):

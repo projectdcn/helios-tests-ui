@@ -1,0 +1,96 @@
+# Self-test for the MCH cases on a heliosmchmini fake: 1 switch / 2 computes (144 trunk ports per ASIC).
+#   pytest tests/afm/test_afm_mch.py --inventory selftest/inventory-mchmini.yaml --allow-disruptive
+rack: selftest-mchmini
+transport:
+  kind: replay
+  dir: replay
+
+switches:
+  - {name: sw1, host: 10.0.0.83}
+computes:
+  - {name: c1, gpus: 4}
+  - {name: c2, gpus: 4}
+
+afm:
+  url: https://helios-afm.lab.example
+  fake: true
+  rbac_reads_denied: true   # the fake enforces read RBAC; MR3 AICC-797 does not
+  fake_topology: {switches: 1, computes: 2, time_scale: 0.05, mch: mini}
+  fake_faults: []
+  verify_tls: false
+  auth:
+    kind: session
+    username: admin
+    password: selftest-admin-pw   # fake controller only
+    tenant: default
+
+commands:
+  mch:      # simulated by selftest/fake_rack.py
+    mock_driver_check: "lsmod | grep -q '^ifoe_mock '"
+    bootstrap_invalid: "helios-fake bootstrap --rack-type helios-bogus"
+  afm:
+    upgrade: "helios-fake afm-upgrade"
+  ifoe:
+    unload: "modprobe -r ifoe"
+    load: "modprobe ifoe"
+    loaded_check: "lsmod | grep -q '^ifoe '"
+  l2ping:
+    mode: afmctl          # discover acc ids + LINK_UP ports via afmctl; ring pairs
+  transferbench:
+    in_domain: "TransferBench a2a {size}"
+    rank_cmd: "TB_NUM_RANKS={num_ranks} TB_RANK={rank} TB_MASTER_ADDR={master_addr} TB_SINGLE_LOG=1 TransferBench a2a {size}"
+  rccl:
+    in_domain: "{rccl_tests_dir}/build/{collective}_perf -b {min_bytes} -e {max_bytes} -f 2 -g {gpus} -n {iters}"
+    cross_domain: "mpirun -np {np} -H {hostlist} {rccl_tests_dir}/build/{collective}_perf -b {min_bytes} -e {max_bytes} -f 2 -g 1"
+  rccl_smoke:
+    bin: /opt/helios/RcclSmokeTest
+    env: NCCL_LOG_DIR=/tmp/helios-rccl-logs
+    port: 45000
+  perftest:
+    nodes: [c1, c2]
+    duration_s: 1
+    server_start_s: 0
+    timeout_margin_s: 10
+    qp_sweep: [8, 64, 256]
+    custom: {verbs: [write, read], qps: [4], pairs: [1, 2], iterations: 2}
+  ras:
+    partial_stations_down: "ras-partial-stations down {name}"
+    partial_stations_up: "ras-partial-stations up {name}"
+    dc_cycle: "ipmitool -I lanplus -H {bmc} chassis power cycle"
+    ac_cycle: "pdu-ctl cycle {pdu_outlet}"
+
+thresholds:
+  mch:
+    lane_mask: 000fff333000fff333
+    mask_order: msb_first
+    planes: 18
+    links_per_gpu: 18
+    switch_slots: [1, 2, 3]
+    trunk_ports_per_asic: 144
+    tagging_mode: priority_tagged
+    min_gbps: 1
+  afm:
+    quorum_members: 1
+    max_not_ready_ports_per_compute: 0
+    poll_s: 0.2
+    time_scale: 0.05
+    soak_s: 20
+    soak_interval_s: 1
+    str011_cycles: 3
+    str013_flaps: 2
+    link_watch_s: 1
+    retry_interval_s: 0.2
+    agent_settle_s: 0
+    absent_hold_s: 0.3
+    plane_settle_interval_s: 0
+    plane_restore_s: 1
+    readmit_timeout_s: 5
+    switch_readmit_s: 5
+    agent_down_detect_s: 5
+    agent_respawn_s: 5
+    agent_recover_s: 5
+    mtu_low_expect: down
+    fru_json_path: /etc/sonic/fru.json
+    vpod_timeout_s: 5
+    membership_timeout_s: 5
+    aggwatch: {event_wait_s: 5, settle_s: 0.5, quiet_s: 2, idle_s: 3, cycles: 5, burst: 10, concurrent: 3, no_options_s: 5}

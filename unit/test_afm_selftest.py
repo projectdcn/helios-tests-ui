@@ -38,14 +38,15 @@ FAULTS = {
 
 
 def _run(tmp_path: Path, faults: str = "", tcs: set[str] | None = None,
-         inventory: str = "inventory.yaml") -> dict[str, str]:
+         inventory: str = "inventory.yaml", module: str = "") -> dict[str, str]:
     results = tmp_path / "results"
-    args = [sys.executable, "-m", "pytest", str(ROOT / "tests" / "afm"), "--inventory",
+    args = [sys.executable, "-m", "pytest", str(ROOT / "tests" / "afm" / module), "--inventory",
             str(ROOT / "selftest" / inventory), "--results-dir", str(results), "--allow-disruptive",
             "-q", "-p", "no:cacheprovider", "-o", "log_cli=false"]
     if tcs:
         args += ["--tc", ",".join(sorted(tcs))]
-    env = {**os.environ, "HELIOS_FAKE_AFM_FAULTS": faults}
+    env = {**os.environ, "HELIOS_FAKE_AFM_FAULTS": faults,
+           "HELIOS_SELFTEST_DIR_PW": "selftest-dir-pw"}   # fake LDAP/RADIUS directory user (inventory-equip.yaml)
     proc = subprocess.run(args, cwd=ROOT, capture_output=True, text=True, timeout=600, env=env)
     summaries = list(results.glob("*/tc_summary.csv"))
     assert summaries, f"no results written\n{proc.stdout[-3000:]}\n{proc.stderr[-2000:]}"
@@ -174,6 +175,91 @@ LIFECYCLE_FAULTS = [
     ("configdone_stuck", {"TC-NA-016"}),
     ("no_listing_control", {"TC-CTL-006"}),      # real AFM ends the initial list with a Control event
 ]
+# group H: sideband agent placement / control path (tests/afm/test_afm_sideband_more.py), 3-switch fake
+SIDEBAND_FAULTS = [
+    ("agents_unbalanced", {"TC-SBM-135", "TC-SBM-136"}),
+    ("no_switch_agent_process", {"TC-SBM-050"}),
+    ("no_rehome", {"TC-SBM-137"}),
+    ("no_rebalance", {"TC-SBM-008"}),
+    ("no_rebalance", {"TC-SBM-198"}),
+    ("thrash", {"TC-SBM-009"}),
+    ("split_gpu_set", {"TC-SBM-011"}),
+    ("pairwise_wedge", {"TC-SBM-006"}),
+    ("agents_no_reconnect", {"TC-SBM-099"}),
+    ("control_path_kept", {"TC-SBM-207"}),
+    ("no_compute_lifecycle_events", {"TC-SBM-042"}),
+    ("switch_ports_ready_after_delete", {"TC-SBM-043"}),
+    ("readmit_forgets_down_ports", {"TC-SBM-038"}),
+    ("no_rehome_on_delete", {"TC-SBM-045"}),
+    ("stale_switch_events", {"TC-SBM-030"}),
+    ("force_decom_admitted_rejected", {"TC-SBM-178"}),
+    ("cp_lost_on_link_down", {"TC-SBM-097"}),
+    ("cp_lost_on_vpod_create", {"TC-SBM-114"}),
+    ("vpod_fails_with_cp_switch_down", {"TC-SBM-111"}),
+    ("mtu_sticky", {"TC-SBM-023"}),
+    ("agent_fails_on_eth1", {"TC-BUG-019"}),
+    ("fru_ignored", {"TC-BUG-020"}),
+]
+# MCH (tests/afm/test_afm_mch.py) on the heliosmch fake (inventory-mch.yaml) unless another inventory is named;
+# MCH-045/047 (traffic over replayed tools) have no controller fault
+MCH_FAULTS = [
+    ("mch_slot_ids_wrong", {"TC-MCH-014"}),
+    ("mch_unused_ready", {"TC-MCH-009", "TC-MCH-024"}),
+    ("mch_unused_enabled", {"TC-MCH-009", "TC-MCH-019", "TC-MCH-028"}),
+    ("mch_mac_on_unused", {"TC-MCH-006"}),
+    ("mch_dest_on_unused", {"TC-MCH-022"}),
+    ("mch_unused_mapped", {"TC-MCH-002", "TC-MCH-028"}),
+    ("mch_path_bits_swapped", {"TC-MCH-025"}),
+    ("mch_map_static", {"TC-MCH-021", "TC-MCH-024"}),
+    ("mch_mask_static", {"TC-MCH-040"}),
+    ("mch_stats_on_unused", {"TC-MCH-048"}),
+    ("mch_vlan_on_unused", {"TC-MCH-063"}),
+    ("events_on_unused_lanes", {"TC-MCH-039"}),
+    ("mch_event_wrong_pid", {"TC-MCH-044"}),
+    ("mch_mock_driver_missing", {"TC-MCH-011"}),
+    ("bootstrap_accepts_invalid", {"TC-MCH-018"}),
+    ("upgrade_resets_rack_type", {"TC-MCH-054"}),
+    ("mch_wrong_strategy", {"TC-MCH-004", "TC-MCH-012"}),
+    ("ifcp_baseline_down", {"TC-MCH-015"}),
+    ("mch_alarm_unused", {"TC-MCH-043"}),
+    ("mch_unused_failed", {"TC-MCH-007"}),
+    ("mch_station_ids_wrong", {"TC-MCH-008"}),
+    ("mch_planes_36", {"TC-MCH-031"}),
+    ("no_vlan_for_vpod", {"TC-MCH-062"}),
+    ("reconfigure_500", {"TC-MCH-032"}),
+    ("mch_failed_links_ignored", {"TC-MCH-033"}),
+    ("mch_failed_links_ignored", {"TC-MCH-034"}),
+    ("mch_reset_loses_layout", {"TC-MCH-023"}),
+    ("no_readmit", {"TC-MCH-030"}),
+    ("mch_layout_lost_on_ctrl_restart", {"TC-MCH-053"}),
+    ("mch_layout_lost_on_agent_restart", {"TC-MCH-055"}),
+    ("mch_flap_sticky", {"TC-MCH-026"}),
+    ("mch_tagged", {"TC-MCH-060"}, "inventory-mchmini.yaml"),
+]
+# lab-equipment cases (tests/afm/test_afm_equipment.py) on inventory-equip.yaml
+EQUIP_FAULTS = [
+    ("ldap_ignored", {"TC-AFM-044"}),
+    ("radius_accepts_any", {"TC-CTL-119"}),
+    ("restore_drops_authn", {"TC-CTL-042"}),
+    ("syslog_export_dropped", {"TC-CTL-101"}),
+    ("rollout_noop", {"TC-CTL-054"}),
+    ("upgrade_not_readmitted", {"TC-AFM-UPGRADE-004"}),
+    ("upgrade_not_readmitted", {"TC-HW-022"}),
+    ("no_rejoin", {"TC-CTL-078"}),
+    ("local_install_switches_image", {"TC-SWA-128"}),
+    ("no_rollback", {"TC-SWA-164"}),
+    ("cluster_move_noop", {"TC-CTL-127"}),
+    ("mgmt_loss_unnoticed", {"TC-AFM-008"}),
+    ("no_mgmt_loss_event", {"TC-E2E-093"}),
+    ("mgmt_flap_restarts_controllers", {"TC-BUG-003"}),
+    ("leader_stuck", {"TC-CTL-050"}),
+    ("no_rejoin", {"TC-CTL-050"}),
+]
+# cases that only run on the MCH / equipment self-test inventories (SKIP on inventory-afm3.yaml)
+_TC = __import__("re").compile(r'tc\("(TC-[A-Za-z0-9-]+)"\)')
+OTHER_INVENTORY = {t for m in ("test_afm_mch.py", "test_afm_equipment.py")
+                   for t in _TC.findall((ROOT / "tests" / "afm" / m).read_text())}
+
 # controls run alongside a fault and must still PASS (the fault is outside what they check)
 CONTROLS = {"one_failure_per_gpu": {"TC-E2E-048", "TC-E2E-137"}, "no_vpod_events": {"TC-E2E-030"},
             "manual_auto": {"TC-E2E-133"}}
@@ -191,9 +277,35 @@ def test_healthy_fake_3switch_all_pass(tmp_path):
     optional = {"TC-AFM-035A",       # one-switch racks only
                 "TC-AFM-AGGW-002",   # needs a bearer token (thresholds.afm.bearer_token_env)
                 "TC-CTL-055"}        # one-time recovery key, opt-in (thresholds.afm.allow_recovery_key)
-    bad = {k: v for k, v in verdicts.items() if v != "PASS" and not (k in optional and v == "SKIP")}
+    bad = {k: v for k, v in verdicts.items() if v != "PASS" and not ((k in optional or k in OTHER_INVENTORY) and v == "SKIP")}
     assert not bad, bad
     assert len(verdicts) >= 233
+
+
+@pytest.mark.parametrize("inventory,only", [("inventory-mch.yaml", "TC-MCH-060"), ("inventory-mchmini.yaml", "TC-MCH-014")])
+def test_healthy_fake_mch_all_pass(tmp_path, inventory, only):
+    """Every MCH case passes on the heliosmch and heliosmchmini fakes (``only`` is the other rack type's case)."""
+    verdicts = _run(tmp_path, inventory=inventory, module="test_afm_mch.py")
+    bad = {k: v for k, v in verdicts.items() if v != "PASS" and not (k == only and v == "SKIP")}
+    assert not bad, bad
+    assert len(verdicts) == 37
+
+
+def test_healthy_fake_equipment_all_pass(tmp_path):
+    verdicts = _run(tmp_path, inventory="inventory-equip.yaml", module="test_afm_equipment.py")
+    assert {v for v in verdicts.values()} == {"PASS"} and len(verdicts) == 15, verdicts
+
+
+TRANCHE5 = ([(f, t, "inventory-afm3.yaml") for f, t in SIDEBAND_FAULTS]
+            + [(e[0], e[1], e[2] if len(e) > 2 else "inventory-mch.yaml") for e in MCH_FAULTS]
+            + [(f, t, "inventory-equip.yaml") for f, t in EQUIP_FAULTS])
+
+
+@pytest.mark.parametrize("fault,tcs,inventory", TRANCHE5, ids=[f"{f}-{sorted(t)[0]}" for f, t, _ in TRANCHE5])
+def test_tranche5_fault_detected(tmp_path, fault, tcs, inventory):
+    """Group H, MCH and lab-equipment cases: each fault fails exactly its case(s)."""
+    verdicts = _run(tmp_path, fault, tcs, inventory=inventory)
+    assert {k for k, v in verdicts.items() if v == "FAIL"} == tcs, verdicts
 
 
 @pytest.mark.parametrize("fault,tcs", LIFECYCLE_FAULTS, ids=[f"{f}-{sorted(t)[0]}" for f, t in LIFECYCLE_FAULTS])
