@@ -72,12 +72,14 @@ class SonicSwitch:
         return parse_table(self.sh("fwutil show status", sudo=True))
 
     # -- databases ----------------------------------------------------------
+    # SONiC DB reads use sudo: an account outside the redis group (g02-g17 tenant_hpe) is refused the
+    # per-ASIC redis sockets ("Unable to connect to redis ... Permission denied")
     def db_keys(self, db: str, pattern: str, ns: str | None = None) -> list[str]:
-        out = self.sh(f"sonic-db-cli{_ns_flag(ns)} {db} keys {shlex.quote(pattern)}")
+        out = self.sh(f"sonic-db-cli{_ns_flag(ns)} {db} keys {shlex.quote(pattern)}", sudo=True)
         return sorted(ln.strip() for ln in out.splitlines() if ln.strip())
 
     def db_hash(self, db: str, key: str, ns: str | None = None) -> dict[str, str]:
-        return parse_db_hash(self.sh(f"sonic-db-cli{_ns_flag(ns)} {db} hgetall {shlex.quote(key)}"))
+        return parse_db_hash(self.sh(f"sonic-db-cli{_ns_flag(ns)} {db} hgetall {shlex.quote(key)}", sudo=True))
 
     def psu_info(self) -> dict[str, dict[str, str]]:
         """STATE_DB PSU_INFO keyed by PSU name ('PSU 1')."""
@@ -113,7 +115,7 @@ class SonicSwitch:
     def port_description(self, port: str, ns: str | None) -> str:
         """CONFIG_DB PORT description, e.g. 'To ComputeTray Slot0/GPU0[0]/Port9' ('' if unset)."""
         return self.run(f"sonic-db-cli{_ns_flag(ns)} CONFIG_DB hget {shlex.quote('PORT|' + port)} description",
-                        timeout=30).stdout.strip()
+                        sudo=True, timeout=30).stdout.strip()
 
     def port_descriptions(self, ns: str | None) -> dict[str, str]:
         """All CONFIG_DB PORT descriptions in one round trip: {EthernetN: 'To ComputeTray Slot0/GPU0[0]/Port9'}."""
@@ -121,7 +123,7 @@ class SonicSwitch:
         script = (f"for k in $(sonic-db-cli{flag} CONFIG_DB keys 'PORT|Ethernet*'); do "
                   f"echo \"${{k#PORT|}}|$(sonic-db-cli{flag} CONFIG_DB hget \"$k\" description)\"; done")
         out = {}
-        for line in self.sh(script, timeout=180).splitlines():
+        for line in self.sh(script, sudo=True, timeout=180).splitlines():
             port, _, desc = line.partition("|")
             if port:
                 out[port.strip()] = desc.strip()
@@ -163,7 +165,7 @@ class SonicSwitch:
                   f"echo \"$p $(sonic-db-cli{flag} CONFIG_DB hget \"$k\" speed) "
                   f"$(sonic-db-cli{flag} STATE_DB hget \"PORT_TABLE|$p\" speed)\"; done")
         out = {}
-        for line in self.sh(script, timeout=120).splitlines():
+        for line in self.sh(script, sudo=True, timeout=120).splitlines():
             toks = line.split()
             if toks and self.is_fabric_port(toks[0]):
                 out[toks[0]] = (toks[1] if len(toks) > 1 else "", toks[2] if len(toks) > 2 else "")

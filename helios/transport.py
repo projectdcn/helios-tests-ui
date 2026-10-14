@@ -118,7 +118,8 @@ class SshTransport:
         import paramiko
 
         if self.via_exec:
-            return _jump_client(self.jump, self.connect_timeout)
+            # one jump connection per rack host: sshd's MaxSessions (10) refuses more channels on a shared one
+            return _jump_client(self.jump, self.connect_timeout, tag=self.host.name)
         h = self.host
         client = paramiko.SSHClient()
         client.load_system_host_keys()
@@ -304,12 +305,12 @@ _JUMPS: dict[tuple, Any] = {}
 _JUMP_LOCK = threading.Lock()
 
 
-def _jump_client(jump: dict, timeout: float):
+def _jump_client(jump: dict, timeout: float, tag: str = ""):
     """One shared, key-authenticated connection to the jump host (ProxyJump); every rack host is reached
     through a direct-tcpip channel on it. No password: the jump host must accept your key or agent."""
     import paramiko
 
-    key = (jump["host"], int(jump.get("port", 22)), jump.get("user"))
+    key = (jump["host"], int(jump.get("port", 22)), jump.get("user"), tag)
     with _JUMP_LOCK:
         c = _JUMPS.get(key)
         if c is not None and c.get_transport() is not None and c.get_transport().is_active():
