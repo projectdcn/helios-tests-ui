@@ -234,7 +234,7 @@
       <li>vPOD and compute lifecycle: <code>TC-AFM-010</code>, <code>036…038</code> (stop afm-agent on every switch), <code>045…047</code> (decommission, delete and readmit a compute).</li>
       <li>Fabric links: <code>TC-AFM-011…017</code>, <code>039…042</code>. These shut one trunk port that is cabled to a GPU; list ports to leave alone in <code>thresholds.afm.avoid_ports</code>.</li>
       <li>Switch lifecycle <code>TC-AFM-023…035</code> needs at least 2 switches, so it skips on MR3.</li>
-      <li>Failover scenarios and vPOD operations: <code>TC-E2E-025…146</code> (25 cases, in <code>test_afm_failover.py</code>). FO-013, 014, 024 and 033 need a GPU with 2–3 stations up. The station of a GPU port is set with <code>thresholds.afm.ports_per_station</code> (2, VERIFY).</li>
+      <li>Failover scenarios and vPOD operations: <code>TC-E2E-025…146</code> (25 cases, in <code>test_afm_failover.py</code>). FO-013, 014, 024 and 033 need a GPU with 2–3 stations up. Station of a GPU port = port // <code>thresholds.afm.ports_per_station</code> (2). Verified on MR3 c1 with <code>afmctl show station</code>: station k is ports 2k and 2k+1.</li>
     </ul>
     <p class="muted">Run them one at a time with <code>--tc</code>. Several move compute trays out of the system vPOD, so expect traffic interruptions. On MR3 the plane-9 datapath fault doesn't block these cases: they check AFM state, not traffic.</p>
     <div class="cmd"><pre>.venv/bin/pytest tests/afm --inventory inventory/mr3.local.yaml --allow-disruptive --tc TC-AFM-035A -v</pre></div>

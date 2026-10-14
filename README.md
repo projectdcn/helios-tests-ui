@@ -294,7 +294,7 @@ and title.
     * **Events:** link_down/up per port, for one switch or across switches.
     * **vPOD operations:** move several computes, full system vPOD, parallel CRUD, GPUs between user vPODs,
       per-vPOD VLANs on every switch, vPOD CRUD events.
-    * **Station of a GPU port:** `gpu_port // thresholds.afm.ports_per_station` (2, VERIFY).
+    * **Station of a GPU port:** `gpu_port // thresholds.afm.ports_per_station` (2). Verified on MR3 c1 on 2026-10-13: `afmctl show station` maps station k to ports 2k and 2k+1, on all 4 GPUs and all 18 stations.
   * **Built from the g02-g17 procedures, with their script bugs fixed** (see `helios/afm_ops.py`):
     * membership is checked per GPU
     * a slot's agent is re-located on every poll

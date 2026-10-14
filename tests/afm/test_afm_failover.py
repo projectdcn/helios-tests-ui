@@ -1,7 +1,8 @@
 """AFM failover scenarios (TC-E2E, FO-xxx) and vPOD operations (DISRUPTIVE, needs --allow-disruptive).
 
 Fabric ports are shut on the switch side (``config interface ... shutdown``) on trunk ports cabled to a
-GPU. A GPU's IFoE station is ``gpu_port // thresholds.afm.ports_per_station`` (2 - VERIFY on the platform).
+GPU. A GPU's IFoE station is ``gpu_port // thresholds.afm.ports_per_station`` (2: ``afmctl show station``
+maps station k to ports 2k, 2k+1 - verified on MR3 c1, 2026-10-13).
 Failed GPU ports are read from every compute (``PortFailed``); planes are the vPOD's
 ``available-switch-planes``. Every port shut is brought back by the ``links`` fixture, user vPODs and
 policies are deleted, GPUs go back to the system vPOD. Policy-second timings scale with
