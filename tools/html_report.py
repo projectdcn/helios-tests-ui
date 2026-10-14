@@ -74,6 +74,19 @@ def load_runs(dirs: list[Path], tz: dict[str, float] | None = None) -> list[dict
     return list(items.values())
 
 
+LOG_KEEP = 75_000   # chars kept from each end of an embedded command log (the page must stay < 16 MB)
+
+
+def clip_log(log: str, path: str) -> str:
+    """Head + tail of a long command log, with a marker naming the full file under results/."""
+    if len(log) <= 2 * LOG_KEEP:
+        return log
+    head, tail = log[:LOG_KEEP], log[-LOG_KEEP:]
+    cut = log.count("\n", LOG_KEEP, len(log) - LOG_KEEP)
+    return (f"{head.rsplit(chr(10), 1)[0]}\n... [{cut} lines omitted here - full log: results/{path}] ...\n"
+            f"{tail.split(chr(10), 1)[-1]}")
+
+
 def fmt_dur(s: float) -> str:
     s = float(s or 0)
     if s < 60:
@@ -339,11 +352,12 @@ def build(items: list[dict], args) -> str:
     outcome_cards = "" if plan_rows is not None else (
         f'<div class="kpi-card"><div class="num" style="color:var(--pass);">{kp["PASS"]}</div><div class="label">Passed</div></div>'
         f'<div class="kpi-card"><div class="num" style="color:var(--fail);">{kp["FAIL"]}</div><div class="label">Failed</div></div>'
-        f'<div class="kpi-card"><div class="num" style="color:var(--blocked);">{kp["PENDING"] + kp["BLOCKED"]}</div><div class="label">Pending / blocked</div></div>'
+        + (f'<div class="kpi-card"><div class="num" style="color:#eab308;">{kp["PARTIAL"]}</div><div class="label">Partial</div></div>' if kp["PARTIAL"] else "")
+        + f'<div class="kpi-card"><div class="num" style="color:var(--blocked);">{kp["PENDING"] + kp["BLOCKED"]}</div><div class="label">Pending / blocked</div></div>'
         f'<div class="kpi-card"><div class="num" style="color:var(--skip);">{kp["SKIP"] + kp["N/A"]}</div><div class="label">Skipped / N/A</div></div>')
     # cases that ran on the rack = any status other than not run / not automated (pass, fail, pending, skip, N/A)
     n_exec = n_cases - kp["NOT RUN"] - kp["NOT AUTOMATED"]
-    detail = f"{kp['PENDING']} pending &middot; {kp['BLOCKED']} blocked &middot; {kp['SKIP']} skipped &middot; {kp['N/A']} N/A"
+    detail = (f"{kp['PARTIAL']} partial &middot; " if kp["PARTIAL"] else "") + f"{kp['PENDING']} pending &middot; {kp['BLOCKED']} blocked &middot; {kp['SKIP']} skipped &middot; {kp['N/A']} N/A"
     if plan_rows is not None:   # whole plan: pending / skipped / N/A ran on the rack and count as executed
         not_exec_val = f"{kp['NOT RUN'] + kp['NOT AUTOMATED']}: {kp['NOT RUN']} automated, not run &middot; {kp['NOT AUTOMATED']} not automated"
         n_earlier = sum(1 for r in plan_rows if earlier(r))
@@ -353,7 +367,7 @@ def build(items: list[dict], args) -> str:
         not_exec_val = detail
         not_exec_chips = '<span class="chip">blocked = datapath pre-flight refused traffic</span>'
     not_exec_cap = "Not executed" if plan_rows is not None else "No pass/fail verdict"
-    no_verdict_chip = (f'<span class="chip">{n_exec - executed} without a pass/fail verdict: {kp["PENDING"]} pending, '
+    no_verdict_chip = (f'<span class="chip">{n_exec - executed} without a pass/fail verdict: {kp["PARTIAL"]} partial (passed on the reachable trays), {kp["PENDING"]} pending, '
                        f'{kp["SKIP"]} skipped, {kp["N/A"]} N/A</span>' if plan_rows is not None else "")
     exec_txt = f" &middot; {n_exec} executed" if plan_rows is not None else ""
     exec_card = (f'<div class="kpi-card"><div class="num" style="color:var(--accent2);">{n_exec}</div>'
@@ -382,7 +396,7 @@ def build(items: list[dict], args) -> str:
 
     def suite_counts(rows):
         c = Counter(STATUS.get(r["outcome"], ("?", ""))[0] for r in rows)
-        return c["PASS"], c["FAIL"] + c["ERROR"], c["BLOCKED"], c["SKIP"]
+        return c["PASS"] + c["PARTIAL"], c["FAIL"] + c["ERROR"], c["BLOCKED"], c["SKIP"]   # PARTIAL = passed on the kept trays
 
     suite_labels = [SUITE_NAMES.get(k, k).split(" (")[0] for k in suites]
     bars = [suite_counts(v) for v in suites.values()]
@@ -478,7 +492,7 @@ pre.logpre .lvl-note {{ color: #9aa7b4; font-style: italic; }}
         {f'<span class="chip">+{len(extra)} extra evidence test(s): {esc(", ".join(extra))}</span>' if extra else ''}
         <span class="chip">{len(suites)} suites</span><span class="chip">{len(runs)} run(s)</span></div></div>
       <div class="pill"><div><div class="cap">Executed result</div>
-        <div class="val" style="color:{'#86efac' if kp['FAIL'] == 0 else '#fecaca'};">{n_exec} executed &middot; {kp['PASS']} PASS &middot; {kp['FAIL']} FAIL</div>
+        <div class="val" style="color:{'#86efac' if kp['FAIL'] == 0 else '#fecaca'};">{n_exec} executed &middot; {kp['PASS']} PASS &middot; {kp['FAIL']} FAIL{f" &middot; {kp['PARTIAL']} PARTIAL" if kp['PARTIAL'] else ""}</div>
         {no_verdict_chip}
         <span class="chip">{rate:.0f}% pass rate ({kp['PASS']} of {executed} with a pass/fail verdict)</span></div></div>
       <div class="pill"><div><div class="cap">{not_exec_cap}</div><div class="val">{not_exec_val}</div>
@@ -536,8 +550,8 @@ pre.logpre .lvl-note {{ color: #9aa7b4; font-style: italic; }}
   Chart.defaults.font.family = "'Segoe UI', system-ui, sans-serif";
   var P='#22c55e', F='#ef4444', B='#f97316', S='#f59e0b';
   new Chart(document.getElementById('vizDoughnut'), {{ type: 'doughnut',
-    data: {{ labels: ['Pass','Fail','Pending / blocked','Skipped / N/A','Automated, not run','Not automated'], datasets: [{{ data: {json.dumps([kp['PASS'], kp['FAIL'], kp['PENDING'] + kp['BLOCKED'], kp['SKIP'] + kp['N/A'], kp['NOT RUN'], kp['NOT AUTOMATED']])},
-      backgroundColor: [P,F,B,S,'#94a3b8','#475569'], borderWidth: 0, hoverOffset: 8 }}] }},
+    data: {{ labels: ['Pass','Fail','Partial','Pending / blocked','Skipped / N/A','Automated, not run','Not automated'], datasets: [{{ data: {json.dumps([kp['PASS'], kp['FAIL'], kp['PARTIAL'], kp['PENDING'] + kp['BLOCKED'], kp['SKIP'] + kp['N/A'], kp['NOT RUN'], kp['NOT AUTOMATED']])},
+      backgroundColor: [P,F,'#eab308',B,S,'#94a3b8','#475569'], borderWidth: 0, hoverOffset: 8 }}] }},
     options: {{ responsive: true, maintainAspectRatio: false, cutout: '70%', plugins: {{ legend: {{ position: 'bottom', labels: {{ boxWidth: 12 }} }} }} }},
     plugins: [{{ id: 'ct', beforeDraw: function (c) {{ var a=c.chartArea, x=(a.left+a.right)/2, y=(a.top+a.bottom)/2, ctx=c.ctx;
       ctx.save(); ctx.font='bold 24px Segoe UI'; ctx.fillStyle='#e2e8f0'; ctx.textAlign='center'; ctx.textBaseline='middle';
@@ -557,7 +571,7 @@ pre.logpre .lvl-note {{ color: #9aa7b4; font-style: italic; }}
     # run summary per suite
     h.append("<h2>Run Summary</h2><p class=\"desc\">Per test item (one per switch / tray / parameter) with the raw pytest "
              "verdict of the latest run. The reviewed status of each plan case (e.g. N/A for a skipped PSU-module item, Pending "
-             "for an environment failure) is the workbook's, shown in the overview above.</p><table><thead><tr><th>#</th><th>Suite</th><th class=\"num\">Items</th><th class=\"num\">Pass</th>"
+             "for an environment failure) is the workbook's, shown in the overview above. Pass includes PARTIAL items (passed on every tray the pre-flight kept).</p><table><thead><tr><th>#</th><th>Suite</th><th class=\"num\">Items</th><th class=\"num\">Pass</th>"
              "<th class=\"num\">Fail</th><th class=\"num\">Blocked</th><th class=\"num\">Skip</th><th class=\"num\">Duration</th><th>Result</th></tr></thead><tbody>")
     for i, (key, rows) in enumerate(suites.items(), 1):
         p, f, b, s = suite_counts(rows)
@@ -589,7 +603,7 @@ pre.logpre .lvl-note {{ color: #9aa7b4; font-style: italic; }}
                      f'<td>{esc(wb_rows.get(r["tc_id"], {}).get("scope", ""))}</td><td>{esc(wb_rows.get(r["tc_id"], {}).get("origin", ""))}</td>'
                      f'<td class="num">{fmt_dur(r["duration_s"])}</td>'
                      f'<td><span class="{cls}">{label}</span></td></tr>')
-            log = r.get("_log", "").rstrip()
+            log = clip_log(r.get("_log", "").rstrip(), f'{r["_run"]}/{r.get("log", "")}')
             nlines = log.count("\n") + 1 if log else 0
             fail = ""
             if r["outcome"] in ("failed", "error", "blocked", "partial") and r.get("message"):
