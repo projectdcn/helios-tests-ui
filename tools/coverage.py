@@ -25,6 +25,25 @@ def automated_ids() -> dict[str, str]:
     return out
 
 
+def coverage() -> dict:
+    """{"by_category": {cat: (automated, total)}, "by_level": {...}, "total": (automated, total), "extra": [...],
+    "automated": {id}, "cases": [...]} - the same numbers main() prints."""
+    cases = load_cases()
+    done = automated_ids()
+    cat, lvl = Counter(), Counter()
+    cat_a, lvl_a = Counter(), Counter()
+    for c in cases:
+        cat[c["category"]] += 1
+        lvl[c["level"]] += 1
+        cat_a[c["category"]] += c["id"] in done
+        lvl_a[c["level"]] += c["id"] in done
+    return {"by_category": {k: (cat_a[k], cat[k]) for k in sorted(cat, key=lambda k: (-cat[k], k))},
+            "by_level": {k: (lvl_a[k], lvl[k]) for k in sorted(lvl)},
+            "total": (sum(cat_a.values()), sum(cat.values())),
+            "extra": sorted(set(done) - {c["id"] for c in cases}),
+            "automated": set(done), "cases": cases}
+
+
 def main() -> None:
     cases = load_cases()
     done = automated_ids()

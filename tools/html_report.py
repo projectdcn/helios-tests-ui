@@ -125,10 +125,13 @@ def workbook_status(wb_path, ids) -> dict[str, tuple[str, str, str]]:
 def workbook_all_rows(wb_path) -> list[dict]:
     """Every case row of the workbook's Testcases sheet (the whole test plan), as recorded there."""
     import openpyxl
+    from update_testplan import ROW_ALIASES
 
     ws = openpyxl.load_workbook(wb_path, read_only=True)["Testcases"]
     out = []
     for r in ws.iter_rows(min_row=3, values_only=True):
+        if r and not r[0] and "not allowed in minirack" in str(r[2] or "").lower():
+            r = ("TC-AFM-035A",) + tuple(r[1:])      # the TC-AFM-035A row has no TID in the workbook
         if not r or not r[0] or not str(r[0]).strip().startswith("TC-"):
             continue
         r = list(r) + [None] * 12
@@ -136,7 +139,9 @@ def workbook_all_rows(wb_path) -> list[dict]:
         auto = str(r[3] or "").strip()
         shown = (WB_STATUS.get(st.upper(), st.upper()) if st else
                  "NOT RUN" if auto in ("Yes", "Inprogress") else "NOT AUTOMATED")
-        out.append({"id": str(r[0]).strip(), "level": str(r[1] or ""), "title": str(r[2] or ""), "automation": auto,
+        tid, title = str(r[0]).strip(), str(r[2] or "")
+        code = next((a for a, (t, frag) in ROW_ALIASES.items() if t == tid and frag and frag.lower() in title.lower()), tid)
+        out.append({"id": tid, "code": code, "level": str(r[1] or ""), "title": title, "automation": auto,
                     "status": shown, "note": str(r[7] or "").split("\n\nEarlier: ", 1)[0], "scope": str(r[9] or ""),
                     "origin": str(r[10] or ""), "disruptive": str(r[11] or "")})
     return out
@@ -191,6 +196,65 @@ def all_cases_section(rows: list[dict], wb_name: str) -> str:
   apply();
 }());
 </script>""")
+    return "\n".join(h)
+
+
+def coverage_section(plan_rows: list[dict] | None) -> str:
+    """Automation coverage from tools/coverage.py (manifest + added cases), with what was executed on the rack and
+    its result per category / level when the whole-plan rows are known."""
+    from coverage import coverage
+    from update_testplan import ROW_ALIASES
+
+    cov = coverage()
+    # status per plan ID from the workbook rows (a TID on several rows: the code IDs share it, e.g. TC-AFM-005/005A)
+    st: dict[str, str] = {}
+    for r in plan_rows or []:
+        if r["status"] not in ("NOT RUN", "NOT AUTOMATED"):
+            st[r["code"]] = r["status"]
+
+    def stats(sel):
+        ids = [c["id"] for c in sel]
+        auto = sum(1 for i in ids if i in cov["automated"])
+        ex = [x for x in (st.get(i) for i in ids) if x]
+        return len(ids), auto, len(ex), Counter(ex)
+
+    def row(name, sel, bold=False):
+        n, a, e, c = stats(sel)
+        pct = 100.0 * a / n if n else 0
+        b, eb = ("<b>", "</b>") if bold else ("", "")
+        bar = (f'<div style="background:#e5e7eb;border-radius:3px;height:8px;width:120px;display:inline-block;vertical-align:middle">'
+               f'<div style="background:#2c7be5;height:8px;border-radius:3px;width:{pct * 1.2:.0f}px"></div></div>')
+        return (f"<tr><td>{b}{esc(name)}{eb}</td><td class='num'>{b}{a}{eb}</td><td class='num'>{b}{n}{eb}</td>"
+                f"<td class='num'>{b}{pct:.0f}%{eb} {bar}</td><td class='num'>{b}{e}{eb}</td>"
+                f"<td class='num'>{c.get('PASS', 0)}</td><td class='num'>{c.get('FAIL', 0)}</td>"
+                f"<td class='num'>{c.get('PENDING', 0)}</td><td class='num'>{c.get('SKIP', 0) + c.get('N/A', 0)}</td></tr>")
+    hdr = ("<tr><th>{}</th><th class='num'>Automated</th><th class='num'>Total</th><th class='num'>Coverage</th>"
+           "<th class='num'>Executed on rack</th><th class='num'>Pass</th><th class='num'>Fail</th>"
+           "<th class='num'>Pending</th><th class='num'>Skip / N/A</th></tr>")
+    cases = cov["cases"]
+    a, t = cov["total"]
+    row_ids = {r["code"] for r in plan_rows or []}
+    shared = sorted(a for a, (t, _f) in ROW_ALIASES.items() if a != t and a in row_ids)
+    other = sorted({c["id"] for c in cases} - row_ids - set(shared) - {c["id"] for c in cases if c["id"].startswith("TC-IBS-")})
+    recon = (f'The workbook\'s Testcases sheet has {len(plan_rows)} rows ({len(row_ids)} distinct IDs); the difference: '
+             f'TC-IBS-* are on the mortaro sheet, {", ".join(shared)} are cases whose workbook row carries another or no ID'
+             + (f', and <b>{", ".join(other)} are in the plan manifest but have no row in the workbook</b>' if other else "")
+             + '.') if plan_rows else ""
+    h = [f'<h2 id="coverage">Automation coverage - {a} of {t} cases automated ({100.0 * a / t:.0f}%)</h2>',
+         f'<p class="desc">From <span class="mono">tools/coverage.py</span>: a case is automated when a test carries its '
+         f'plan ID. Totals count unique plan IDs ({t}: the BKC-26.12 manifest plus testplan/added.yaml). {recon} '
+         f'"Executed on rack" = cases with a status in the workbook.</p>',
+         "<table><thead>" + hdr.format("Level") + "</thead><tbody>"]
+    for lv in cov["by_level"]:
+        h.append(row(lv, [c for c in cases if c["level"] == lv]))
+    h.append(row("All levels", cases, bold=True))
+    h.append("</tbody></table><table style='margin-top:16px'><thead>" + hdr.format("Category") + "</thead><tbody>")
+    for catn in cov["by_category"]:
+        h.append(row(catn, [c for c in cases if c["category"] == catn]))
+    h.append(row("All categories", cases, bold=True))
+    h.append("</tbody></table>")
+    if cov["extra"]:
+        h.append(f'<p class="desc">Extra tests (not plan cases, used as evidence): {esc(", ".join(cov["extra"]))}</p>')
     return "\n".join(h)
 
 
@@ -350,6 +414,7 @@ pre.logpre .lvl-note {{ color: #9aa7b4; font-style: italic; }}
         h.append("  </ul></div>")
     h.append("</div>")
     if plan_rows is not None:
+        h.append(coverage_section(plan_rows))
         h.append(all_cases_section(plan_rows, Path(args.workbook).name))
     elif reviewed:
         cls = {"PASS": "pass", "FAIL": "fail", "PENDING": "blocked", "SKIP": "skip", "PARTIAL": "blocked", "N/A": "skip"}
