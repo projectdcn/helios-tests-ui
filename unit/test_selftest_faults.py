@@ -85,6 +85,24 @@ def _edit_rule(replay: Path, cmd_fragment: str, **changes):
     spec_path.write_text(yaml.safe_dump(rules, sort_keys=False, width=200))
 
 
+def _flap(replay: Path):
+    """asic0 Ethernet8 is down on every other read of 'show interfaces status -n asic0'."""
+    text = (replay / "intf_status_asic0.txt").read_text()
+    down, n = re.subn(r"(Ethernet8\s+.*?trunk\s+)up  ", r"\1down", text, count=1)
+    assert n == 1
+    (replay / "intf_status_asic0_down.txt").write_text(down)
+    _edit_rule(replay, "status\\ \\-n\\ asic0", files=["intf_status_asic0.txt", "intf_status_asic0_down.txt"], file=None)
+
+
+def _pfc_storm(replay: Path):
+    """Ethernet0 receives 5000 more PFC3 pause frames between the two reads."""
+    text = (replay / "pfc_asic0.txt").read_text()
+    stormy, n = re.subn(r"(Ethernet0(?:\s+0){3}\s+)0", r"\g<1>5000", text, count=1)
+    assert n == 1
+    (replay / "pfc_asic0_b.txt").write_text(stormy)
+    _edit_rule(replay, "pfc\\ counters\\ \\-n\\ asic0", files=["pfc_asic0.txt", "pfc_asic0_b.txt"], file=None)
+
+
 def test_healthy_rack_passes(tmp_path):
     verdicts = _run(tmp_path)
     failed = {k: v for k, v in verdicts.items() if v in ("FAIL", "PARTIAL", "BLOCKED")}
@@ -256,6 +274,17 @@ FAULTS = {
                      {"TC-SWH-042"}),
     "core_file": (lambda d: _edit_rule(d, "^ls\\ \\-1\\ /var/core$", stdout="syncd.1760313600.4242.core.gz\n"),
                   {"TC-SWH-042"}),
+    # ---- added switch cases, second batch (TC-SWH-043..047)
+    "kernel_aer": (lambda d: _edit_rule(d, "^grep -hE", stdout="2026 Oct 14 16:20:01.000001 sw1 WARNING kernel: "
+                                       "[1201.5] pcieport 0000:00:01.1: AER: Corrected error received: 0000:01:00.0\n", rc=0),
+                   {"TC-SWH-043"}),
+    "syslog_orchagent_err": (lambda d: _edit_rule(d, "^grep -hE", stdout="2026 Oct 14 16:21:07.100000 sw1 ERR "
+                                                  "swss0#orchagent: :- doTask: Failed to set port attribute\n", rc=0),
+                             {"TC-SWH-044"}),
+    "link_flapping": (lambda d: _flap(d), {"TC-SWH-045", "TC-SWH-030"}),   # 030 also reads the down sample
+    "pfc_storm": (lambda d: _pfc_storm(d), {"TC-SWH-046"}),
+    "config_unsaved": (lambda d: _edit(d / "cfg_saved_asic0.json", r'"Vlan100\|Ethernet0"', '"Vlan100|Ethernet999"'),
+                       {"TC-SWH-047"}),
     "thermalctld_down": (lambda d: _edit_rule(d, "thermalctld", stdout="thermalctld   EXITED\n"), {"TC-SWH-004"}),
 }
 

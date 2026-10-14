@@ -103,6 +103,9 @@ thresholds:
     psu_current_max_a: 250
     stability: {samples: 2, interval_s: 0}
     err_window_s: 0
+    link_watch_s: 2
+    link_poll_s: 1
+    pfc_window_s: 0
     traffic_window_s: 0
     drops: {window_s: 0.2}
     cpu_stress_s: 0

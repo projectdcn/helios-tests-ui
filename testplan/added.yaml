@@ -36,3 +36,30 @@ cases:
   title: No unexpected reboot and no new core files (show reboot-cause, /var/core)
   category: switch-hw
   origin: added 2026-10-14
+- id: TC-SWH-043
+  level: L1
+  title: No kernel or hardware errors in the kernel log (PCIe AER, machine checks, ECC/memory, I/O errors, read-only
+    filesystem)
+  category: switch-hw
+  origin: added 2026-10-14
+- id: TC-SWH-044
+  level: L1
+  title: No new ERR/CRIT messages from syncd, orchagent, SAI or the AFM agent in the switch syslog
+  category: switch-hw
+  origin: added 2026-10-14
+- id: TC-SWH-045
+  level: L1
+  title: 'Fabric links stable: no oper-state change on any up fabric port over a watch window'
+  category: switch-hw
+  origin: added 2026-10-14
+- id: TC-SWH-046
+  level: L1
+  title: 'PFC / QoS consistent and healthy: same PFC and QoS maps on every fabric port and switch, no PFC storm (pause
+    counters and PFC watchdog not growing)'
+  category: switch-hw
+  origin: added 2026-10-14
+- id: TC-SWH-047
+  level: L1
+  title: Running configuration matches the saved configuration (no unsaved changes that a reboot would revert)
+  category: switch-hw
+  origin: added 2026-10-14

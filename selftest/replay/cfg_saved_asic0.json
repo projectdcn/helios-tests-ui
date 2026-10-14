@@ -1,0 +1,46 @@
+{
+    "PORT": {
+        "Ethernet0": {
+            "admin_status": "up",
+            "mtu": "9100",
+            "speed": "400000"
+        },
+        "Ethernet8": {
+            "admin_status": "up",
+            "mtu": "9100",
+            "speed": "400000"
+        },
+        "Ethernet16": {
+            "admin_status": "up",
+            "mtu": "9100",
+            "speed": "400000"
+        },
+        "Ethernet24": {
+            "admin_status": "up",
+            "mtu": "9100",
+            "speed": "400000"
+        }
+    },
+    "VLAN": {
+        "Vlan100": {
+            "vlanid": "100"
+        },
+        "Vlan101": {
+            "vlanid": "101"
+        }
+    },
+    "VLAN_MEMBER": {
+        "Vlan100|Ethernet0": {
+            "tagging_mode": "untagged"
+        },
+        "Vlan101|Ethernet8": {
+            "tagging_mode": "untagged"
+        },
+        "Vlan100|Ethernet16": {
+            "tagging_mode": "untagged"
+        },
+        "Vlan101|Ethernet24": {
+            "tagging_mode": "untagged"
+        }
+    }
+}

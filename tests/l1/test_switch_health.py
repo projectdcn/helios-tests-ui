@@ -1,4 +1,4 @@
-"""TC-SWH-037..042 - switch-tray checks ADDED to the test plan by helios-tests on 14 Oct 2026 (not in AMD's
+"""TC-SWH-037..047 - switch-tray checks ADDED to the test plan by helios-tests on 14 Oct 2026 (not in AMD's
 BKC-26.12 workbook; listed in testplan/added.yaml, Origin "Added - helios-tests" in the execution workbook).
 
 Read-only. Motivated by the g02-g17 L1 run (13 Oct): GPU-described ports left 'routed' and down on every switch,
@@ -16,6 +16,7 @@ Thresholds (inventory ``thresholds.switch``):
 """
 from __future__ import annotations
 
+import json
 import re
 import time
 from collections import Counter
@@ -247,4 +248,152 @@ def test_no_unexpected_reboot_or_crash(switch, inventory, checks, record_propert
     cores = switch.core_files()
     record_property("core_files", cores[:20])
     checks.check(not cores, f"{switch.name}: {len(cores)} core file(s) in /var/core: {cores[:5]}")
+    checks.assert_all()
+
+
+# ================================================================== TC-SWH-043..047 (added 14 Oct 2026, second batch)
+# thresholds.switch: log_window_h (24) - how far back the log checks look; syslog_ignore - regexes of known-noise
+# messages (e.g. the 100G uplinks' link-training / PHY-temperature errors on QFX5252); link_watch_s (120),
+# link_poll_s (10); pfc_window_s (30), pfc_max_pause_delta (0), pfc_enable (expected 'pfc_enable', e.g. "3,4");
+# config_diff_ignore - CONFIG_DB tables allowed to differ between running and saved config
+
+KERNEL_HW_ERRORS = (r"kernel:.*(AER:|PCIe Bus Error|Machine check|mce: |EDAC|I/O error|Remounting filesystem "
+                    r"read-only|NETDEV WATCHDOG|Out of memory|oom-kill|BUG: |Call Trace|blocked for more than|"
+                    r"hardware error|Hardware Error)")
+_MONTHS = {m: i for i, m in enumerate("Jan Feb Mar Apr May Jun Jul Aug Sep Oct Nov Dec".split(), 1)}
+
+
+def _log_time(line: str) -> float | None:
+    """'2026 Oct 14 16:23:38.854974 host LEVEL ...' (SONiC syslog) -> epoch seconds (UTC)."""
+    m = re.match(r"(\d{4}) (\w{3}) +(\d+) (\d+):(\d+):(\d+)", line)
+    if not m or m.group(2) not in _MONTHS:
+        return None
+    y, mo, d, hh, mm, ss = int(m.group(1)), _MONTHS[m.group(2)], *map(int, m.group(3, 4, 5, 6))
+    from calendar import timegm
+    return float(timegm((y, mo, d, hh, mm, ss, 0, 0, 0)))
+
+
+def _recent(switch, inventory, lines: list[str]) -> list[str]:
+    cutoff = switch.epoch() - float(inventory.th("switch.log_window_h", 24)) * 3600
+    return [ln for ln in lines if (t := _log_time(ln)) is None or t >= cutoff]
+
+
+def _short(line: str, n: int = 220) -> str:
+    return re.sub(r"\s+", " ", line)[:n]
+
+
+@pytest.mark.tc("TC-SWH-043")
+def test_no_kernel_hardware_errors(switch, inventory, checks, record_property):
+    """No hardware-error signature in the kernel messages of the last log_window_h hours: PCIe AER, machine check,
+    EDAC/ECC, I/O error, read-only remount, NIC transmit hang (NETDEV WATCHDOG), OOM, kernel BUG / call trace."""
+    hits = [h for h in _recent(switch, inventory, switch.syslog_grep(KERNEL_HW_ERRORS)) if re.search(KERNEL_HW_ERRORS, h)]
+    record_property("kernel_hw_errors", [_short(h) for h in hits[:10]])
+    kinds = Counter(re.search(KERNEL_HW_ERRORS, h).group(1) for h in hits if re.search(KERNEL_HW_ERRORS, h))
+    checks.check(not hits, f"{switch.name}: {len(hits)} kernel hardware-error message(s) in the last "
+                           f"{inventory.th('switch.log_window_h', 24)} h ({dict(kinds)}); latest: {_short(hits[-1]) if hits else ''}")
+    checks.assert_all()
+
+
+@pytest.mark.tc("TC-SWH-044")
+def test_no_new_syslog_errors(switch, inventory, checks, record_property):
+    """No CRIT/ALERT/EMERG message, and no ERR message from syncd / orchagent / SAI / AFM agent that is not listed in
+    thresholds.switch.syslog_ignore, in the last log_window_h hours."""
+    ignore = [re.compile(x) for x in (inventory.th("switch.syslog_ignore") or [])]
+    lines = [ln for ln in _recent(switch, inventory, switch.syslog_grep(r" (ERR|CRIT|ALERT|EMERG) "))
+             if re.search(r" (ERR|CRIT|ALERT|EMERG) ", ln)]
+    bad, ignored = [], 0
+    for ln in lines:
+        sev = re.search(r" (ERR|CRIT|ALERT|EMERG) ", ln).group(1)
+        if any(rx.search(ln) for rx in ignore):
+            ignored += 1
+            continue
+        if sev != "ERR" or re.search(r"syncd|orchagent|sai|afm|swss", ln, re.I):
+            bad.append(ln)
+    by_src = Counter(re.sub(r"\[\d+\]", "", (ln.split()[5] if len(ln.split()) > 5 else "?")).rstrip(":") for ln in bad)
+    record_property("syslog", {"errors": len(bad), "ignored_known_noise": ignored, "by_source": dict(by_src.most_common(8))})
+    checks.check(not bad, f"{switch.name}: {len(bad)} new ERR/CRIT message(s) in the last "
+                          f"{inventory.th('switch.log_window_h', 24)} h by source {dict(by_src.most_common(5))}; "
+                          f"latest: {_short(bad[-1]) if bad else ''}")
+    checks.assert_all()
+
+
+@pytest.mark.tc("TC-SWH-045")
+def test_fabric_links_stable(switch, inventory, checks, record_property):
+    """Every fabric port that is oper up at the start stays up for thresholds.switch.link_watch_s (120 s), sampled every
+    link_poll_s (10 s); a port that goes down - even briefly between samples it shows as down - is reported."""
+    watch, poll = float(inventory.th("switch.link_watch_s", 120)), float(inventory.th("switch.link_poll_s", 10))
+    nss = switch.namespaces()
+    up0 = {(ns, r["Interface"]) for ns in nss for r in switch.interfaces_status(ns) if r.get("Oper", "").lower() == "up"}
+    changes: dict[tuple, int] = Counter()
+    end, samples = time.monotonic() + watch, 0
+    while time.monotonic() < end:
+        time.sleep(min(poll, max(0.0, end - time.monotonic())))
+        samples += 1
+        now_up = {(ns, r["Interface"]) for ns in nss for r in switch.interfaces_status(ns) if r.get("Oper", "").lower() == "up"}
+        for k in up0 - now_up:
+            changes[k] += 1
+    record_property("links", {"up_at_start": len(up0), "samples": samples, "ports_seen_down": len(changes)})
+    for (ns, port), n in sorted(changes.items())[:20]:
+        checks.fail(f"{switch.name}/{ns}: {port} went down during the {watch:.0f} s watch ({n} of {samples} samples)")
+    checks.check(up0, f"{switch.name}: no fabric port is up")
+    checks.assert_all()
+
+
+@pytest.mark.tc("TC-SWH-046")
+def test_pfc_qos_consistent_no_storm(switch, inventory, checks, record_property):
+    """PFC / QoS: every fabric port has the same PORT_QOS_MAP settings (and pfc_enable = thresholds.switch.pfc_enable
+    when set); PFC pause frames do not grow by more than pfc_max_pause_delta over pfc_window_s; the PFC watchdog
+    detects no storm. The configuration found (e.g. 'no PFC configured') is recorded."""
+    want_pfc = inventory.th("switch.pfc_enable")
+    window = float(inventory.th("switch.pfc_window_s", 30))
+    max_delta = float(inventory.th("switch.pfc_max_pause_delta", 0))
+    nss = switch.namespaces()
+    summary = {}
+    for ns in nss:
+        maps = {p: m for p, m in switch.qos_maps(ns).items() if switch.is_fabric_port(p)}
+        variants = Counter(json.dumps(m, sort_keys=True) for m in maps.values())
+        summary[ns] = {"ports_with_qos_map": len(maps), "variants": len(variants),
+                       "pfc_enable": sorted({m.get("pfc_enable", "") for m in maps.values()})}
+        if len(variants) > 1:
+            common = variants.most_common(1)[0][0]
+            odd = sorted(p for p, m in maps.items() if json.dumps(m, sort_keys=True) != common)
+            checks.fail(f"{switch.name}/{ns}: {len(odd)} port(s) with a different QoS map: {odd[:8]}")
+        if want_pfc is not None:
+            wrong = sorted(p for p, m in maps.items() if m.get("pfc_enable", "") != str(want_pfc))
+            checks.check(maps and not wrong, f"{switch.name}/{ns}: pfc_enable != {want_pfc} on {wrong[:8] or 'every port (none configured)'}")
+    before = {ns: (switch.pfc_counters(ns), switch.pfcwd_storms(ns)) for ns in nss}
+    time.sleep(window)
+    for ns in nss:
+        after, storms = switch.pfc_counters(ns), switch.pfcwd_storms(ns)
+        for d in ("Rx", "Tx"):
+            for port, n in after.get(d, {}).items():
+                b = before[ns][0].get(d, {}).get(port)
+                if b is not None and switch.is_fabric_port(port):
+                    checks.check(n - b <= max_delta, f"{switch.name}/{ns}: {port} {d} PFC pause frames +{n - b:.0f} in {window:.0f} s")
+        for q, n in storms.items():
+            checks.check(n <= before[ns][1].get(q, 0), f"{switch.name}/{ns}: PFC watchdog storm detected on {q}")
+        summary[ns]["pfc_watchdog_queues"] = len(storms)
+    record_property("pfc_qos", summary)
+    checks.assert_all()
+
+
+@pytest.mark.tc("TC-SWH-047")
+def test_running_config_saved(switch, inventory, checks, record_property):
+    """The running CONFIG_DB of the host and of every ASIC equals the saved /etc/sonic/config_db*.json (tables in
+    thresholds.switch.config_diff_ignore excepted) - otherwise a reboot or config reload would change the switch."""
+    ignore = set(inventory.th("switch.config_diff_ignore") or [])
+    found = {}
+    for ns in [None] + [n for n in switch.namespaces() if n]:
+        run, saved = switch.config_running_vs_saved(ns)
+        for t in sorted((set(run) | set(saved)) - ignore):
+            a, b = run.get(t, {}), saved.get(t, {})
+            if a == b:
+                continue
+            only_run, only_saved = sorted(set(a) - set(b)), sorted(set(b) - set(a))
+            changed = sorted(k for k in set(a) & set(b) if a[k] != b[k])
+            where = f"{switch.name}/{ns or 'host'}"
+            found[f"{ns or 'host'}/{t}"] = {"only_running": len(only_run), "only_saved": len(only_saved), "changed": len(changed)}
+            checks.fail(f"{where}: {t} differs from the saved config - only running {len(only_run)} {only_run[:2]}, "
+                        f"only saved {len(only_saved)} {only_saved[:2]}, changed {len(changed)} {changed[:2]}")
+    record_property("config_diff", found)
     checks.assert_all()

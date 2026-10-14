@@ -186,6 +186,28 @@ add("show reboot-cause", "User issued 'reboot' command [User: admin, Time: Tue O
 add("show reboot-cause history", table(["Name", "Cause", "Time", "User", "Comment"],
     [["2026_10_13_00_02_35", "reboot", "Tue Oct 13 12:01:12 AM UTC 2026", "admin", "N/A"]]), host=SW)
 add("ls -1 /var/core", "", host=SW)
+import json as _json  # noqa: E402
+# TC-SWH-043..047 (formats as seen on g02-g17 sw-05, 14 Oct 2026): clean logs, no PFC, saved == running config
+add("date +%s", "1791999000\n", host=SW)
+add(r"^grep -hE '.*' /var/log/syslog\.1 /var/log/syslog$", "", rc=1, host=SW, regex=True)
+for ns in NS:
+    pfc_rows = [[p] + ["0"] * 8 for p in PORTS[ns]]
+    add(f"show pfc counters -n {ns}",
+        table(["Port Rx"] + [f"PFC{i}" for i in range(8)], pfc_rows, right=set(range(1, 9))) + "\n" +
+        table(["Port Tx"] + [f"PFC{i}" for i in range(8)], pfc_rows, right=set(range(1, 9))), name=f"pfc_{ns}.txt", host=SW)
+    add(f"show pfcwd stats -n {ns}", table(["QUEUE", "STATUS", "STORM DETECTED/RESTORED", "TX OK/DROP", "RX OK/DROP",
+                                            "TX LAST OK/DROP", "RX LAST OK/DROP"], []), host=SW)
+    add(db(ns, "CONFIG_DB", "keys", "PORT_QOS_MAP|*"), "", host=SW)
+_cfg = {"host": {"DEVICE_METADATA": {"localhost": {"hostname": "sw1", "asic_name": "", "platform": "x86_64-juniper_qfx5252-r0"}}}}
+for i, ns in enumerate(NS):
+    _cfg[ns] = {"PORT": {p: {"admin_status": "up", "mtu": "9100", "speed": "400000"} for p in PORTS[ns]},
+                "VLAN": {"Vlan100": {"vlanid": "100"}, "Vlan101": {"vlanid": "101"}},
+                "VLAN_MEMBER": {f"Vlan{100 + j % 2}|{p}": {"tagging_mode": "untagged"} for j, p in enumerate(PORTS[ns])}}
+add("sonic-cfggen -d --print-data", _json.dumps(_cfg["host"], indent=4), name="cfg_running_host.json", host=SW)
+add("cat /etc/sonic/config_db.json", _json.dumps(_cfg["host"], indent=4), name="cfg_saved_host.json", host=SW)
+for i, ns in enumerate(NS):
+    add(f"sonic-cfggen -n {ns} -d --print-data", _json.dumps(_cfg[ns], indent=4), name=f"cfg_running_{ns}.json", host=SW)
+    add(f"cat /etc/sonic/config_db{i}.json", _json.dumps(_cfg[ns], indent=4), name=f"cfg_saved_{ns}.json", host=SW)
 
 IMG_CUR, IMG_OLD = "SONiC-OS-helios.202505.1", "SONiC-OS-helios.202411.3"
 add("sonic-installer list", f"Current: {IMG_CUR}\nNext: {IMG_CUR}\nAvailable:\n{IMG_CUR}\n{IMG_OLD}\n",

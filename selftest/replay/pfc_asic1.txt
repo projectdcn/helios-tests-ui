@@ -1,0 +1,13 @@
+Port Rx      PFC0  PFC1  PFC2  PFC3  PFC4  PFC5  PFC6  PFC7
+-----------  ----  ----  ----  ----  ----  ----  ----  ----
+Ethernet256     0     0     0     0     0     0     0     0
+Ethernet264     0     0     0     0     0     0     0     0
+Ethernet272     0     0     0     0     0     0     0     0
+Ethernet280     0     0     0     0     0     0     0     0
+
+Port Tx      PFC0  PFC1  PFC2  PFC3  PFC4  PFC5  PFC6  PFC7
+-----------  ----  ----  ----  ----  ----  ----  ----  ----
+Ethernet256     0     0     0     0     0     0     0     0
+Ethernet264     0     0     0     0     0     0     0     0
+Ethernet272     0     0     0     0     0     0     0     0
+Ethernet280     0     0     0     0     0     0     0     0

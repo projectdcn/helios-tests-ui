@@ -1,0 +1,13 @@
+Port Rx     PFC0  PFC1  PFC2  PFC3  PFC4  PFC5  PFC6  PFC7
+----------  ----  ----  ----  ----  ----  ----  ----  ----
+Ethernet0      0     0     0     0     0     0     0     0
+Ethernet8      0     0     0     0     0     0     0     0
+Ethernet16     0     0     0     0     0     0     0     0
+Ethernet24     0     0     0     0     0     0     0     0
+
+Port Tx     PFC0  PFC1  PFC2  PFC3  PFC4  PFC5  PFC6  PFC7
+----------  ----  ----  ----  ----  ----  ----  ----  ----
+Ethernet0      0     0     0     0     0     0     0     0
+Ethernet8      0     0     0     0     0     0     0     0
+Ethernet16     0     0     0     0     0     0     0     0
+Ethernet24     0     0     0     0     0     0     0     0

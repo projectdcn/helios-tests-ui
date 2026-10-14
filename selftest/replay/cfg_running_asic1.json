@@ -1,0 +1,46 @@
+{
+    "PORT": {
+        "Ethernet256": {
+            "admin_status": "up",
+            "mtu": "9100",
+            "speed": "400000"
+        },
+        "Ethernet264": {
+            "admin_status": "up",
+            "mtu": "9100",
+            "speed": "400000"
+        },
+        "Ethernet272": {
+            "admin_status": "up",
+            "mtu": "9100",
+            "speed": "400000"
+        },
+        "Ethernet280": {
+            "admin_status": "up",
+            "mtu": "9100",
+            "speed": "400000"
+        }
+    },
+    "VLAN": {
+        "Vlan100": {
+            "vlanid": "100"
+        },
+        "Vlan101": {
+            "vlanid": "101"
+        }
+    },
+    "VLAN_MEMBER": {
+        "Vlan100|Ethernet256": {
+            "tagging_mode": "untagged"
+        },
+        "Vlan101|Ethernet264": {
+            "tagging_mode": "untagged"
+        },
+        "Vlan100|Ethernet272": {
+            "tagging_mode": "untagged"
+        },
+        "Vlan101|Ethernet280": {
+            "tagging_mode": "untagged"
+        }
+    }
+}

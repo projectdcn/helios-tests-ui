@@ -525,6 +525,72 @@
   rc: 0
   host: ^sw
   stdout: ''
+- cmd: ^date\ \+%s$
+  rc: 0
+  host: ^sw
+  stdout: '1791999000
+
+    '
+- cmd: ^grep -hE '.*' /var/log/syslog\.1 /var/log/syslog$
+  rc: 1
+  host: ^sw
+  stdout: ''
+- cmd: ^show\ pfc\ counters\ \-n\ asic0$
+  rc: 0
+  host: ^sw
+  file: pfc_asic0.txt
+- cmd: ^show\ pfcwd\ stats\ \-n\ asic0$
+  rc: 0
+  host: ^sw
+  stdout: 'QUEUE  STATUS  STORM DETECTED/RESTORED  TX OK/DROP  RX OK/DROP  TX LAST OK/DROP  RX LAST OK/DROP
+
+    -----  ------  -----------------------  ----------  ----------  ---------------  ---------------
+
+    '
+- cmd: ^sonic\-db\-cli\ \-n\ asic0\ CONFIG_DB\ keys\ 'PORT_QOS_MAP\|\*'$
+  rc: 0
+  host: ^sw
+  stdout: ''
+- cmd: ^show\ pfc\ counters\ \-n\ asic1$
+  rc: 0
+  host: ^sw
+  file: pfc_asic1.txt
+- cmd: ^show\ pfcwd\ stats\ \-n\ asic1$
+  rc: 0
+  host: ^sw
+  stdout: 'QUEUE  STATUS  STORM DETECTED/RESTORED  TX OK/DROP  RX OK/DROP  TX LAST OK/DROP  RX LAST OK/DROP
+
+    -----  ------  -----------------------  ----------  ----------  ---------------  ---------------
+
+    '
+- cmd: ^sonic\-db\-cli\ \-n\ asic1\ CONFIG_DB\ keys\ 'PORT_QOS_MAP\|\*'$
+  rc: 0
+  host: ^sw
+  stdout: ''
+- cmd: ^sonic\-cfggen\ \-d\ \-\-print\-data$
+  rc: 0
+  host: ^sw
+  file: cfg_running_host.json
+- cmd: ^cat\ /etc/sonic/config_db\.json$
+  rc: 0
+  host: ^sw
+  file: cfg_saved_host.json
+- cmd: ^sonic\-cfggen\ \-n\ asic0\ \-d\ \-\-print\-data$
+  rc: 0
+  host: ^sw
+  file: cfg_running_asic0.json
+- cmd: ^cat\ /etc/sonic/config_db0\.json$
+  rc: 0
+  host: ^sw
+  file: cfg_saved_asic0.json
+- cmd: ^sonic\-cfggen\ \-n\ asic1\ \-d\ \-\-print\-data$
+  rc: 0
+  host: ^sw
+  file: cfg_running_asic1.json
+- cmd: ^cat\ /etc/sonic/config_db1\.json$
+  rc: 0
+  host: ^sw
+  file: cfg_saved_asic1.json
 - cmd: ^sonic\-installer\ list$
   rc: 0
   host: ^sw

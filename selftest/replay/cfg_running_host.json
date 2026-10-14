@@ -1,0 +1,9 @@
+{
+    "DEVICE_METADATA": {
+        "localhost": {
+            "hostname": "sw1",
+            "asic_name": "",
+            "platform": "x86_64-juniper_qfx5252-r0"
+        }
+    }
+}

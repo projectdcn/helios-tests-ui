@@ -270,5 +270,54 @@ class SonicSwitch:
         r = self.run("ls -1 /var/core", sudo=True, timeout=60)
         return [ln.strip() for ln in r.stdout.splitlines() if ln.strip()] if r.ok else []
 
+    # -- logs, PFC, saved config (TC-SWH-043..047) -----------------------------
+    SYSLOGS = "/var/log/syslog.1 /var/log/syslog"
+
+    def epoch(self) -> int:
+        return int(self.sh("date +%s", timeout=30).strip())
+
+    def syslog_grep(self, pattern: str) -> list[str]:
+        """Lines of the current and previous syslog matching an extended regex (sudo; files may be absent)."""
+        r = self.run(f"grep -hE {shlex.quote(pattern)} {self.SYSLOGS}", sudo=True, timeout=180)
+        return [ln for ln in r.stdout.splitlines() if ln.strip()]
+
+    def pfc_counters(self, ns: str | None) -> dict[str, dict[str, float]]:
+        """{'Rx'|'Tx': {port: total pause frames over PFC0..7}} from 'show pfc counters'."""
+        out = self.sh(f"show pfc counters{_ns_flag(ns)}", timeout=120)
+        res: dict[str, dict[str, float]] = {}
+        for block in re.split(r"\n\s*\n", out):
+            rows = parse_table(block)
+            if not rows:
+                continue
+            key = next(iter(rows[0]))                  # 'Port Rx' / 'Port Tx'
+            d = "Rx" if "Rx" in key else "Tx"
+            res[d] = {r[key]: sum(float(v.replace(",", "")) for k, v in r.items()
+                                  if k.startswith("PFC") and v.replace(",", "").replace(".", "").isdigit())
+                      for r in rows if r.get(key)}
+        return res
+
+    def pfcwd_storms(self, ns: str | None) -> dict[str, int]:
+        """{port:queue: storms detected} from 'show pfcwd stats' (empty when the PFC watchdog is not configured)."""
+        out = self.run(f"show pfcwd stats{_ns_flag(ns)}", timeout=120).stdout
+        res = {}
+        for r in parse_table(out):
+            sd = r.get("STORM DETECTED/RESTORED", "")
+            if r.get("QUEUE") and "/" in sd:
+                res[r["QUEUE"]] = int(sd.split("/")[0] or 0)
+        return res
+
+    def qos_maps(self, ns: str | None) -> dict[str, dict[str, str]]:
+        return {k.split("|", 1)[1]: self.db_hash("CONFIG_DB", k, ns)
+                for k in self.db_keys("CONFIG_DB", "PORT_QOS_MAP|*", ns)}
+
+    def config_running_vs_saved(self, ns: str | None) -> tuple[dict, dict]:
+        """(running CONFIG_DB, saved /etc/sonic/config_db[N].json) of the host (ns None) or one ASIC."""
+        import json
+
+        run = json.loads(self.sh(f"sonic-cfggen{_ns_flag(ns)} -d --print-data", sudo=True, timeout=180))
+        f = f"/etc/sonic/config_db{ns[4:] if ns else ''}.json"
+        saved = json.loads(self.sh(f"cat {f}", sudo=True, timeout=120))
+        return run, saved
+
     def close(self) -> None:
         self.t.close()
