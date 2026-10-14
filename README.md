@@ -169,6 +169,20 @@ Each run creates a folder `results/<rack>-<timestamp>/` with two files:
 - `tc_results.csv`: one row per test, with the failure message and measured
   values such as bandwidth and bus bandwidth.
 
+### Record results in the test-plan workbook
+
+```bash
+.venv/bin/python tools/update_testplan.py testplan/full_rack_testplan.xlsx results/<run> [more runs] \
+    --sw-version "AFM 0.1.0-AICC-817" --label "g02-g17 full rack, <date>" [--dry-run]
+```
+
+The tool writes Execution Status, SW Version and Notes for the plan IDs that ran:
+- FAIL: any item failed. PASS: every executed item passed.
+- BLOCKED: written as Pending with "Blocked: <reason>".
+- Not executed: left untouched, unless you pass `--mark-skipped`.
+
+Close the workbook in Excel first. A backup is saved next to it.
+
 ### 5. HTML report
 
 Turn one or more run folders into one self-contained HTML page: a summary dashboard

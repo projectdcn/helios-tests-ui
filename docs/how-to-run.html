@@ -374,7 +374,22 @@
   </table>
   </div>
   <p>The <code>--log-file</code> records every command, its output, exit code and duration. Passwords are never logged.</p>
-  <p class="muted">Execution results also go into <code>testplan/HPE_AMD Helios Juniper ScaleUp TestPlan.xlsx</code>: Execution Status, SW Version and Execution Notes on the Testcases sheet, plus the Execution Summary sheet.</p>
+  <h3>Record the results in the test-plan workbook</h3>
+  <p><code>tools/update_testplan.py</code> writes the verdicts of one or more runs into the Testcases sheet: Execution Status (F), SW Version (G) and Execution Notes (H). Only rows of the plan IDs that ran are changed. Close the workbook in Excel first; the tool refuses while Excel's <code>~$</code> lock file exists. It saves a timestamped backup next to the workbook before writing.</p>
+  <div class="cmd"><pre>.venv/bin/python tools/update_testplan.py testplan/full_rack_testplan.xlsx results/&lt;run&gt; [more runs] --sw-version &quot;AFM 0.1.0-AICC-817&quot; --label &quot;g02-g17 full rack, &lt;date&gt;&quot; --dry-run</pre></div>
+  <p class="muted">Drop <code>--dry-run</code> to write.</p>
+  <div class="table-wrap">
+  <table>
+    <thead><tr><th>Run verdict</th><th>Execution Status</th><th>Notes</th></tr></thead>
+    <tbody>
+      <tr><td>Any item failed</td><td>FAIL</td><td>first failure reason</td></tr>
+      <tr><td>All executed items passed</td><td>PASS</td><td>items passed, plus any skipped</td></tr>
+      <tr><td>BLOCKED by a pre-flight</td><td>Pending</td><td>"Blocked: " + the reason</td></tr>
+      <tr><td>Not executed (SKIP)</td><td>untouched</td><td>use <code>--mark-skipped</code> to write Pending + reason</td></tr>
+    </tbody>
+  </table>
+  </div>
+  <p class="muted">Several runs merge like the HTML report: a run that executed a test beats one that skipped it, otherwise the later run wins. The rows with a shared or missing ID are handled (TC-AFM-005 RCCL vs Failover CRUD, TC-AFM-048 Audit vs Techsupport, TC-AFM-035A). The Execution Summary counts recalculate when Excel opens the file.</p>
   <div class="note"><strong>Updating the workbook:</strong> close it in Excel first. A script writing the file while Excel has it open loses its changes when Excel saves. The g02-g17 full-rack results (10–12 Oct: AFM L2 batch and the 18-tray traffic validation) are already recorded in it.</div>
 </section>
 

@@ -14,3 +14,7 @@ tools/rccl-tests/
 tools/*.rtf
 # Office lock files (workbook open in Excel)
 ~$*
+
+# workbook backups written by tools/update_testplan.py
+testplan/*.backup-*.xlsx
+testplan/~$*
