@@ -133,3 +133,37 @@ def gpu_info(static_text: str, metric_text: str) -> list[dict]:
                     "power_w": _val((m.get("power") or {}).get("socket_power")),
                     "hotspot_c": _val((m.get("temperature") or {}).get("hotspot"))})
     return out
+
+
+_HW = re.compile(r"\[Hardware Error\]", re.I)
+_UE = re.compile(r"Uncorrected|Deferred error|Fatal|panic|\|UE\||\bPCC\b", re.I)
+_CE_HDR = re.compile(r"Corrected error", re.I)
+_CE_STATUS = re.compile(r"MC\d+_STATUS\[[^\]]*\|CE\|")
+_OTHER = re.compile(r"Machine Check|\bMCE\b|AER:|amdgpu.*(error|fail|timeout|hang|reset)|ifoe.*(error|fail)", re.I)
+
+
+def classify_kernel_errors(lines: list[str]) -> dict:
+    """Kernel error lines -> corrected machine-check events (count), uncorrected / deferred machine-check lines, and
+    other hardware lines (AER, amdgpu, IFoE, unclassified MCE). A machine-check dump is a header ('Corrected error, no
+    action required.' / 'Uncorrected ...' / 'Deferred error ...') followed by '[Hardware Error]:' detail lines that
+    belong to it."""
+    corrected, uncorrected, other = 0, [], []
+    state = None
+    for ln in lines:
+        if _HW.search(ln):
+            if _CE_HDR.search(ln) and not _UE.search(ln):
+                corrected += 1
+                state = "ce"
+            elif _UE.search(ln):
+                state = "ue"
+                uncorrected.append(ln)
+            elif state == "ue":
+                uncorrected.append(ln)
+            elif state == "ce" or _CE_STATUS.search(ln):
+                pass                      # detail line of a corrected event
+            else:
+                other.append(ln)
+        elif _OTHER.search(ln):
+            state = None
+            other.append(ln)
+    return {"corrected_events": corrected, "uncorrected": uncorrected, "other": other}

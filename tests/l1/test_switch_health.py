@@ -12,6 +12,8 @@ Thresholds (inventory ``thresholds.switch``):
   fec_window_s (30), fec_max_uncorr_delta (0), fec_pre_ber_max (1e-5)        TC-SWH-040
   critical_containers              TC-SWH-041: expected containers; '{n}' expands to each ASIC index
   restart_slack_s (1800)           TC-SWH-041: a container started this long after the first one was restarted
+  restart_window_h (24)            TC-SWH-041: only such restarts within this many hours fail (older ones are recorded
+                                   as earlier_restarts); null = any restart since boot fails
   expected_reboot_causes           TC-SWH-042: regexes for an acceptable last reboot cause
 """
 from __future__ import annotations
@@ -208,7 +210,8 @@ def _ts(iso: str) -> float | None:
 @pytest.mark.tc("TC-SWH-041")
 def test_critical_containers_running(switch, inventory, checks, record_property):
     """The critical containers run (per ASIC where named with {n}; afm-controller on afm.controller_nodes), none
-    has a docker restart count or started more than restart_slack_s after the others (= restarted)."""
+    has a docker restart count or started more than restart_slack_s after the others (= restarted) within the last
+    restart_window_h hours (older restarts are recorded, not failed - they were reported when they were new)."""
     want = list(inventory.th("switch.critical_containers") or DEFAULT_CONTAINERS)
     asics = [ns[4:] for ns in switch.namespaces() if ns and ns.startswith("asic")]
     expected = [w.replace("{n}", n) for w in want for n in (asics if "{n}" in w else [""])]
@@ -222,15 +225,23 @@ def test_critical_containers_running(switch, inventory, checks, record_property)
     starts = [t for _, iso in info.values() if (t := _ts(iso)) is not None]
     first = min(starts) if starts else None
     slack = float(inventory.th("switch.restart_slack_s", 1800))
+    window_h = inventory.th("switch.restart_window_h", 24)
+    since = switch.epoch() - float(window_h) * 3600 if window_h else None
+    earlier = {}
     for c in expected:
         if c not in info:
             continue
         count, iso = info[c]
         checks.check(count == 0, f"{switch.name}: {c} restarted {count} time(s) by docker")
         t = _ts(iso)
-        if first is not None and t is not None:
-            checks.check(t - first <= slack, f"{switch.name}: {c} started {(t - first) / 60:.0f} min after the "
-                                             f"first container (restarted at {iso[:19]})")
+        if first is not None and t is not None and t - first > slack:
+            if since is not None and t < since:
+                earlier[c] = iso[:19]
+                continue
+            checks.fail(f"{switch.name}: {c} started {(t - first) / 60:.0f} min after the first container "
+                        f"(restarted at {iso[:19]})")
+    if earlier:
+        record_property("earlier_restarts", earlier)
     ok, text = switch.system_health()
     record_property("system_health", "ok" if ok else ("command crashed" if "Traceback" in text else text.strip()[:200]))
     if ok:

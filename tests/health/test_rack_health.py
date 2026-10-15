@@ -98,19 +98,19 @@ def test_no_other_gpu_workload(computes, inventory, checks):
     checks.assert_all()
 
 
-HW_ERR = re.compile(r"Hardware Error|Machine Check|\bMCE\b|AER:|amdgpu.*(error|fail|timeout|hang|reset)|ifoe.*(error|fail)",
-                    re.I)
-
-
 @pytest.mark.healthcheck("warn")
 @pytest.mark.tc("HC-005")
 def test_no_gpu_ras_or_hw_errors(computes, inventory, checks, record_property):
     """No uncorrectable / deferred GPU ECC errors and no more correctable ones than ``health.max_correctable_ecc``
-    (amd-smi metric --ecc); no hardware / amdgpu / IFoE errors in the kernel log of the last
-    ``health.kernel_window_min`` minutes."""
+    (amd-smi metric --ecc); in the kernel log of the last ``health.kernel_window_min`` minutes no uncorrected /
+    deferred machine check and no AER / amdgpu / IFoE error. Corrected CPU machine-check events are counted and
+    recorded; they fail only above ``health.max_corrected_mce_per_hour`` (unset: never)."""
+    from helios.hwinfo import classify_kernel_errors
+
     sudo = use_sudo(inventory)
     max_ce = int(inventory.th("health.max_correctable_ecc", 0))
     window = int(inventory.th("health.kernel_window_min", 60))
+    max_ce_mce = inventory.th("health.max_corrected_mce_per_hour")
 
     def probe(c):
         ecc = c.run("amd-smi metric --ecc --json", sudo=sudo, timeout=60)
@@ -136,10 +136,16 @@ def test_no_gpu_ras_or_hw_errors(computes, inventory, checks, record_property):
             for gpu, (ue, de, ce) in sorted(counts.items(), key=lambda kv: str(kv[0])):
                 checks.check(not ue and not de, f"{c.name}: GPU{gpu} ECC uncorrectable={ue} deferred={de}")
                 checks.check(ce <= max_ce, f"{c.name}: GPU{gpu} ECC correctable={ce} (> {max_ce})")
-        hits = [ln for ln in klog.stdout.splitlines() if HW_ERR.search(ln)] if klog.ok else []
-        checks.check(not hits, f"{c.name}: {len(hits)} kernel hardware/GPU error line(s) in the last {window} min, e.g. "
-                               f"{hits[0][-160:] if hits else ''!r}")
-        summary[c.name] = {"ecc": {str(k): v for k, v in counts.items()}, "kernel_errors": len(hits)}
+        k = classify_kernel_errors(klog.stdout.splitlines() if klog.ok else [])
+        bad = k["uncorrected"] + k["other"]
+        checks.check(not bad, f"{c.name}: {len(k['uncorrected'])} uncorrected machine-check and {len(k['other'])} other "
+                              f"hardware / GPU error line(s) in the last {window} min, e.g. {bad[0][-160:] if bad else ''!r}")
+        per_hour = k["corrected_events"] * 60.0 / window if window else 0
+        if max_ce_mce is not None:
+            checks.check(per_hour <= float(max_ce_mce), f"{c.name}: {per_hour:.0f} corrected CPU machine-check events / h "
+                                                        f"(> {max_ce_mce})")
+        summary[c.name] = {"ecc": {str(k2): v for k2, v in counts.items()}, "corrected_mce_per_hour": round(per_hour, 1),
+                           "uncorrected_mce_lines": len(k["uncorrected"]), "other_error_lines": len(k["other"])}
     record_property("errors", summary)
     checks.assert_all()
 

@@ -92,3 +92,16 @@ def test_amd_smi_runs_with_rocm_path():
     c.run("amd-smi list", env={"X": "1"})
     assert calls[0][1] == {"sudo": True, "env": {"PATH": ROCM_PATH}}
     assert "env" not in calls[1][1] and calls[2][1] == {"env": {"X": "1"}}
+
+
+def test_classify_kernel_errors():
+    from helios.hwinfo import classify_kernel_errors
+    ce = ["k: [Hardware Error]: Corrected error, no action required.", "k: [Hardware Error]: CPU:152 (1a:c0:0) MC60_STATUS[Over|CE|MiscV]",
+          "k: [Hardware Error]: cache level: L3/GEN, mem/io: IO", "k: [Hardware Error]: FRU Text: PPlErr: G4G0 "]
+    ue = ["k: [Hardware Error]: Uncorrected, software restartable error.", "k: [Hardware Error]: CPU:5 MC26_STATUS[-|UE|PCC]"]
+    r = classify_kernel_errors(ce * 3 + ["k: amdgpu 0001:01:00.0: ring gfx timeout"] + ue + ce)
+    assert r["corrected_events"] == 4
+    assert r["uncorrected"] == ue
+    assert r["other"] == ["k: amdgpu 0001:01:00.0: ring gfx timeout"]
+    assert classify_kernel_errors(["k: [Hardware Error]: CPU:1 MC2_STATUS[-|CE|]"])["corrected_events"] == 0   # no header: detail only
+    assert classify_kernel_errors(["k: pcieport 0000:00:01.1: AER: Corrected error received"])["other"]

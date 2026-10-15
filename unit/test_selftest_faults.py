@@ -277,6 +277,11 @@ FAULTS = {
     "optics_low_rx": (lambda d: _edit(d / "xcvr_dom.txt", r"RX1Power: -1\.20dBm", "RX1Power: -14.20dBm"), {"TC-SWH-039"}),
     "fec_ber_high": (lambda d: _edit(d / "fec_asic0.txt", r"1\.2e-08", "3.4e-04"), {"TC-SWH-040"}),
     "container_restarted": (lambda d: _edit(d / "docker_restarts.txt", r"^/syncd0 0 ", "/syncd0 3 "), {"TC-SWH-041"}),
+    # replay 'now' (date +%s) is 2026-10-14 17:30 UTC: a restart 5.5 h earlier fails, one 35 h earlier is only recorded
+    "container_restarted_recently": (lambda d: _edit(d / "docker_restarts.txt", r"^(/swss0 0 )\S+", r"\g<1>2026-10-14T12:00:00.000000000Z"),
+                                     {"TC-SWH-041"}),
+    "container_restarted_long_ago": (lambda d: _edit(d / "docker_restarts.txt", r"^(/swss0 0 )\S+", r"\g<1>2026-10-13T06:06:11.000000000Z"),
+                                     set()),
     "container_missing": (lambda d: _edit_rule(d, "docker\\ ps\\ \\-\\-format\\ '\\{\\{\\.Names",
                                                stdout="database\npmon\nlldp\nlldp0\nlldp1\nswss0\nswss1\nsyncd1\n"
                                                       "afm-agent\ndatabase0\ndatabase1\n"),
@@ -315,8 +320,14 @@ FAULTS = {
     "gpu_uncorrectable_ecc": (lambda d: _edit(d / "amd_smi_ecc.json", r'"total_uncorrectable_count": 0', '"total_uncorrectable_count": 2'),
                               {"HC-005"}),
     "tray_kernel_hw_error": (lambda d: _edit(d / "compute_kernel_err.txt", r"\A",
-                                             "Oct 14 23:05:23 c1 kernel: [Hardware Error]: CPU:5 MC26_STATUS[-|CE|MiscV]\n"),
+                                             "Oct 14 23:05:23 c1 kernel: [Hardware Error]: Uncorrected, software restartable error.\n"
+                                             "Oct 14 23:05:23 c1 kernel: [Hardware Error]: CPU:5 MC26_STATUS[Over|UE|MiscV|PCC]\n"),
                              {"HC-005"}),
+    "tray_corrected_mce_only": (lambda d: _edit(d / "compute_kernel_err.txt", r"\A",      # counted, not failed
+                                                "Oct 14 23:05:23 c1 kernel: [Hardware Error]: Corrected error, no action required.\n"
+                                                "Oct 14 23:05:23 c1 kernel: [Hardware Error]: CPU:5 MC26_STATUS[-|CE|MiscV]\n"
+                                                "Oct 14 23:05:23 c1 kernel: [Hardware Error]: FRU Text: PPlErr: G4G0\n"),
+                                set()),
     "tray_disk_full": (lambda d: _edit(d / "compute_df.txt", r" 3% /", "97% /"), {"HC-006"}),
     "gpu_firmware_mixed": (lambda d: _edit(d / "amd_smi_firmware.json", r'"fw_version": "2430"', '"fw_version": "2431"'),
                            {"HC-010"}),
