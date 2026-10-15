@@ -511,6 +511,18 @@ add(r"^pkill -TERM -f 'HELIOS_RU\[N\]=\w+'$", "", regex=True)
 add(r"^modprobe (-r )?ifoe$", "", regex=True)
 add("lsmod | grep -q '^ifoe '", "", rcs=[1, 0])   # unloaded after unload, loaded after load
 
+# ------------------------------------------------- full-rack health check (tests/health: HC-005 / HC-006)
+add("amd-smi metric --ecc --json", _json.dumps({"gpu_data": [
+    {"gpu": i, "ecc": {"total_correctable_count": 0, "total_uncorrectable_count": 0, "total_deferred_count": 0,
+                       "cache_correctable_count": "N/A", "cache_uncorrectable_count": "N/A"}} for i in range(4)]}),
+    name="amd_smi_ecc.json", host="^c")
+add(r"^journalctl -k -p err --since '-\d+ min' --no-pager -q$", "", regex=True, host="^c", name="compute_kernel_err.txt")
+add("df -P /", "Filesystem     1024-blocks     Used  Available Capacity Mounted on\n"
+               "/dev/nvme0n1p2 1921725720 52428800 1771586216       3% /\n", host="^c", name="compute_df.txt")
+add("free -m", "               total        used        free      shared  buff/cache   available\n"
+               "Mem:         2059404       45709     2014445         420        8768     2013695\n"
+               "Swap:              0           0           0\n", host="^c", name="compute_free.txt")
+
 # pre-flight probes first: broad traffic rules (RcclSmokeTest, *_perf) would otherwise match "command -v <tool>"
 _first = [r for r in rules if r["cmd"].startswith(("^command\\ -v", "^command -v", "^pkill", "^amd\\-smi\\ list\\ \\-\\-json",
                                                    "^amd\\-smi\\ process"))]

@@ -26,6 +26,8 @@ MARKERS = [
     "manual: needs a physical/thermal stimulus; needs --run-manual",
     "datapath(tools=[], min_computes=1): what the datapath pre-flight must find on each tray "
     "(tools: transferbench, rccl_tests, rccl_smoke) and how many healthy trays the test needs",
+    "healthcheck(gate): part of the full-rack health check (helios/healthcheck.py); gate = blocker | warn. "
+    "Select with -m healthcheck or run tools/rack_health.py",
 ]
 
 
@@ -78,7 +80,19 @@ def tc_id(item) -> str | None:
     return m.args[0] if m else None
 
 
+@pytest.hookimpl(tryfirst=True)
 def pytest_collection_modifyitems(config, items):
+    """Plan cases that belong to the health check get the healthcheck marker before -m / --tc filtering."""
+    from .healthcheck import CASES
+
+    for item in items:
+        tc = tc_id(item)
+        if tc in CASES and not item.get_closest_marker("healthcheck"):
+            item.add_marker(pytest.mark.healthcheck(CASES[tc][0]))
+    _filter_items(config, items)
+
+
+def _filter_items(config, items):
     wanted = config.getoption("--tc")
     if wanted:
         ids = {t.strip() for t in wanted.split(",") if t.strip()}

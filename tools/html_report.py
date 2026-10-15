@@ -43,6 +43,8 @@ SUITE_NAMES = OrderedDict([
     ("afm/test_afm_reconfigure", "AFM Reconfigure"),
     ("afm/test_afm_sideband_more", "Sideband placement (TC-SBM)"),
     ("afm/test_afm_switch_fabric", "Switch fabric vs AFM (TC-SWH-048 / 050)"),
+    ("health/test_rack_health", "Rack health checks (HC-001..006)"),
+    ("afm/test_afm_health", "AFM rack state + snapshot (HC-000)"),
 ])
 STATUS = {"passed": ("PASS", "pass"), "failed": ("FAIL", "fail"), "error": ("ERROR", "fail"),
           "blocked": ("BLOCKED", "blocked"), "skipped": ("SKIP", "skip"), "partial": ("PARTIAL", "blocked")}

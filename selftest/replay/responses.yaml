@@ -951,3 +951,19 @@
   - 1
   - 0
   stdout: ''
+- cmd: ^amd\-smi\ metric\ \-\-ecc\ \-\-json$
+  rc: 0
+  host: ^c
+  file: amd_smi_ecc.json
+- cmd: ^journalctl -k -p err --since '-\d+ min' --no-pager -q$
+  rc: 0
+  host: ^c
+  file: compute_kernel_err.txt
+- cmd: ^df\ \-P\ /$
+  rc: 0
+  host: ^c
+  file: compute_df.txt
+- cmd: ^free\ \-m$
+  rc: 0
+  host: ^c
+  file: compute_free.txt

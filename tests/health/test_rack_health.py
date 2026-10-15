@@ -1,0 +1,173 @@
+"""HC-001..HC-006 - health-only checks of the full-rack health check (helios/healthcheck.py, tools/rack_health.py).
+
+Read-only, SSH only (plus the optional BMC power query from the runner). Thresholds under ``thresholds.health``.
+"""
+from __future__ import annotations
+
+import json
+import re
+
+import pytest
+
+from helios.afmctl import Afmctl
+from helios.compute import render
+from helios.datapath import use_sudo
+from helios.preflight import _gpu_users
+from helios.rack import fan_out
+
+pytestmark = pytest.mark.l1
+
+
+@pytest.mark.healthcheck("blocker")
+@pytest.mark.tc("HC-001")
+def test_every_node_answers_ssh(rack, computes, inventory, checks, record_property):
+    """Every switch and every compute tray answers a trivial SSH command."""
+    timeout = float(inventory.th("health.ssh_timeout_s", 20))
+    nodes = list(rack.switches.values()) + list(computes)
+    down = []
+    for n, r, exc in fan_out(lambda n: n.run("true", timeout=timeout), nodes):
+        why = f"{type(exc).__name__}: {str(exc)[:120]}" if exc else (f"rc={r.rc}" if not r.ok else "")
+        if why:
+            down.append(n.name)
+            checks.fail(f"{n.name}: not answering SSH ({why})")
+    record_property("unreachable", down)
+    checks.assert_all()
+
+
+@pytest.mark.healthcheck("warn")
+@pytest.mark.tc("HC-002")
+def test_bmc_power_on(rack, computes, inventory, checks, record_property):
+    """Every tray's BMC reports chassis power on (``commands.health.bmc_power``, run on the runner with {bmc} filled
+    from the tray's ``bmc:`` inventory key, e.g. ipmitool ... chassis power status)."""
+    tmpl = inventory.cmd("health.bmc_power")
+    if not tmpl:
+        pytest.skip("commands.health.bmc_power not set (e.g. 'IPMI_PASSWORD=\"$HELIOS_BMC_PASSWORD\" ipmitool -I lanplus "
+                    "-H {bmc} -U <user> -E chassis power status')")
+    states = {}
+
+    def query(c):
+        bmc = c.host.extra.get("bmc")
+        if not bmc:
+            return None
+        return rack.runner.run(render(tmpl, name=c.name, host=c.host.host, bmc=bmc), timeout=60)
+
+    for c, r, exc in fan_out(query, computes):
+        if r is None and not exc:
+            checks.fail(f"{c.name}: no bmc: in the inventory")
+            continue
+        out = "" if exc else (r.stdout + r.stderr).strip()
+        states[c.name] = out[:80] if not exc else f"error: {exc}"
+        if exc or not r.ok:
+            checks.fail(f"{c.name}: BMC query failed: {exc or f'rc={r.rc} {out[-120:]!r}'}")
+        elif not re.search(r"\bon\b", out, re.I):
+            checks.fail(f"{c.name}: chassis power not on: {out[-120:]!r}")
+    record_property("bmc_power", states)
+    checks.assert_all()
+
+
+@pytest.mark.healthcheck("blocker")
+@pytest.mark.tc("HC-003")
+def test_gpu_devices_active(computes, checks, record_property):
+    """afmctl lists every GPU of the tray and every device is ACTIVE."""
+    phases = {}
+    for c, devs, exc in fan_out(lambda c: Afmctl(c, timeout=60).devices(), computes):
+        if exc:
+            checks.fail(f"{c.name}: afmctl failed: {str(exc)[:160]}")
+            continue
+        phases[c.name] = {d.bdf: d.config_phase for d in devs}
+        checks.check(not c.gpus or len(devs) >= c.gpus, f"{c.name}: afmctl lists {len(devs)} of {c.gpus} GPUs")
+        bad = [f"{d.bdf}={d.config_phase}" for d in devs if d.config_phase != "ACTIVE"]
+        checks.check(not bad, f"{c.name}: GPUs not ACTIVE: {bad}")
+    record_property("config_phase", phases)
+    checks.assert_all()
+
+
+@pytest.mark.healthcheck("blocker")
+@pytest.mark.tc("HC-004")
+def test_no_other_gpu_workload(computes, inventory, checks):
+    """No process of another workload holds the GPUs (amd-smi process) - a busy tray makes traffic and disruptive
+    results meaningless."""
+    sudo = use_sudo(inventory)
+    for c, msg, exc in fan_out(lambda c: _gpu_users(c, sudo), computes):
+        if exc:
+            checks.fail(f"{c.name}: amd-smi process failed: {str(exc)[:160]}")
+        elif msg:
+            checks.fail(msg)
+    checks.assert_all()
+
+
+HW_ERR = re.compile(r"Hardware Error|Machine Check|\bMCE\b|AER:|amdgpu.*(error|fail|timeout|hang|reset)|ifoe.*(error|fail)",
+                    re.I)
+
+
+@pytest.mark.healthcheck("warn")
+@pytest.mark.tc("HC-005")
+def test_no_gpu_ras_or_hw_errors(computes, inventory, checks, record_property):
+    """No uncorrectable / deferred GPU ECC errors and no more correctable ones than ``health.max_correctable_ecc``
+    (amd-smi metric --ecc); no hardware / amdgpu / IFoE errors in the kernel log of the last
+    ``health.kernel_window_min`` minutes."""
+    sudo = use_sudo(inventory)
+    max_ce = int(inventory.th("health.max_correctable_ecc", 0))
+    window = int(inventory.th("health.kernel_window_min", 60))
+
+    def probe(c):
+        ecc = c.run("amd-smi metric --ecc --json", sudo=sudo, timeout=60)
+        klog = c.run(f"journalctl -k -p err --since '-{window} min' --no-pager -q", sudo=True, timeout=60)
+        return ecc, klog
+
+    summary = {}
+    for c, res, exc in fan_out(probe, computes):
+        if exc:
+            checks.fail(f"{c.name}: cannot read GPU / kernel errors: {str(exc)[:160]}")
+            continue
+        ecc, klog = res
+        counts = {}
+        if ecc.ok:
+            try:
+                doc = json.loads(ecc.stdout)
+            except ValueError:
+                doc = {}
+            for g in (doc.get("gpu_data") if isinstance(doc, dict) else doc) or []:
+                e = g.get("ecc") or {}
+                counts[g.get("gpu")] = tuple(int(e.get(k) or 0) if str(e.get(k, "0")).isdigit() else 0 for k in
+                                             ("total_uncorrectable_count", "total_deferred_count", "total_correctable_count"))
+            for gpu, (ue, de, ce) in sorted(counts.items(), key=lambda kv: str(kv[0])):
+                checks.check(not ue and not de, f"{c.name}: GPU{gpu} ECC uncorrectable={ue} deferred={de}")
+                checks.check(ce <= max_ce, f"{c.name}: GPU{gpu} ECC correctable={ce} (> {max_ce})")
+        hits = [ln for ln in klog.stdout.splitlines() if HW_ERR.search(ln)] if klog.ok else []
+        checks.check(not hits, f"{c.name}: {len(hits)} kernel hardware/GPU error line(s) in the last {window} min, e.g. "
+                               f"{hits[0][-160:] if hits else ''!r}")
+        summary[c.name] = {"ecc": {str(k): v for k, v in counts.items()}, "kernel_errors": len(hits)}
+    record_property("errors", summary)
+    checks.assert_all()
+
+
+@pytest.mark.healthcheck("warn")
+@pytest.mark.tc("HC-006")
+def test_tray_resources(computes, inventory, checks, record_property):
+    """Root filesystem below ``health.max_disk_pct`` and available memory above ``health.min_mem_avail_pct``."""
+    max_disk = float(inventory.th("health.max_disk_pct", 90))
+    min_mem = float(inventory.th("health.min_mem_avail_pct", 10))
+
+    def probe(c):
+        return c.run("df -P /", timeout=30), c.run("free -m", timeout=30)
+
+    out = {}
+    for c, res, exc in fan_out(probe, computes):
+        if exc:
+            checks.fail(f"{c.name}: cannot read disk / memory: {str(exc)[:160]}")
+            continue
+        df, free = res
+        m = re.search(r"(\d+)%\s+/\s*$", df.stdout, re.M)
+        disk = int(m.group(1)) if m else None
+        mem = next((ln.split() for ln in free.stdout.splitlines() if ln.startswith("Mem:")), None)
+        avail = 100.0 * int(mem[6]) / int(mem[1]) if mem and len(mem) > 6 and int(mem[1]) else None
+        out[c.name] = {"disk_pct": disk, "mem_avail_pct": round(avail, 1) if avail is not None else None}
+        checks.check(disk is not None, f"{c.name}: cannot parse df: {df.stdout[-120:]!r}")
+        checks.check(avail is not None, f"{c.name}: cannot parse free: {free.stdout[-120:]!r}")
+        if disk is not None:
+            checks.check(disk < max_disk, f"{c.name}: / is {disk}% full (>= {max_disk:g}%)")
+        if avail is not None:
+            checks.check(avail > min_mem, f"{c.name}: only {avail:.1f}% memory available (<= {min_mem:g}%)")
+    record_property("resources", out)
+    checks.assert_all()

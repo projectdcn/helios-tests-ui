@@ -1,0 +1,2 @@
+Filesystem     1024-blocks     Used  Available Capacity Mounted on
+/dev/nvme0n1p2 1921725720 52428800 1771586216       3% /

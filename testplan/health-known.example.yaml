@@ -1,0 +1,5 @@
+# Accepted, already-reported failures for tools/rack_health.py --known <file>: TC-ID -> reason.
+# A blocker case listed here no longer makes the verdict NO-GO; it is shown as KNOWN instead.
+# Keep it short and remove entries once fixed. Copy to e.g. testplan/health-known.yaml (git-ignored is fine).
+TC-SWH-057: "radvd not running on all 6 switches although declared critical - reported to AMD 14 Oct"
+TC-SWH-042: "st1 orchagent/syncd core files from 10 Oct 16:51 UTC - reported to AMD 14 Oct"

@@ -233,7 +233,23 @@ own collapsible command log.
   hostnames and IPs; check that every password value reads `<REDACTED>` before sharing.
   The charts load Chart.js from a CDN.
 
-### 6. Coverage: automated vs. missing
+### 6. Full-rack health check (GO / NO-GO)
+
+Read-only gate to run before every disruptive batch, after each one, and whenever the rack state is unclear:
+
+```bash
+.venv/bin/python tools/rack_health.py --inventory <inventory> [--known testplan/health-known.yaml] [--baseline results/<run>/health.json]
+```
+
+- Runs the 41 `healthcheck` cases (`helios/healthcheck.py`; `pytest tests -m healthcheck` selects the same):
+  existing plan cases plus HC-000 (AFM rack state + snapshot) and HC-001..006 (SSH, BMC power, GPUs ACTIVE,
+  other GPU workload, GPU ECC / kernel hardware errors, tray resources).
+- **GO** (exit 0): every blocker passed or is accepted in `--known`; **NO-GO** (1): a blocker failed, was blocked or
+  only partially passed; **INCOMPLETE** (2): a blocker could not run (e.g. no `HELIOS_AFM_PASSWORD`).
+- Writes `health.json` (verdict, blockers, warnings, snapshot), `health.html` and `health-notes.txt` into the run
+  folder. `--baseline` lists what changed since an earlier run; `--run results/<run>` re-judges without the rack.
+
+### 7. Coverage: automated vs. missing
 
 ```bash
 .venv/bin/python tools/coverage.py                               # per-category table

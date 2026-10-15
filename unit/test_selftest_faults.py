@@ -192,7 +192,7 @@ FAULTS = {
                              {"TC-RAS-reset-001", "TC-RAS-reset-002", "TC-RAS-reset-003", "TC-RAS-reset-004",
                               "TC-RAS-reset-007", "TC-RAS-reset-008", "TC-RAS-reset-009"}),
     "node_never_returns": (lambda d: _edit_rule(d, "^true$", rc=255),
-                           {"TC-BUG-021", *GATED_TRAFFIC}),  # same SSH probe; pre-flight sees nodes not responding
+                           {"TC-BUG-021", "HC-001", *GATED_TRAFFIC}),  # same SSH probe; pre-flight + health check see nodes down
     # ---- metrics exporter
     "exporter_not_listening": (lambda d: _edit_rule(d, "sport\\ =\\ :5000", stdout=""), {"TC-CTL-139"}),
     "metrics_http_500": (lambda d: _edit(d / "metrics_c1.txt", r"^HTTP/1\.1 200 OK", "HTTP/1.1 500 Internal Server Error"),
@@ -234,7 +234,7 @@ FAULTS = {
                               "TC-RAS-reset-008", "TC-RAS-reset-009"}),
     # one bad tray: the pre-flight excludes c2 - single-tray cases run on c1 as PARTIAL, two-tray cases are BLOCKED
     "gpu_not_active": (lambda d: _edit(d / "afmctl_device_c2.json", r'"config_phase": "ACTIVE"', '"config_phase": "PROVIDER"'),
-                       {"TC-BU-011", *GATED_TRAFFIC}),
+                       {"TC-BU-011", "HC-003", *GATED_TRAFFIC}),
     "ping_no_summary": (lambda d: _edit(d / "afmctl_ping.txt", r"Summary:(.|\n)*", "ERR - Failed to start ping test\n"),
                         {"TC-AFM-001", "TC-HW-017", *GATED_TRAFFIC}),
     # MR3 failure mode: one plane silently drops a port's ingress while links/LLDP/VLAN look healthy
@@ -311,6 +311,13 @@ FAULTS = {
     "critical_process_exited": (lambda d: _edit(d / "supervisor_swss0.txt", r"^(orchagent\s+)RUNNING", r"\1EXITED "),
                                 {"TC-SWH-057", "TC-SWA-141"}),   # SWA-141 also checks swss processes
     "watchdog_unarmed": (lambda d: _edit(d / "watchdog.txt", r"Status: Armed", "Status: Unarmed"), {"TC-SWH-058"}),
+    # full-rack health check (tests/health)
+    "gpu_uncorrectable_ecc": (lambda d: _edit(d / "amd_smi_ecc.json", r'"total_uncorrectable_count": 0', '"total_uncorrectable_count": 2'),
+                              {"HC-005"}),
+    "tray_kernel_hw_error": (lambda d: _edit(d / "compute_kernel_err.txt", r"\A",
+                                             "Oct 14 23:05:23 c1 kernel: [Hardware Error]: CPU:5 MC26_STATUS[-|CE|MiscV]\n"),
+                             {"HC-005"}),
+    "tray_disk_full": (lambda d: _edit(d / "compute_df.txt", r" 3% /", "97% /"), {"HC-006"}),
     "thermalctld_down": (lambda d: _edit_rule(d, "thermalctld", stdout="thermalctld   EXITED\n"), {"TC-SWH-004"}),
 }
 

@@ -115,6 +115,7 @@
     <a href="#select">Specific cases</a>
     <a href="#results">Results</a>
     <a href="#report">HTML report</a>
+    <a href="#health">Rack health</a>
     <a href="#coverage">Coverage</a>
   </nav>
 </header>
@@ -579,8 +580,36 @@ Not run: RAS power-cycle tests (disruptive)</pre></div>
   <p class="muted">Logs per test exist for runs made from 2026-10-13 onward. The charts load Chart.js from a public CDN, so they need internet access. Reports contain lab hostnames and IPs, so keep them in the git-ignored <code>results/</code> folder. Before sharing one, check that every password value reads <code>&lt;REDACTED&gt;</code>.</p>
 </section>
 
+<section id="health">
+  <h2><span class="num">9</span>Full-rack health check (GO / NO-GO)</h2>
+  <p>Run it before every disruptive batch, after each one (to confirm the rack recovered) and whenever the rack state is unclear. It is read-only: 41 cases, none disruptive, about 10 minutes on g02-g17 from the jump host. Blocker cases decide the verdict; warnings are listed but never block.</p>
+  <div class="cmd"><pre>.venv/bin/python tools/rack_health.py --inventory ~/helios/fullrack-jump-afm.yaml --known testplan/health-known.yaml</pre></div>
+  <p class="muted">Export <code>HELIOS_AFM_PASSWORD</code> in the same terminal first (on the jump host: the <code>read -s</code> script pattern from <a href="#afm">section 5</a>); without it the AFM blockers skip and the verdict is INCOMPLETE. After a disruptive batch, compare with the run before it:</p>
+  <div class="cmd"><pre>.venv/bin/python tools/rack_health.py --inventory ... --baseline results/&lt;run-before&gt;/health.json</pre></div>
+  <div class="table-wrap">
+  <table>
+    <thead><tr><th>Verdict</th><th>Meaning</th><th>Exit code</th></tr></thead>
+    <tbody>
+      <tr><td><strong>GO</strong></td><td>Every blocker case passed (or is accepted in <code>--known</code>)</td><td>0</td></tr>
+      <tr><td><strong>NO-GO</strong></td><td>A blocker case failed, was blocked or passed only on some trays (PARTIAL)</td><td>1</td></tr>
+      <tr><td><strong>INCOMPLETE</strong></td><td>No blocker failed, but one could not run (e.g. no AFM password)</td><td>2</td></tr>
+    </tbody>
+  </table>
+  </div>
+  <div class="table-wrap">
+  <table>
+    <thead><tr><th>Gate</th><th>Cases</th></tr></thead>
+    <tbody>
+      <tr><td>Blocker</td><td>Every node answers SSH (HC-001); AFM rack state: cluster, admission, system vPOD, pending ops (HC-000, TC-CTL-036/090/094, TC-SEQ-010); afm-agent, node agents and control channels (TC-BU-002/009, TC-SEQ-006, TC-SBM-135/136); fabric ports and cabling (TC-SWH-030/037/049, TC-BU-011); IFCP sessions (TC-BU-003, TC-001); L2 ping (TC-AFM-001); GPUs ACTIVE (HC-003); no other GPU workload (HC-004); switch containers (TC-SWH-041)</td></tr>
+      <tr><td>Warning</td><td>BMC power (HC-002, needs <code>commands.health.bmc_power</code>); GPU ECC / kernel hardware errors (HC-005); tray disk / memory (HC-006); NTP (TC-CTL-035); switch reboots / cores, processes, kernel errors, fans, power, sensors, error counters, queue drops, saved config, resources, consistency (TC-SWH-002/021-025/034/038/042/043/047/052/055/056/057/059)</td></tr>
+    </tbody>
+  </table>
+  </div>
+  <p class="muted">The list lives in <code>helios/healthcheck.py</code>; <code>pytest tests -m healthcheck</code> selects the same cases. Output in the run folder: <code>health.json</code> (verdict, blockers, warnings, the HC-000 snapshot of cluster, nodes, system vPOD, node-agent placement and up fabric ports), <code>health.html</code> and <code>health-notes.txt</code>. <code>--known</code> takes a YAML of accepted, already-reported failures (<code>TC-ID: reason</code>, see <code>testplan/health-known.example.yaml</code>); <code>--run results/&lt;run&gt;</code> judges an existing run again without touching the rack. Thresholds: <code>thresholds.health.max_correctable_ecc</code> (0), <code>kernel_window_min</code> (60), <code>max_disk_pct</code> (90), <code>min_mem_avail_pct</code> (10), <code>ssh_timeout_s</code> (20).</p>
+</section>
+
 <section id="coverage">
-  <h2><span class="num">9</span>Coverage: automated vs. missing</h2>
+  <h2><span class="num">10</span>Coverage: automated vs. missing</h2>
   <div class="cmd"><pre>.venv/bin/python tools/coverage.py</pre></div>
   <div class="cmd"><pre>.venv/bin/python tools/coverage.py --missing &gt; results/missing.txt</pre></div>
   <p class="muted">14 Oct: 423 of 565 automated (L1 59/59, L2 123/127, L3 241/379). <code>automated</code> = cases with a <code>@pytest.mark.tc</code> test; <code>total</code> = cases in the plan plus the cases in <code>testplan/added.yaml</code>; <code>--missing</code> lists every case with no test yet.</p>
