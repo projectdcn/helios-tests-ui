@@ -241,9 +241,10 @@ Read-only gate to run before every disruptive batch, after each one, and wheneve
 .venv/bin/python tools/rack_health.py --inventory <inventory> [--known testplan/health-known.yaml] [--baseline results/<run>/health.json]
 ```
 
-- Runs the 41 `healthcheck` cases (`helios/healthcheck.py`; `pytest tests -m healthcheck` selects the same):
-  existing plan cases plus HC-000 (AFM rack state + snapshot) and HC-001..006 (SSH, BMC power, GPUs ACTIVE,
-  other GPU workload, GPU ECC / kernel hardware errors, tray resources).
+- Runs the 47 `healthcheck` cases (`helios/healthcheck.py`; `pytest tests -m healthcheck` selects the same):
+  existing plan cases (incl. TC-SWH-048 cabling vs AFM, TC-SWH-050 stale MACs) plus HC-000 (AFM rack state + snapshot),
+  HC-001..006 (SSH, BMC power, GPUs ACTIVE, other GPU workload, GPU ECC / kernel hardware errors, tray resources) and
+  HC-007..010 (leftover helios-* AFM objects, critical AFM events, controller restarts, tray versions).
 - **GO** (exit 0): every blocker passed or is accepted in `--known`; **NO-GO** (1): a blocker failed, was blocked or
   only partially passed; **INCOMPLETE** (2): a blocker could not run (e.g. no `HELIOS_AFM_PASSWORD`).
 - Writes `health.json` (verdict, blockers, warnings, snapshot), `health.html` and `health-notes.txt` into the run

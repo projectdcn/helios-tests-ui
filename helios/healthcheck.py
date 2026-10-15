@@ -41,6 +41,7 @@ CASES: dict[str, tuple[str, str]] = {
     "TC-BU-003": (BLOCKER, "IFCP session on every LINK_UP GPU port (compute view)"),
     "TC-001": (BLOCKER, "IFCP session on every LINK_UP GPU port (AFM view)"),
     "TC-AFM-001": (BLOCKER, "L2 ping within and across trays: no loss, no black-holed port"),
+    "TC-SWH-048": (BLOCKER, "switch cabling (port descriptions) and AFM accelerator ids agree"),
     # switch software
     "TC-SWH-041": (BLOCKER, "switch critical containers running, no recent restarts"),
     # warnings
@@ -61,6 +62,7 @@ CASES: dict[str, tuple[str, str]] = {
     "TC-SWH-056": (WARN, "switch disk / memory / load"),
     "TC-SWH-038": (WARN, "switches configured consistently"),
     "TC-SWH-059": (WARN, "firmware consistent across switches"),
+    "TC-SWH-050": (WARN, "static MAC entries match the fabric (no stale FDB entries)"),
 }
 
 # health-only checks (tests/health, tests/afm/test_afm_health.py): gate + meaning
@@ -72,6 +74,10 @@ HEALTH_ONLY: dict[str, tuple[str, str]] = {
     "HC-004": (BLOCKER, "no other workload using the GPUs"),
     "HC-005": (WARN, "no GPU ECC / RAS or kernel hardware errors on the trays"),
     "HC-006": (WARN, "tray disk and memory headroom"),
+    "HC-007": (BLOCKER, "no leftover helios-* test objects in AFM (vPODs, policies, users, roles, bindings)"),
+    "HC-008": (WARN, "no critical AFM events in the recent window"),
+    "HC-009": (WARN, "AFM controllers up for a while (no recent restart)"),
+    "HC-010": (WARN, "same driver / ROCm / IFoE / afmctl / GPU firmware versions on every tray"),
 }
 
 
@@ -137,16 +143,18 @@ def judge(verdicts: dict[str, str], messages: dict[str, str] | None = None,
 
 
 def read_run(run_dir: Path) -> tuple[dict[str, str], dict[str, str], dict]:
-    """(verdict per tc, first failure / skip message per tc, HC-000 snapshot) from a pytest results folder."""
+    """(verdict per tc, first failure / skip message per tc, snapshot) from a pytest results folder. The snapshot
+    merges every health check's ``snapshot`` property (HC-000: AFM state, IFCP; HC-001: unreachable nodes;
+    HC-003: GPU phases; HC-009: controllers; HC-010: versions)."""
     verdicts = {r["tc_id"]: r["verdict"] for r in csv.DictReader(open(run_dir / "tc_summary.csv", newline=""))}
     messages: dict[str, str] = {}
     snapshot: dict = {}
     for r in csv.DictReader(open(run_dir / "tc_results.csv", newline="")):
         if r["outcome"] not in ("passed",) and r.get("message") and r["tc_id"] not in messages:
             messages[r["tc_id"]] = " ".join(r["message"].removeprefix("Skipped: ").split())[:400]
-        if r["tc_id"] == "HC-000" and r.get("properties"):
+        if r["tc_id"].startswith("HC-") and r.get("properties"):
             try:
-                snapshot = json.loads(r["properties"]).get("snapshot") or {}
+                snapshot.update(json.loads(r["properties"]).get("snapshot") or {})
             except ValueError:
                 pass
     return verdicts, messages, snapshot

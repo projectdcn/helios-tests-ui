@@ -73,6 +73,9 @@ commands:
     ac_cycle: "pdu-ctl cycle {pdu_outlet}"
 
 thresholds:
+  health:               # the fake controllers restart and raise critical events in the disruptive tests
+    controller_min_uptime_min: 0
+    event_window_min: 0
   afm:                  # short timings for the fake controller
     quorum_members: 1
     poll_s: 0.2

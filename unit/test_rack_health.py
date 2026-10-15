@@ -103,3 +103,30 @@ def test_rack_health_tool_says_go_on_selftest_rack(tmp_path):
     r2 = subprocess.run([sys.executable, "tools/rack_health.py", "--run", str(run), "--baseline", str(run / "health.json"),
                          "--no-html"], cwd=ROOT, capture_output=True, text=True)
     assert r2.returncode == 0 and "changed" not in r2.stdout.split("RACK HEALTH")[1]
+
+
+def _afm_health(tmp_path, faults: str) -> dict[str, str]:
+    import csv
+    import os
+    res = tmp_path / "results"
+    subprocess.run([sys.executable, "-m", "pytest", "tests/afm/test_afm_health.py", "--inventory",
+                    "selftest/inventory-health.yaml", "--results-dir", str(res), "-q", "-p", "no:cacheprovider"],
+                   cwd=ROOT, capture_output=True, text=True, timeout=300,
+                   env={**os.environ, "HELIOS_FAKE_AFM_FAULTS": faults})
+    with open(next(res.glob("*/tc_summary.csv"))) as f:
+        return {r["tc_id"]: r["verdict"] for r in csv.DictReader(f)}
+
+
+def test_afm_health_checks_pass_on_healthy_fake(tmp_path):
+    v = _afm_health(tmp_path, "")
+    assert v == {"HC-000": "PASS", "HC-007": "PASS", "HC-008": "PASS", "HC-009": "PASS"}, v
+
+
+import pytest  # noqa: E402
+
+
+@pytest.mark.parametrize("fault,tc", [("leftover_test_objects", "HC-007"), ("critical_event", "HC-008"),
+                                      ("controller_restarted", "HC-009")])
+def test_afm_health_fault_detected(tmp_path, fault, tc):
+    v = _afm_health(tmp_path, fault)
+    assert {t for t, x in v.items() if x == "FAIL"} == {tc}, v

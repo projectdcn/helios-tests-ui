@@ -104,6 +104,19 @@ class State:
             "AlertPolicy": {"default-event-based-alerts": obj("AlertPolicy", "default-event-based-alerts",
                                                               {"resource": "Event", "enable": True})},
         }
+        # health-check faults (tests/afm/test_afm_health.py)
+        if "leftover_test_objects" in faults:     # an aborted run left its objects behind
+            self.objs["FailoverPolicy"]["helios-afm-016-policy-123"] = obj(
+                "FailoverPolicy", "helios-afm-016-policy-123", {"datafabric-reconfig": "manual", "link-fail-threshold": 10})
+            self.roles["helios-ctl-117-role"] = obj("Role", "helios-ctl-117-role", {"permissions": []})
+        if "critical_event" in faults:
+            self.sim.events.append({"kind": "Event", "meta": {"name": "crit-1", "creation-time": now(), "mod-time": now()},
+                                    "severity": "critical", "type": "vpod_configuration_failed",
+                                    "message": "vPOD pod-1.system configuration failed",
+                                    "object-ref": {"kind": "VPod", "name": "pod-1.system"}})
+        if "controller_restarted" in faults:      # afm-controller on the first switch restarted a minute ago
+            self.sim.ctrl_started[0] = time.time() - 60
+            self.sim.ctrl_restarts[0] += 1
 
     # ---------------------------------------------------------------- RBAC
     def allowed(self, user: str, group: str, kind: str, action: str) -> bool:

@@ -632,6 +632,8 @@ class FakeSwitchTransport:
                 res = self._res(cmd, f"{t} {sim.ctrl_restarts[i]}\n")
             elif cmd == "date +%s":
                 res = self._res(cmd, f"{int(time.time())}\n")
+            elif cmd == "date -u +%Y-%m-%dT%H:%M:%S":
+                res = self._res(cmd, datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S") + "\n")
             elif m := re.fullmatch(r"find /opt/amd/afm/controller/logs -type f -newermt @(\d+)( -print)?", cmd):
                 newer = sim.ctrl_log[i] > int(m.group(1))
                 res = self._res(cmd, "/opt/amd/afm/controller/logs/afm_controller.log\n" if newer else "")

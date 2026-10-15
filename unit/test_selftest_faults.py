@@ -318,6 +318,9 @@ FAULTS = {
                                              "Oct 14 23:05:23 c1 kernel: [Hardware Error]: CPU:5 MC26_STATUS[-|CE|MiscV]\n"),
                              {"HC-005"}),
     "tray_disk_full": (lambda d: _edit(d / "compute_df.txt", r" 3% /", "97% /"), {"HC-006"}),
+    "gpu_firmware_mixed": (lambda d: _edit(d / "amd_smi_firmware.json", r'"fw_version": "2430"', '"fw_version": "2431"'),
+                           {"HC-010"}),
+    "tray_driver_version_missing": (lambda d: _edit_rule(d, "amdgpu/version", rc=1), {"HC-010"}),
     "thermalctld_down": (lambda d: _edit_rule(d, "thermalctld", stdout="thermalctld   EXITED\n"), {"TC-SWH-004"}),
 }
 

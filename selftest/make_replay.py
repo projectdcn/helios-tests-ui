@@ -519,6 +519,13 @@ add("amd-smi metric --ecc --json", _json.dumps({"gpu_data": [
 add(r"^journalctl -k -p err --since '-\d+ min' --no-pager -q$", "", regex=True, host="^c", name="compute_kernel_err.txt")
 add("df -P /", "Filesystem     1024-blocks     Used  Available Capacity Mounted on\n"
                "/dev/nvme0n1p2 1921725720 52428800 1771586216       3% /\n", host="^c", name="compute_df.txt")
+add("cat /sys/module/amdgpu/version", "7.1.0.31300009\n", host="^c")
+add("cat /opt/rocm/.info/version", "10.2.0\n", host="^c")
+add("cat /sys/module/ifoe/version", "0.2.10.1000\n", host="^c")
+add("afmctl --version", "0.0.1-94\n", host="^c")
+add("amd-smi firmware --json", _json.dumps([{"gpu": i, "fw_list": [{"fw_id": "CP_MEC1", "fw_version": "2430"},
+                                                                   {"fw_id": "RLC", "fw_version": "32"}]} for i in range(4)]),
+    name="amd_smi_firmware.json", host="^c")
 add("free -m", "               total        used        free      shared  buff/cache   available\n"
                "Mem:         2059404       45709     2014445         420        8768     2013695\n"
                "Swap:              0           0           0\n", host="^c", name="compute_free.txt")

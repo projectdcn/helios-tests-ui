@@ -963,6 +963,34 @@
   rc: 0
   host: ^c
   file: compute_df.txt
+- cmd: ^cat\ /sys/module/amdgpu/version$
+  rc: 0
+  host: ^c
+  stdout: '7.1.0.31300009
+
+    '
+- cmd: ^cat\ /opt/rocm/\.info/version$
+  rc: 0
+  host: ^c
+  stdout: '10.2.0
+
+    '
+- cmd: ^cat\ /sys/module/ifoe/version$
+  rc: 0
+  host: ^c
+  stdout: '0.2.10.1000
+
+    '
+- cmd: ^afmctl\ \-\-version$
+  rc: 0
+  host: ^c
+  stdout: '0.0.1-94
+
+    '
+- cmd: ^amd\-smi\ firmware\ \-\-json$
+  rc: 0
+  host: ^c
+  file: amd_smi_firmware.json
 - cmd: ^free\ \-m$
   rc: 0
   host: ^c

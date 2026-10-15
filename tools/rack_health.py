@@ -82,7 +82,10 @@ def main(argv=None) -> int:
         run_dir = run_pytest(inv, a.results_dir, a.pytest_args)
 
     verdicts, messages, snapshot = read_run(run_dir)
-    j = judge({t: v for t, v in verdicts.items() if gate_of(t)}, messages, load_known(a.known))
+    # re-judging an existing run: only the cases that run collected are expected (a case added to the check later
+    # is not "not run"); a live run expects every blocker case
+    expected = {t for t in verdicts if gate_of(t)} if a.run else None
+    j = judge({t: v for t, v in verdicts.items() if gate_of(t)}, messages, load_known(a.known), expected)
     diffs: list[str] = []
     if a.baseline:
         base = json.loads(a.baseline.read_text())

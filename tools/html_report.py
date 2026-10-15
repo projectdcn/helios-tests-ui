@@ -261,6 +261,62 @@ def all_cases_section(rows: list[dict], wb_name: str) -> str:
     return "\n".join(h)
 
 
+def health_section(path: Path, link: str | None = None) -> str:
+    """Latest full-rack health check (tools/rack_health.py health.json): verdict, blockers, warnings, known, not
+    checked, and a few facts from the snapshot."""
+    sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+    from helios.healthcheck import meaning_of
+
+    d = json.loads(Path(path).read_text())
+    v = d.get("verdict", "?")
+    colour = {"GO": "var(--pass)", "NO-GO": "var(--fail)"}.get(v, "var(--blocked)")
+    snap = d.get("snapshot") or {}
+    run = Path(d.get("run", "")).name
+    h = [f'<h2 id="health">Rack health check - <span style="color:{colour}">{esc(v)}</span> for disruptive tests</h2>',
+         f'<p class="desc">Latest run of <span class="mono">tools/rack_health.py</span> ({esc(run)}, judged {esc(d.get("judged", ""))}): '
+         f'{len(d.get("blockers") or [])} blocker(s), {len(d.get("warnings") or [])} warning(s), '
+         f'{len(d.get("known") or [])} known, {len(d.get("not_checked") or [])} blocker case(s) not checked, '
+         f'{len(d.get("passed") or [])} passed. Blockers decide GO / NO-GO for the disruptive batches; warnings never block.'
+         + (f' Full health report: <a href="{esc(link)}">{esc(link)}</a>.' if link else "") + "</p>"]
+    facts = []
+    sv = snap.get("system_vpod") or {}
+    if sv:
+        facts.append(f"system vPOD {sv.get('name')}: {sv.get('state')}, planes {'/'.join(str(x) for x in sv.get('planes') or [])}")
+    comps = snap.get("computes") or {}
+    if comps:
+        bad = sorted(n for n, c in comps.items() if not c.get("healthy") or c.get("admission") != "admitted")
+        facts.append(f"AFM computes: {len(comps) - len(bad)}/{len(comps)} admitted and healthy" + (f" (not: {', '.join(bad)})" if bad else ""))
+    agents = snap.get("node_agent_slots") or {}
+    if agents:
+        n = sum(len(x) for x in agents.values() if isinstance(x, list))
+        facts.append(f"node agents: {n} - " + ", ".join(f"{sw} {len(x) if isinstance(x, list) else x}" for sw, x in sorted(agents.items())))
+    if snap.get("unreachable"):
+        facts.append(f"unreachable: {', '.join(snap['unreachable'])}")
+    if facts:
+        h.append('<ul>' + "".join(f"<li>{esc(f)}</li>" for f in facts) + "</ul>")
+
+    def table(title, rows, cls):
+        if not rows:
+            return ""
+        out = [f"<h3>{esc(title)} ({len(rows)})</h3><table><thead><tr><th>Case</th><th>Checks</th><th>Verdict</th>"
+               "<th>Detail</th></tr></thead><tbody>"]
+        for r in rows:
+            tc, verdict, msg = (list(r) + ["", ""])[:3]
+            out.append(f'<tr><td class="mono">{esc(tc)}</td><td>{esc(meaning_of(tc))}</td><td><span class="{cls}">{esc(verdict)}</span></td>'
+                       f'<td class="reason">{esc(str(msg)[:500])}</td></tr>')
+        out.append("</tbody></table>")
+        return "".join(out)
+
+    h.append(table("Blockers", d.get("blockers") or [], "fail"))
+    h.append(table("Known (accepted)", d.get("known") or [], "skip"))
+    h.append(table("Blocker cases not checked", [(t, "NOT RUN", why) for t, why in d.get("not_checked") or []], "blocked"))
+    h.append(table("Warnings", d.get("warnings") or [], "blocked"))
+    if d.get("changed"):
+        h.append(f'<h3>Changed since the baseline ({len(d["changed"])})</h3><ul>' +
+                 "".join(f"<li class='mono'>{esc(c)}</li>" for c in d["changed"][:60]) + "</ul>")
+    return "\n".join(x for x in h if x)
+
+
 def coverage_section(plan_rows: list[dict] | None) -> str:
     """Automation coverage from tools/coverage.py (manifest + added cases), with what was executed on the rack and
     its result per category / level when the whole-plan rows are known."""
@@ -539,6 +595,8 @@ pre.logpre .lvl-note {{ color: #9aa7b4; font-style: italic; }}
             h.append(f'    <li class="{kind}">{body}</li>')
         h.append("  </ul></div>")
     h.append("</div>")
+    if getattr(args, "health", None):
+        h.append(health_section(args.health, getattr(args, "health_link", None)))
     if plan_rows is not None:
         h.append(coverage_section(plan_rows))
         h.append(all_cases_section(plan_rows, Path(args.workbook).name))
@@ -657,6 +715,9 @@ def main():
                          "e.g. --tz g02-g17-20261014-092828=-7 (Mac, PDT); runs on the jump host are UTC (=0)")
     ap.add_argument("--all-cases", action="store_true", help="with --workbook: cover EVERY case of the test plan "
                     "(overview counts, level x status, filterable table incl. NOT RUN / NOT AUTOMATED), not only executed ones")
+    ap.add_argument("--health", type=Path, help="health.json of a tools/rack_health.py run: adds a 'Rack health check' "
+                                                 "section (verdict, blockers, warnings)")
+    ap.add_argument("--health-link", help="URL of the full health report, linked from that section")
     ap.add_argument("--workbook", type=Path, help="show the reviewed status (Testcases column F + notes) of each plan case "
                                                 "from this test-plan workbook instead of the raw test verdict")
     args = ap.parse_args()

@@ -1,0 +1,134 @@
+# Self-test inventory for the health-check fault tests (unit/test_rack_health.py): inventory.yaml with the
+# time-based health checks (HC-008 / HC-009) enabled.
+# Self-test inventory: replays canned outputs (selftest/replay) instead of SSH.
+#   pytest tests --inventory selftest/inventory.yaml --allow-disruptive
+rack: selftest
+transport:
+  kind: replay
+  dir: replay
+
+switches:
+  - name: sw1
+computes:
+  - name: c1
+    gpus: 4
+    gpu_bdfs: ["0001:01:00.1", "0002:01:00.1", "0003:01:00.1", "0004:01:00.1"]
+    accel_ids: [0, 1, 2, 3]
+    bmc: 10.0.0.101
+    pdu_outlet: A1
+    rdma:
+      - {dev: ionic_0, ip4: 192.168.10.1, ip6: "fd00:10::1", gpu: 0}
+      - {dev: ionic_1, ip4: 192.168.11.1, ip6: "fd00:11::1", gpu: 1}
+      - {dev: ionic_2, ip4: 192.168.12.1, ip6: "fd00:12::1", gpu: 2}
+      - {dev: ionic_3, ip4: 192.168.13.1, ip6: "fd00:13::1", gpu: 3}
+  - name: c2
+    gpus: 4
+    gpu_bdfs: ["0001:01:00.1", "0002:01:00.1", "0003:01:00.1", "0004:01:00.1"]
+    accel_ids: [4, 5, 6, 7]
+    rdma:
+      - {dev: ionic_0, ip4: 192.168.10.2, ip6: "fd00:10::2", gpu: 0}
+      - {dev: ionic_1, ip4: 192.168.11.2, ip6: "fd00:11::2", gpu: 1}
+      - {dev: ionic_2, ip4: 192.168.12.2, ip6: "fd00:12::2", gpu: 2}
+      - {dev: ionic_3, ip4: 192.168.13.2, ip6: "fd00:13::2", gpu: 3}
+
+afm:
+  url: https://helios-afm.lab.example
+  fake: true            # tests/afm run against selftest/fake_afm.py (in-process HTTPS + WebSocket)
+  rbac_reads_denied: true   # the fake enforces read RBAC; MR3 AICC-797 does not
+  fake_faults: []
+  fake_topology: {switches: 1, computes: 2, time_scale: 0.05}
+  verify_tls: false
+  auth:
+    kind: session
+    username: admin
+    password: selftest-admin-pw   # fake controller only
+    tenant: default
+
+commands:
+  ifoe:
+    unload: "modprobe -r ifoe"
+    load: "modprobe ifoe"
+    loaded_check: "lsmod | grep -q '^ifoe '"
+  l2ping:
+    mode: afmctl          # discover acc ids + LINK_UP ports via afmctl; ring pairs
+  transferbench:
+    in_domain: "TransferBench a2a {size}"
+    rank_cmd: "TB_NUM_RANKS={num_ranks} TB_RANK={rank} TB_MASTER_ADDR={master_addr} TB_SINGLE_LOG=1 TransferBench a2a {size}"
+  rccl:
+    in_domain: "{rccl_tests_dir}/build/{collective}_perf -b {min_bytes} -e {max_bytes} -f 2 -g {gpus} -n {iters}"
+    cross_domain: "mpirun -np {np} -H {hostlist} {rccl_tests_dir}/build/{collective}_perf -b {min_bytes} -e {max_bytes} -f 2 -g 1"
+  rccl_smoke:
+    bin: /opt/helios/RcclSmokeTest
+    env: NCCL_LOG_DIR=/tmp/helios-rccl-logs
+    port: 45000
+  perftest:
+    nodes: [c1, c2]
+    duration_s: 1
+    server_start_s: 0
+    timeout_margin_s: 10
+    qp_sweep: [8, 64, 256]
+    custom: {verbs: [write, read], qps: [4], pairs: [1, 2], iterations: 2}
+  ras:
+    partial_stations_down: "ras-partial-stations down {name}"
+    partial_stations_up: "ras-partial-stations up {name}"
+    dc_cycle: "ipmitool -I lanplus -H {bmc} chassis power cycle"
+    ac_cycle: "pdu-ctl cycle {pdu_outlet}"
+
+thresholds:
+  health:
+    controller_min_uptime_min: 30
+    event_window_min: 60
+  afm:                  # short timings for the fake controller
+    quorum_members: 1
+    poll_s: 0.2
+    time_scale: 0.05
+    soak_s: 20
+    soak_interval_s: 1
+    str011_cycles: 3
+    str013_flaps: 2
+    link_watch_s: 1
+    retry_interval_s: 0.2
+    agent_settle_s: 0
+    absent_hold_s: 0.3
+    plane_settle_interval_s: 0
+    plane_restore_s: 1
+    readmit_timeout_s: 5
+    switch_readmit_s: 5
+    agent_down_detect_s: 5
+    agent_respawn_s: 5
+    agent_recover_s: 5
+    vpod_timeout_s: 5
+    membership_timeout_s: 5
+    reconfigure_timeout_s: 5
+    aggwatch: {event_wait_s: 5, settle_s: 0.5, quiet_s: 2, idle_s: 3, cycles: 5, burst: 10, concurrent: 3, no_options_s: 5}
+  switch:
+    expected_fans: 4
+    expected_psus: 2
+    psu_capacity_w: 3000
+    psu_current_max_a: 250
+    stability: {samples: 2, interval_s: 0}
+    err_window_s: 0
+    link_watch_s: 2
+    link_poll_s: 1
+    pfc_window_s: 0
+    queue_window_s: 0
+    mgmt_window_s: 0
+    rss_window_s: 0
+    traffic_window_s: 0
+    drops: {window_s: 0.2}
+    cpu_stress_s: 0
+    expected_lldp_neighbors: 8
+    recover_timeout_s: 1
+    poll_interval_s: 0
+  ras: {settle_s: 0, down_wait_s: 0, boot_timeout_s: 1, poll_interval_s: 0}
+  platform: {down_wait_s: 0, boot_timeout_s: 1, poll_interval_s: 0, topo_log_max_age_h: 24}
+  metrics: {start_timeout_s: 1, poll_interval_s: 0}
+  ifoe: {cycles: 5, settle_s: 0}
+  datapath:
+    preflight: {window_s: 0.2, ssh_timeout_s: 5}
+    known_down_ports:     # port 7 is physically down in the replay fixtures
+      c1: {"0001:01:00.1": [7], "0002:01:00.1": [7], "0003:01:00.1": [7], "0004:01:00.1": [7]}
+      c2: {"0001:01:00.1": [7], "0002:01:00.1": [7], "0003:01:00.1": [7], "0004:01:00.1": [7]}
+    transferbench: {in_domain_min_gbps: 500, cross_domain_min_gbps: 500}
+    rccl: {all_reduce_min_busbw_gbps: 100}
+    perftest: {min_gbps: 300}

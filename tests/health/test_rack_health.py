@@ -31,6 +31,7 @@ def test_every_node_answers_ssh(rack, computes, inventory, checks, record_proper
             down.append(n.name)
             checks.fail(f"{n.name}: not answering SSH ({why})")
     record_property("unreachable", down)
+    record_property("snapshot", {"unreachable": sorted(down)})
     checks.assert_all()
 
 
@@ -79,6 +80,7 @@ def test_gpu_devices_active(computes, checks, record_property):
         bad = [f"{d.bdf}={d.config_phase}" for d in devs if d.config_phase != "ACTIVE"]
         checks.check(not bad, f"{c.name}: GPUs not ACTIVE: {bad}")
     record_property("config_phase", phases)
+    record_property("snapshot", {"gpu_phase": phases})
     checks.assert_all()
 
 
@@ -170,4 +172,54 @@ def test_tray_resources(computes, inventory, checks, record_property):
         if avail is not None:
             checks.check(avail > min_mem, f"{c.name}: only {avail:.1f}% memory available (<= {min_mem:g}%)")
     record_property("resources", out)
+    checks.assert_all()
+
+
+VERSION_CMDS = {
+    "amdgpu": "cat /sys/module/amdgpu/version",
+    "rocm": "cat /opt/rocm/.info/version",
+    "ifoe": "cat /sys/module/ifoe/version",
+    "afmctl": "afmctl --version",
+}
+
+
+@pytest.mark.healthcheck("warn")
+@pytest.mark.tc("HC-010")
+def test_tray_versions_consistent(computes, inventory, checks, record_property):
+    """amdgpu driver, ROCm, IFoE driver, afmctl and GPU firmware (amd-smi firmware) are the same on every tray - so
+    before / after comparisons are not mixing builds. Recorded in the snapshot."""
+    sudo = use_sudo(inventory)
+
+    def probe(c):
+        v = {k: (r.stdout.strip().splitlines() or [""])[0] if (r := c.run(cmd, timeout=30)).ok else ""
+             for k, cmd in VERSION_CMDS.items()}
+        fw = c.run("amd-smi firmware --json", sudo=sudo, timeout=60)
+        fws = set()
+        try:
+            for g in json.loads(fw.stdout) if fw.ok else []:
+                fws.add(tuple(sorted((f.get("fw_id"), str(f.get("fw_version"))) for f in g.get("fw_list") or [])))
+        except ValueError:
+            pass
+        checks.check(len(fws) <= 1, f"{c.name}: GPUs run different firmware ({len(fws)} sets)")
+        v["gpu_fw"] = ";".join(f"{k}={x}" for k, x in next(iter(fws))) if len(fws) == 1 else ("mixed" if fws else "")
+        return v
+
+    per = {}
+    for c, v, exc in fan_out(probe, computes):
+        if exc:
+            checks.fail(f"{c.name}: cannot read versions: {str(exc)[:160]}")
+            continue
+        per[c.name] = v
+    for key in list(VERSION_CMDS) + ["gpu_fw"]:
+        seen: dict[str, list[str]] = {}
+        for name, v in per.items():
+            seen.setdefault(v.get(key, ""), []).append(name)
+        if len(seen) > 1:
+            parts = sorted(seen.items(), key=lambda kv: -len(kv[1]))
+            checks.fail(f"{key} differs across trays: " + "; ".join(f"{(ver or '(none)')[:40]} on {', '.join(sorted(ns))}"
+                                                                     for ver, ns in parts))
+        missing = sorted(n for n, v in per.items() if not v.get(key))
+        checks.check(not missing, f"{key}: no version reported on {missing}")
+    record_property("versions", per)
+    record_property("snapshot", {"tray_versions": per})
     checks.assert_all()
