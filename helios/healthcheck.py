@@ -78,6 +78,7 @@ HEALTH_ONLY: dict[str, tuple[str, str]] = {
     "HC-008": (WARN, "no critical AFM events in the recent window"),
     "HC-009": (WARN, "AFM controllers up for a while (no recent restart)"),
     "HC-010": (WARN, "same driver / ROCm / IFoE / afmctl / GPU firmware versions on every tray"),
+    "HC-011": (WARN, "hardware inventory + usage (CPU, memory, disks, GPUs, compute<->switch links up / down)"),
 }
 
 

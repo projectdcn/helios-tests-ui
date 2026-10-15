@@ -223,3 +223,70 @@ def test_tray_versions_consistent(computes, inventory, checks, record_property):
     record_property("versions", per)
     record_property("snapshot", {"tray_versions": per})
     checks.assert_all()
+
+
+@pytest.mark.healthcheck("warn")
+@pytest.mark.tc("HC-011")
+def test_hardware_inventory(rack, computes, inventory, checks, record_property):
+    """Hardware inventory + usage of every switch and compute tray: model / board, serial, CPU, CPU busy % and load,
+    memory and disks used / free / total; switches: platform and compute-facing ports up / down; computes: GPUs (model,
+    IFWI, serial, physical accelerator id, VRAM, gfx busy %, power, hotspot) and GPU ports up / down. Informational:
+    fails only when a node cannot be read (thresholds are HC-006 / TC-SWH-056). Link counts go into the snapshot."""
+    from helios.afmctl import parse_port_description
+    from helios.hwinfo import GPU_METRIC, GPU_STATIC, HW_SCRIPT, gpu_info, node_info, parse_platform_summary, sections
+
+    sudo = use_sudo(inventory)
+
+    def switch(sw):
+        info = node_info(sections(sw.run(HW_SCRIPT, sudo=True, timeout=90).stdout))
+        info["platform"] = parse_platform_summary(sw.run("show platform summary", timeout=60).stdout)
+        up = down = unknown = 0
+        down_ports = []
+        for ns in sw.namespaces():
+            cabled = {p for p, d in sw.port_descriptions(ns).items() if parse_port_description(d)}
+            # STATE_DB (one round trip, same source as TC-SWH-049), not 'show interfaces status'
+            oper = {p: st.get("netdev_oper_status", "").lower() == "up" for p, st in sw.port_states(ns).items()}
+            for p in cabled:
+                if p not in oper:          # described as cabled but not in STATE_DB PORT_TABLE: not judged
+                    unknown += 1
+                elif oper[p]:
+                    up += 1
+                else:
+                    down += 1
+                    down_ports.append(f"{ns}/{p}" if ns else p)
+        info["compute_links"] = {"total": up + down, "up": up, "down": down, "not_in_status": unknown,
+                                 "down_ports": sorted(down_ports)}
+        return info
+
+    def compute(c):
+        info = node_info(sections(c.run(HW_SCRIPT, sudo=True, timeout=90).stdout))
+        info["gpus"] = gpu_info(c.run(GPU_STATIC, sudo=sudo, timeout=90).stdout, c.run(GPU_METRIC, sudo=sudo, timeout=90).stdout)
+        a = Afmctl(c, timeout=60)
+        up = total = 0
+        for d in a.devices():
+            ports = [p for p in a.ports(d.bdf) if p.admin_state.lower() == "enabled"]
+            total += len(ports)
+            up += sum(1 for p in ports if p.up)
+        info["gpu_links"] = {"total": total, "up": up, "down": total - up}
+        return info
+
+    sw_inv, ct_inv = {}, {}
+    for n, res, exc in fan_out(switch, list(rack.switches.values())):
+        if exc:
+            checks.fail(f"{n.name}: cannot read inventory: {str(exc)[:160]}")
+        else:
+            sw_inv[n.name] = res
+    for n, res, exc in fan_out(compute, list(computes)):
+        if exc:
+            checks.fail(f"{n.name}: cannot read inventory: {str(exc)[:160]}")
+        else:
+            ct_inv[n.name] = res
+    sw_links = {k: v["compute_links"] for k, v in sw_inv.items()}
+    ct_links = {k: v["gpu_links"] for k, v in ct_inv.items()}
+    totals = {"switch_side": {k: sum(v[k] for v in sw_links.values()) for k in ("total", "up", "down")},
+              "compute_side": {k: sum(v[k] for v in ct_links.values()) for k in ("total", "up", "down")}}
+    record_property("inventory", {"switches": sw_inv, "computes": ct_inv, "links": totals})
+    record_property("snapshot", {"links": {"totals": totals,
+                                           "switch": {k: [v["up"], v["total"]] for k, v in sw_links.items()},
+                                           "compute": {k: [v["up"], v["total"]] for k, v in ct_links.items()}}})
+    checks.assert_all()

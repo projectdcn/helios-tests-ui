@@ -5,6 +5,11 @@ from .inventory import Host
 from .transport import CmdResult, Transport
 
 
+# PATH for amd-smi: g02-g17 trays all have /opt/rocm/bin/amd-smi, but only some have the /usr/bin/amd-smi link
+# (14 Oct: missing on CT08, CT09, CT11-CT16), and sudo resets PATH to secure_path
+ROCM_PATH = "/opt/rocm/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+
+
 class ComputeTray:
     def __init__(self, host: Host, transport: Transport):
         self.host = host
@@ -35,6 +40,8 @@ class ComputeTray:
         return list(self.host.extra.get("rdma") or [])
 
     def run(self, cmd: str, **kw) -> CmdResult:
+        if cmd.lstrip().startswith("amd-smi") and not kw.get("env"):
+            kw["env"] = {"PATH": ROCM_PATH}       # amd-smi lives in /opt/rocm/bin; not every tray links it into /usr/bin
         return self.t.run(cmd, **kw)
 
     def sh(self, cmd: str, **kw) -> str:

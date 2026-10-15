@@ -519,6 +519,40 @@ add("amd-smi metric --ecc --json", _json.dumps({"gpu_data": [
 add(r"^journalctl -k -p err --since '-\d+ min' --no-pager -q$", "", regex=True, host="^c", name="compute_kernel_err.txt")
 add("df -P /", "Filesystem     1024-blocks     Used  Available Capacity Mounted on\n"
                "/dev/nvme0n1p2 1921725720 52428800 1771586216       3% /\n", host="^c", name="compute_df.txt")
+# hardware inventory (HC-011): one script per node + GPU static / metric
+import sys as _sys
+_sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+from helios.hwinfo import GPU_METRIC, GPU_STATIC, HW_SCRIPT  # noqa: E402
+
+
+def _hw(cpu, cpus, vendor, product, board, serial, mem_total, mem_used, disk, disk_size, fs_rows):
+    return ("@@lscpu\nArchitecture:  x86_64\nCPU(s):  %d\nModel name:  %s\nCore(s) per socket:  %d\nSocket(s):  1\n"
+            "@@dmi\nsys_vendor=%s\nproduct_name=%s\nproduct_serial=%s\nboard_name=%s\n"
+            "@@stat1\ncpu  1000 0 1000 98000 0 0 0 0 0 0\n@@stat2\ncpu  1100 0 1100 99800 0 0 0 0 0 0\n"
+            "@@loadavg\n1.20 1.33 1.34 2/2921 2581241\n"
+            "@@free\n               total        used        free      shared  buff/cache   available\n"
+            "Mem:     %d %d %d 0 0 %d\nSwap: 0 0 0\n"
+            "@@lsblk\n%s %d disk TS2TMTE712P-VS2\n"
+            "@@df\nFilesystem 1-blocks Used Available Capacity Mounted on\n%s"
+            % (cpus, cpu, cpus // 2, vendor, product, serial, board, mem_total, mem_used, mem_total - mem_used,
+               mem_total - mem_used, disk, disk_size, fs_rows))
+
+
+add(HW_SCRIPT, _hw("AMD Ryzen Embedded V3C48 8-Core Processor", 16, "HPE", "QFX5252", "N/A", "LH3326AN0003",
+                   33386127360, 20251525120, "nvme0n1", 2048408248320,
+                   "/dev/nvme0n1p3 470223544320 27635859456 442570907648 6% /host\n"), host=SW, name="hw_switch.txt")
+add(HW_SCRIPT, _hw("AMD EPYC 9005", 192, "AMD", "NA", "AMD Helios-R MB", "700256550006",
+                   2159442219008, 48062877696, "nvme0n1", 1920383410176,
+                   "/dev/nvme0n1p2 1888559570944 53596184576 1738954719232 3% /\n"), host="^c", name="hw_compute.txt")
+add(GPU_STATIC, _json.dumps({"gpu_data": [
+    {"gpu": i, "asic": {"market_name": "AMD Radeon Graphics", "asic_serial": f"0x579A9FE36ECA56B{i}", "physical_acc_id": 3 - i},
+     "ifwi": {"name": "AMD MI450X_GENERIC", "version": "00205629"}, "vram": {"size": {"value": 442368, "unit": "MB"}}}
+    for i in range(4)]}), host="^c", name="amd_smi_static.json")
+add(GPU_METRIC, _json.dumps({"gpu_data": [
+    {"gpu": i, "usage": {"gfx_activity": {"value": 0, "unit": "%"}}, "power": {"socket_power": {"value": 210, "unit": "W"}},
+     "temperature": {"hotspot": {"value": 41, "unit": "C"}},
+     "mem_usage": {"total_vram": {"value": 442368, "unit": "MB"}, "used_vram": {"value": 170, "unit": "MB"}}}
+    for i in range(4)]}), host="^c", name="amd_smi_metric.json")
 add("cat /sys/module/amdgpu/version", "7.1.0.31300009\n", host="^c")
 add("cat /opt/rocm/.info/version", "10.2.0\n", host="^c")
 add("cat /sys/module/ifoe/version", "0.2.10.1000\n", host="^c")

@@ -1,0 +1,26 @@
+@@lscpu
+Architecture:  x86_64
+CPU(s):  192
+Model name:  AMD EPYC 9005
+Core(s) per socket:  96
+Socket(s):  1
+@@dmi
+sys_vendor=AMD
+product_name=NA
+product_serial=700256550006
+board_name=AMD Helios-R MB
+@@stat1
+cpu  1000 0 1000 98000 0 0 0 0 0 0
+@@stat2
+cpu  1100 0 1100 99800 0 0 0 0 0 0
+@@loadavg
+1.20 1.33 1.34 2/2921 2581241
+@@free
+               total        used        free      shared  buff/cache   available
+Mem:     2159442219008 48062877696 2111379341312 0 0 2111379341312
+Swap: 0 0 0
+@@lsblk
+nvme0n1 1920383410176 disk TS2TMTE712P-VS2
+@@df
+Filesystem 1-blocks Used Available Capacity Mounted on
+/dev/nvme0n1p2 1888559570944 53596184576 1738954719232 3% /

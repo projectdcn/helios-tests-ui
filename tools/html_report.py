@@ -387,6 +387,123 @@ def build_health_page(run_dir: Path, tz: dict) -> tuple[str, str]:
         LOG_KEEP = keep
 
 
+def _gib(n) -> str:
+    if n is None:
+        return ""
+    for unit, div in (("TiB", 2**40), ("GiB", 2**30), ("MiB", 2**20)):
+        if n >= div:
+            return f"{n / div:.1f} {unit}"
+    return f"{n} B"
+
+
+def _usage(used, total) -> str:
+    if not total:
+        return ""
+    pct = 100.0 * (used or 0) / total
+    return f"{_gib(used)} / {_gib(total)} ({pct:.0f}%) - free {_gib(total - (used or 0))}"
+
+
+def _bar(pct) -> str:
+    if pct is None:
+        return ""
+    col = "#ef4444" if pct >= 90 else "#f59e0b" if pct >= 75 else "#22c55e"
+    return (f'<div style="background:#e5e7eb;border-radius:3px;height:6px;width:90px;margin-top:3px">'
+            f'<div style="background:{col};height:6px;border-radius:3px;width:{min(pct, 100) * 0.9:.0f}px"></div></div>')
+
+
+def inventory_section(inv: dict) -> str:
+    """HC-011 hardware inventory: compute<->switch links, switch trays, compute trays, GPUs."""
+    def mem(m):
+        total = m.get("total")
+        used = total - m.get("available", m.get("free", 0)) if total else None
+        return (_usage(used, total) + _bar(100.0 * used / total if total else None)) if total else ""
+
+    def fss(fs):
+        return "<br>".join(f'<span class="mono">{esc(f["mount"])}</span> {_usage(f["used"], f["size"])}' for f in fs)
+
+    def cpu(n):
+        c = n.get("cpu") or {}
+        busy, load = n.get("cpu_busy_pct"), n.get("load") or []
+        return (f'{esc(c.get("model", ""))}<br><span class="desc">{c.get("cpus") or "?"} CPUs</span>',
+                (f"{busy:.0f}% busy" if busy is not None else "") + (f"<br>load {' / '.join(f'{x:g}' for x in load)}" if load else "")
+                + _bar(busy))
+
+    lk = inv.get("links") or {}
+    h = ['<h2 id="inventory">Hardware inventory</h2>',
+         '<p class="desc">From HC-011, read at the time of the health check. Memory "used" = total minus available '
+         '(page cache counts as free); filesystems are the real ones (no tmpfs / overlay).</p>']
+    if lk:
+        ss, cs = lk.get("switch_side") or {}, lk.get("compute_side") or {}
+        h.append("<table><thead><tr><th>Compute &harr; switch links</th><th class='num'>Total</th><th class='num'>Up</th>"
+                 "<th class='num'>Down</th></tr></thead><tbody>"
+                 f"<tr><td>Switch side (ports cabled to compute trays)</td><td class='num'>{ss.get('total', '')}</td>"
+                 f"<td class='num'><span class='pass'>{ss.get('up', '')}</span></td><td class='num'><span class='fail'>{ss.get('down', '')}</span></td></tr>"
+                 f"<tr><td>Compute side (enabled GPU ports, afmctl)</td><td class='num'>{cs.get('total', '')}</td>"
+                 f"<td class='num'><span class='pass'>{cs.get('up', '')}</span></td><td class='num'><span class='fail'>{cs.get('down', '')}</span></td></tr>"
+                 "</tbody></table>")
+    sws = inv.get("switches") or {}
+    if sws:
+        h.append("<h3>Switch trays</h3><table><thead><tr><th>Switch</th><th>Model</th><th>Serial</th><th>CPU</th>"
+                 "<th>CPU usage</th><th>Memory used / total</th><th>Disks</th><th>Filesystems used / total</th>"
+                 "<th class='num'>Compute links up / total</th></tr></thead><tbody>")
+        for name, n in sorted(sws.items()):
+            pf = n.get("platform") or {}
+            c1, c2 = cpu(n)
+            cl = n.get("compute_links") or {}
+            down = cl.get("down_ports") or []
+            h.append(f"<tr><td class='mono'>{esc(name)}</td><td>{esc(n.get('vendor', ''))} {esc(pf.get('hwsku') or n.get('product', ''))}"
+                     f"<br><span class='desc'>{esc(pf.get('platform', ''))}, {esc(str(pf.get('asic_count', '')))} ASICs</span></td>"
+                     f"<td class='mono'>{esc(pf.get('serial') or n.get('serial', ''))}</td><td>{c1}</td><td>{c2}</td>"
+                     f"<td>{mem(n.get('memory') or {})}</td>"
+                     f"<td>{'<br>'.join(esc(d['name'] + ' ' + _gib(d['size']) + ' ' + d.get('model', '')) for d in n.get('disks') or [])}</td>"
+                     f"<td>{fss(n.get('filesystems') or [])}</td>"
+                     f"<td class='num'>{cl.get('up', '')} / {cl.get('total', '')}"
+                     + (f"<br><span class='fail'>{cl.get('down')} down</span><div class='desc'>{esc(', '.join(down[:12]))}"
+                        f"{' ...' if len(down) > 12 else ''}</div>" if cl.get("down") else "") + "</td></tr>")
+        h.append("</tbody></table>")
+    cts = inv.get("computes") or {}
+    if cts:
+        h.append("<h3>Compute trays</h3><table><thead><tr><th>Tray</th><th>Board</th><th>Serial</th><th>CPU</th>"
+                 "<th>CPU usage</th><th>Memory used / total</th><th>Disks / filesystems</th><th>GPUs</th>"
+                 "<th>VRAM used / total</th><th class='num'>GPU power</th><th class='num'>Max hotspot</th>"
+                 "<th class='num'>GPU links up / total</th></tr></thead><tbody>")
+        for name, n in sorted(cts.items()):
+            c1, c2 = cpu(n)
+            g = n.get("gpus") or []
+            models = sorted({x.get("model") or "?" for x in g})
+            vt = sum(x.get("vram_total_mb") or 0 for x in g) * 2**20
+            vu = sum(x.get("vram_used_mb") or 0 for x in g) * 2**20
+            pw = sum(x.get("power_w") or 0 for x in g)
+            hs = max((x.get("hotspot_c") for x in g if x.get("hotspot_c") is not None), default=None)
+            busy = [x.get("gfx_busy_pct") for x in g if (x.get("gfx_busy_pct") or 0) > 0]
+            gl = n.get("gpu_links") or {}
+            h.append(f"<tr><td class='mono'>{esc(name)}</td><td>{esc(n.get('board', '') if str(n.get('board', '')).startswith(str(n.get('vendor', ''))) else (n.get('vendor', '') + ' ' + n.get('board', '')).strip())}</td>"
+                     f"<td class='mono'>{esc(n.get('serial', ''))}</td><td>{c1}</td><td>{c2}</td><td>{mem(n.get('memory') or {})}</td>"
+                     f"<td>{'<br>'.join(esc(d['name'] + ' ' + _gib(d['size'])) for d in n.get('disks') or [])}<br>{fss(n.get('filesystems') or [])}</td>"
+                     f"<td>{len(g)} &times; {esc(', '.join(models))}<br><span class='desc'>IFWI {esc(', '.join(sorted({x.get('ifwi') or '?' for x in g})))}</span>"
+                     + (f"<br><span class='blocked'>{len(busy)} GPU(s) busy</span>" if busy else "") + "</td>"
+                     f"<td>{_usage(vu, vt) if vt else ''}</td><td class='num'>{pw:.0f} W</td>"
+                     f"<td class='num'>{'' if hs is None else f'{hs:.0f} &deg;C'}</td>"
+                     f"<td class='num'>{gl.get('up', '')} / {gl.get('total', '')}"
+                     + (f"<br><span class='fail'>{gl.get('down')} down</span>" if gl.get("down") else "") + "</td></tr>")
+        h.append("</tbody></table>")
+        rows = [(name, x) for name, n in sorted(cts.items()) for x in n.get("gpus") or []]
+        if rows:
+            h.append(f"<details><summary>Per GPU ({len(rows)})</summary><table><thead><tr><th>Tray</th><th class='num'>GPU</th>"
+                     "<th class='num'>Physical acc id</th><th>Model</th><th>IFWI</th><th>Serial</th><th class='num'>gfx busy</th>"
+                     "<th class='num'>Power</th><th class='num'>Hotspot</th><th>VRAM used / total</th></tr></thead><tbody>")
+            for name, x in rows:
+                fmt = lambda v, u: "" if v is None else f"{v:.0f}{u}"  # noqa: E731
+                vt, vu = (x.get("vram_total_mb") or 0) * 2**20, (x.get("vram_used_mb") or 0) * 2**20
+                h.append(f"<tr><td class='mono'>{esc(name)}</td><td class='num'>{esc(str(x.get('gpu')))}</td>"
+                         f"<td class='num'>{esc(str(x.get('physical_acc_id', '')))}</td><td>{esc(x.get('model', ''))}</td>"
+                         f"<td class='mono'>{esc(x.get('ifwi', ''))}</td><td class='mono'>{esc(x.get('serial', ''))}</td>"
+                         f"<td class='num'>{fmt(x.get('gfx_busy_pct'), '%')}</td><td class='num'>{fmt(x.get('power_w'), ' W')}</td>"
+                         f"<td class='num'>{fmt(x.get('hotspot_c'), ' &deg;C')}</td><td>{_usage(vu, vt) if vt else ''}</td></tr>")
+            h.append("</tbody></table></details>")
+    return "\n".join(h)
+
+
 def coverage_section(plan_rows: list[dict] | None) -> str:
     """Automation coverage from tools/coverage.py (manifest + added cases), with what was executed on the rack and
     its result per category / level when the whole-plan rows are known."""
@@ -693,6 +810,11 @@ pre.logpre .lvl-note {{ color: #9aa7b4; font-style: italic; }}
                      f'<td><span class="{cls.get(st, "")}">'
                      f'{esc("PENDING" if st == "PENDING" else st)}</span>{diff}</td><td class="reason">{esc(note[:700])}</td></tr>')
         h.append("</tbody></table>")
+
+    inv = next((json.loads(r["properties"]).get("inventory") for r in items
+                if r.get("tc_id") == "HC-011" and r.get("properties") and "inventory" in r["properties"]), None)
+    if inv:
+        h.append(inventory_section(inv))
 
     h.append(f"""<script>
 (function () {{

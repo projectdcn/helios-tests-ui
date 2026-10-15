@@ -1,0 +1,26 @@
+@@lscpu
+Architecture:  x86_64
+CPU(s):  16
+Model name:  AMD Ryzen Embedded V3C48 8-Core Processor
+Core(s) per socket:  8
+Socket(s):  1
+@@dmi
+sys_vendor=HPE
+product_name=QFX5252
+product_serial=LH3326AN0003
+board_name=N/A
+@@stat1
+cpu  1000 0 1000 98000 0 0 0 0 0 0
+@@stat2
+cpu  1100 0 1100 99800 0 0 0 0 0 0
+@@loadavg
+1.20 1.33 1.34 2/2921 2581241
+@@free
+               total        used        free      shared  buff/cache   available
+Mem:     33386127360 20251525120 13134602240 0 0 13134602240
+Swap: 0 0 0
+@@lsblk
+nvme0n1 2048408248320 disk TS2TMTE712P-VS2
+@@df
+Filesystem 1-blocks Used Available Capacity Mounted on
+/dev/nvme0n1p3 470223544320 27635859456 442570907648 6% /host

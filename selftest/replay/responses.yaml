@@ -963,6 +963,26 @@
   rc: 0
   host: ^c
   file: compute_df.txt
+- cmd: ^echo\ "@@lscpu";\ lscpu;\ echo\ "@@dmi";\ for\ f\ in\ sys_vendor\ product_name\ product_serial\ board_name;\ do\ echo\ "\$f=\$\(cat\ /sys/class/dmi/id/\$f\ 2>/dev/null\)";\ done;\ echo\ "@@stat1";\
+    head\ \-1\ /proc/stat;\ sleep\ 1;\ echo\ "@@stat2";\ head\ \-1\ /proc/stat;\ echo\ "@@loadavg";\ cat\ /proc/loadavg;\ echo\ "@@free";\ free\ \-b;\ echo\ "@@lsblk";\ lsblk\ \-b\ \-d\ \-n\ \-o\ NAME,SIZE,TYPE,MODEL;\
+    echo\ "@@df";\ df\ \-P\ \-B1\ \-x\ tmpfs\ \-x\ devtmpfs\ \-x\ overlay\ \-x\ squashfs\ \-x\ efivarfs$
+  rc: 0
+  host: ^sw
+  file: hw_switch.txt
+- cmd: ^echo\ "@@lscpu";\ lscpu;\ echo\ "@@dmi";\ for\ f\ in\ sys_vendor\ product_name\ product_serial\ board_name;\ do\ echo\ "\$f=\$\(cat\ /sys/class/dmi/id/\$f\ 2>/dev/null\)";\ done;\ echo\ "@@stat1";\
+    head\ \-1\ /proc/stat;\ sleep\ 1;\ echo\ "@@stat2";\ head\ \-1\ /proc/stat;\ echo\ "@@loadavg";\ cat\ /proc/loadavg;\ echo\ "@@free";\ free\ \-b;\ echo\ "@@lsblk";\ lsblk\ \-b\ \-d\ \-n\ \-o\ NAME,SIZE,TYPE,MODEL;\
+    echo\ "@@df";\ df\ \-P\ \-B1\ \-x\ tmpfs\ \-x\ devtmpfs\ \-x\ overlay\ \-x\ squashfs\ \-x\ efivarfs$
+  rc: 0
+  host: ^c
+  file: hw_compute.txt
+- cmd: ^amd\-smi\ static\ \-\-asic\ \-\-vbios\ \-\-vram\ \-\-json$
+  rc: 0
+  host: ^c
+  file: amd_smi_static.json
+- cmd: ^amd\-smi\ metric\ \-\-usage\ \-\-power\ \-\-temperature\ \-\-mem\-usage\ \-\-json$
+  rc: 0
+  host: ^c
+  file: amd_smi_metric.json
 - cmd: ^cat\ /sys/module/amdgpu/version$
   rc: 0
   host: ^c
