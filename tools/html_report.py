@@ -383,6 +383,10 @@ def build(items: list[dict], args) -> str:
         not_exec_val = detail
         not_exec_chips = '<span class="chip">blocked = datapath pre-flight refused traffic</span>'
     not_exec_cap = "Not executed" if plan_rows is not None else "No pass/fail verdict"
+    # whole-plan view: not run / not automated (and why) are on their own KPI cards - no separate pill
+    not_exec_pill = "" if plan_rows is not None else (
+        f'<div class="pill"><div><div class="cap">{not_exec_cap}</div><div class="val">{not_exec_val}</div>'
+        f'{not_exec_chips}</div></div>')
     no_verdict_chip = (f'<span class="chip">{n_exec - executed} without a pass/fail verdict: {kp["PARTIAL"]} partial (passed on the reachable trays), {kp["PENDING"]} pending, '
                        f'{kp["SKIP"]} skipped, {kp["N/A"]} N/A</span>' if plan_rows is not None else "")
     exec_txt = f" &middot; {n_exec} executed" if plan_rows is not None else ""
@@ -512,8 +516,7 @@ pre.logpre .lvl-note {{ color: #9aa7b4; font-style: italic; }}
         <div class="val" style="color:{'#86efac' if kp['FAIL'] == 0 else '#fecaca'};">{n_exec} executed &middot; {kp['PASS']} PASS &middot; {kp['FAIL']} FAIL{f" &middot; {kp['PARTIAL']} PARTIAL" if kp['PARTIAL'] else ""}</div>
         {no_verdict_chip}
         <span class="chip">{rate:.0f}% pass rate ({kp['PASS']} of {executed} with a pass/fail verdict)</span></div></div>
-      <div class="pill"><div><div class="cap">{not_exec_cap}</div><div class="val">{not_exec_val}</div>
-        {not_exec_chips}</div></div>
+      {not_exec_pill}
       {auto_pill}
     </div>
   </div>
