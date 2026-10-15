@@ -361,7 +361,15 @@ def build(items: list[dict], args) -> str:
     if plan_rows is not None:   # whole plan: pending / skipped / N/A ran on the rack and count as executed
         not_exec_val = f"{kp['NOT RUN'] + kp['NOT AUTOMATED']}: {kp['NOT RUN']} automated, not run &middot; {kp['NOT AUTOMATED']} not automated"
         n_earlier = sum(1 for r in plan_rows if earlier(r))
-        not_exec_chips = ('<span class="chip">not run = mostly disruptive cases awaiting approval, MCH-rack or lab-equipment cases</span>'
+        nr = [r for r in plan_rows if r["status"] == "NOT RUN"]
+        nr_dis = sum(1 for r in nr if r["disruptive"].lower().startswith("disruptive"))
+        nr_mch = sum(1 for r in nr if r["code"].startswith("TC-MCH-"))
+        why = (f"all {len(nr)} automated-not-run cases are disruptive" if nr and nr_dis == len(nr)
+               else f"{nr_dis} of the {len(nr)} automated-not-run cases are disruptive")
+        not_exec_chips = (f'<span class="chip">Why not run: {why} (restarts, resets, link flaps, reboots) - they run only '
+                          'with per-batch approval on a healthy rack'
+                          + (f'; {nr_mch} are MCH cases (not applicable on a non-MCH rack)' if nr_mch else '') + '</span>'
+                          '<span class="chip">Not automated: needs AMD input, lab equipment or manual steps</span>'
                           f'<span class="chip">{n_earlier} of the not-run cases have notes from the 10-12 Oct runs on the earlier build, no status</span>')
     else:                       # every case here ran: the third pill is the cases without a pass/fail verdict
         not_exec_val = detail
