@@ -77,6 +77,7 @@ def load_runs(dirs: list[Path], tz: dict[str, float] | None = None) -> list[dict
 
 
 LOG_KEEP = 75_000   # chars kept from each end of an embedded command log (the page must stay < 16 MB)
+HEALTH_LOG_KEEP = 25_000   # same, for the health report embedded as a tab
 
 
 def clip_log(log: str, path: str) -> str:
@@ -261,7 +262,7 @@ def all_cases_section(rows: list[dict], wb_name: str) -> str:
     return "\n".join(h)
 
 
-def health_section(path: Path, link: str | None = None) -> str:
+def health_section(path: Path, link: str | None = None, embedded: bool = False) -> str:
     """Latest full-rack health check (tools/rack_health.py health.json): verdict, blockers, warnings, known, not
     checked, and a few facts from the snapshot."""
     sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
@@ -277,7 +278,9 @@ def health_section(path: Path, link: str | None = None) -> str:
          f'{len(d.get("blockers") or [])} blocker(s), {len(d.get("warnings") or [])} warning(s), '
          f'{len(d.get("known") or [])} known, {len(d.get("not_checked") or [])} blocker case(s) not checked, '
          f'{len(d.get("passed") or [])} passed. Blockers decide GO / NO-GO for the disruptive batches; warnings never block.'
-         + (f' Full health report: <a href="{esc(link)}">{esc(link)}</a>.' if link else "") + "</p>"]
+         + (' Full health report with every check and its command log: the <a href="#health-tab" onclick="showTab(\'health\');'
+            'return false;"><b>Rack health check</b> tab</a> at the top of this page.' if embedded else
+            f' Full health report: <a href="{esc(link)}">{esc(link)}</a>.' if link else "") + "</p>"]
     facts = []
     sv = snap.get("system_vpod") or {}
     if sv:
@@ -315,6 +318,73 @@ def health_section(path: Path, link: str | None = None) -> str:
         h.append(f'<h3>Changed since the baseline ({len(d["changed"])})</h3><ul>' +
                  "".join(f"<li class='mono'>{esc(c)}</li>" for c in d["changed"][:60]) + "</ul>")
     return "\n".join(x for x in h if x)
+
+
+TAB_CSS = """
+.tabbar { position:sticky; top:0; z-index:50; display:flex; gap:6px; padding:8px 0 10px; background:var(--bg, #f7f9fc);
+  border-bottom:1px solid var(--border, #dce1e7); margin-bottom:14px; }
+.tabbar button { font:inherit; font-size:13px; font-weight:600; padding:7px 16px; border-radius:8px; cursor:pointer;
+  border:1px solid var(--border, #dce1e7); background:var(--card, #fff); color:inherit; }
+.tabbar button[aria-selected="true"] { background:#2c7be5; border-color:#2c7be5; color:#fff; }
+.tabbar .tv { margin-left:6px; padding:1px 7px; border-radius:10px; font-size:11px; color:#fff; }
+#tab-health iframe { width:100%; min-height:90vh; border:0; display:block; }
+"""
+
+TAB_JS = """<script>
+function showTab(name) {
+  document.querySelectorAll('.tabpanel').forEach(function (p) { p.hidden = p.id !== 'tab-' + name; });
+  document.querySelectorAll('.tabbar button').forEach(function (b) {
+    b.setAttribute('aria-selected', b.dataset.tab === name ? 'true' : 'false'); });
+  try { history.replaceState(null, '', name === 'report' ? location.pathname + location.search : '#health-tab'); } catch (e) {}
+  if (name === 'health') sizeHealth();
+  window.scrollTo(0, 0);
+}
+function sizeHealth() {
+  var f = document.getElementById('healthframe');
+  try { var d = f.contentDocument; if (d && d.body) f.style.height = (d.documentElement.scrollHeight + 20) + 'px'; } catch (e) {}
+}
+(function () {
+  var f = document.getElementById('healthframe');
+  f.addEventListener('load', function () {
+    sizeHealth();
+    try { new ResizeObserver(sizeHealth).observe(f.contentDocument.body);
+          f.contentDocument.addEventListener('toggle', sizeHealth, true); } catch (e) {}
+  });
+  showTab(location.hash === '#health-tab' ? 'health' : 'report');
+}());
+</script>"""
+
+
+def embed_health_tab(page: str, health_page: str, verdict: str) -> str:
+    """Two tabs in one self-contained page: the report, and the full rack health report in an isolated frame (its
+    own styles, ids and scripts), so nothing of either page clashes."""
+    colour = {"GO": "#16a34a", "NO-GO": "#dc2626"}.get(verdict, "#d97706")
+    bar = ('<div class="tabbar" role="tablist">'
+           '<button role="tab" data-tab="report" onclick="showTab(\'report\')">Test report</button>'
+           '<button role="tab" data-tab="health" onclick="showTab(\'health\')">Rack health check'
+           f'<span class="tv" style="background:{colour}">{esc(verdict)}</span></button></div>')
+    page = page.replace("</style>", TAB_CSS + "</style>", 1)
+    page = page.replace("<body>\n", "<body>\n" + bar + '\n<div class="tabpanel" id="tab-report">\n', 1)
+    frame = (f'<div class="tabpanel" id="tab-health" hidden><iframe id="healthframe" title="Rack health check" '
+             f'srcdoc="{html.escape(health_page, quote=True)}"></iframe></div>')
+    return page.replace("</body></html>", "</div>\n" + frame + "\n" + TAB_JS + "\n</body></html>", 1)
+
+
+def build_health_page(run_dir: Path, tz: dict) -> tuple[str, str]:
+    """(health report HTML, verdict) for a tools/rack_health.py run folder."""
+    from argparse import Namespace
+    d = json.loads((run_dir / "health.json").read_text())
+    v = d.get("verdict", "?")
+    hargs = Namespace(title=f"Rack health check - {v}", subtitle=f"{len(d.get('blockers') or [])} blocker(s), "
+                      f"{len(d.get('warnings') or [])} warning(s); judged {d.get('judged', '')}; run {run_dir.name}",
+                      notes=run_dir / "health-notes.txt" if (run_dir / "health-notes.txt").exists() else None,
+                      workbook=None, all_cases=False, health=None, health_run=None, health_link=None, tz=[])
+    global LOG_KEEP
+    keep, LOG_KEEP = LOG_KEEP, HEALTH_LOG_KEEP      # the embedded page is escaped into the parent: clip harder
+    try:
+        return build(load_runs([run_dir], tz), hargs), v
+    finally:
+        LOG_KEEP = keep
 
 
 def coverage_section(plan_rows: list[dict] | None) -> str:
@@ -595,8 +665,9 @@ pre.logpre .lvl-note {{ color: #9aa7b4; font-style: italic; }}
             h.append(f'    <li class="{kind}">{body}</li>')
         h.append("  </ul></div>")
     h.append("</div>")
-    if getattr(args, "health", None):
-        h.append(health_section(args.health, getattr(args, "health_link", None)))
+    health_json = getattr(args, "health", None) or (Path(args.health_run) / "health.json" if getattr(args, "health_run", None) else None)
+    if health_json:
+        h.append(health_section(health_json, getattr(args, "health_link", None), embedded=bool(getattr(args, "health_run", None))))
     if plan_rows is not None:
         h.append(coverage_section(plan_rows))
         h.append(all_cases_section(plan_rows, Path(args.workbook).name))
@@ -718,11 +789,18 @@ def main():
     ap.add_argument("--health", type=Path, help="health.json of a tools/rack_health.py run: adds a 'Rack health check' "
                                                  "section (verdict, blockers, warnings)")
     ap.add_argument("--health-link", help="URL of the full health report, linked from that section")
+    ap.add_argument("--health-run", type=Path, help="a tools/rack_health.py run folder: adds the health summary section "
+                                                     "AND the full health report as a 'Rack health check' tab of this page")
     ap.add_argument("--workbook", type=Path, help="show the reviewed status (Testcases column F + notes) of each plan case "
                                                 "from this test-plan workbook instead of the raw test verdict")
     args = ap.parse_args()
     items = load_runs(args.runs, {k: float(v) for k, v in (x.split("=", 1) for x in args.tz)})
-    args.output.write_text(build(items, args))
+    page = build(items, args)
+    if args.health_run:
+        tz = {k: float(v) for k, v in (x.split("=", 1) for x in args.tz)}
+        hpage, verdict = build_health_page(args.health_run, tz)
+        page = embed_health_tab(page, hpage, verdict)
+    args.output.write_text(page)
     v = Counter(plan_verdicts(items).values())
     if args.workbook:
         v = Counter(st for st, _, _ in workbook_status(args.workbook, list(plan_verdicts(items))).values())

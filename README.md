@@ -225,6 +225,9 @@ own collapsible command log.
   Disruptive per case and status-by-scope / status-by-origin tables.
 - **`--all-cases`** (with `--workbook`): the overall report - every workbook case (executed,
   not run, not automated), automation coverage from `tools/coverage.py`, a filterable table.
+- **`--health-run results/<health-run>`:** adds the rack health summary section and the full health report as a
+  second "Rack health check" tab of the same page (isolated frame; `#health-tab` opens it). `--health <health.json>`
+  [`--health-link URL`] adds only the summary.
 - **`--tz RUN=HOURS`:** UTC offset for run folders recorded before 14 Oct evening (runner-local
   `started`; Mac = -7, jump host = 0). Newer runs record UTC.
 - **Size:** each embedded command log is clipped to its first and last 75,000 characters
@@ -248,7 +251,10 @@ Read-only gate to run before every disruptive batch, after each one, and wheneve
 - **GO** (exit 0): every blocker passed or is accepted in `--known`; **NO-GO** (1): a blocker failed, was blocked or
   only partially passed; **INCOMPLETE** (2): a blocker could not run (e.g. no `HELIOS_AFM_PASSWORD`).
 - Writes `health.json` (verdict, blockers, warnings, snapshot), `health.html` and `health-notes.txt` into the run
-  folder. `--baseline` lists what changed since an earlier run; `--run results/<run>` re-judges without the rack.
+  folder. `--baseline` lists what changed since an earlier run; `--run results/<run>` re-judges without the rack
+  (only the cases that run collected count).
+- On g02-g17: run it on the jump host (`ssh -t -p 8059 tenant-hpe@165.204.38.103 'bash ~/helios/run-health.sh'`,
+  password typed there, ~30 min), copy the run folder back, and add it to the overall report with `--health-run`.
 
 ### 7. Coverage: automated vs. missing
 
