@@ -341,10 +341,18 @@ def build(items: list[dict], args) -> str:
     n_cases = len(plan_rows) if plan_rows is not None else len(verdicts) - len(extra)
     not_run_txt = (f" &middot; {kp['NOT RUN']} automated but not run &middot; {kp['NOT AUTOMATED']} not automated"
                    if plan_rows is not None else "")
+    card_why = ""
+    if plan_rows is not None:      # one line under the "not run" card: why those automated cases did not run
+        _nr = [r for r in plan_rows if r["status"] == "NOT RUN"]
+        _dis = sum(1 for r in _nr if r["disruptive"].lower().startswith("disruptive"))
+        _mch = sum(1 for r in _nr if r["code"].startswith("TC-MCH-"))
+        card_why = (("All disruptive" if _nr and _dis == len(_nr) else f"{_dis} disruptive")
+                    + " - run only with per-batch approval on a healthy rack" + (f"; {_mch} MCH (not this rack)" if _mch else ""))
     not_run_card = (f'<div class="kpi-card"><div class="num" style="color:#94a3b8;">{kp["NOT RUN"]}</div>'
-                    f'<div class="label">Automated, not run yet</div></div>'
+                    f'<div class="label">Automated, not run yet</div><div class="why">{esc(card_why)}</div></div>'
                     f'<div class="kpi-card"><div class="num" style="color:#64748b;">{kp["NOT AUTOMATED"]}</div>'
-                    f'<div class="label">Not automated</div></div>' if plan_rows is not None else "")
+                    f'<div class="label">Not automated</div><div class="why">Needs AMD input, lab equipment or manual steps</div></div>'
+                    if plan_rows is not None else "")
     executed = kp["PASS"] + kp["FAIL"]
     rate = (100.0 * kp["PASS"] / executed) if executed else 0.0
     auto_pill = auto_card = ""
@@ -475,6 +483,7 @@ pre.logpre .lvl-note {{ color: #9aa7b4; font-style: italic; }}
 .viz .kpi-card {{ background:var(--card); border:1px solid var(--border); border-radius:12px; padding:16px 18px; }}
 .viz .kpi-card .num {{ font-size:32px; font-weight:800; }}
 .viz .kpi-card .label {{ color:var(--muted); font-size:11px; text-transform:uppercase; letter-spacing:.08em; margin-top:2px; }}
+.viz .kpi-card .why {{ color:var(--muted); font-size:11px; line-height:1.35; margin-top:6px; }}
 .viz .charts-row {{ display:grid; grid-template-columns:1fr 1.6fr; gap:20px; margin-bottom:24px; }}
 .viz .chart-card {{ background:var(--card); border:1px solid var(--border); border-radius:12px; padding:20px; }}
 .viz .chart-wrap {{ position:relative; height:260px; }}
