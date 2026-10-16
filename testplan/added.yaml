@@ -129,3 +129,64 @@ cases:
   title: 'Firmware consistent across switch trays: BIOS, CPLD and FPGA versions identical on every switch'
   category: switch-hw
   origin: added 2026-10-14
+# full-rack health check (tools/rack_health.py, helios/healthcheck.py) - added 15 Oct 2026
+- id: HC-000
+  level: L1
+  title: 'Health check: AFM rack state (cluster, switch / compute admission and health, system vPOD, pending operations) + baseline snapshot'
+  category: health
+  origin: added 2026-10-15
+- id: HC-001
+  level: L1
+  title: 'Health check: every switch and compute tray answers SSH'
+  category: health
+  origin: added 2026-10-15
+- id: HC-002
+  level: L1
+  title: "Health check: every tray's BMC reports chassis power on"
+  category: health
+  origin: added 2026-10-15
+- id: HC-003
+  level: L1
+  title: 'Health check: afmctl lists every GPU of each tray and every device is ACTIVE'
+  category: health
+  origin: added 2026-10-15
+- id: HC-004
+  level: L1
+  title: 'Health check: no other workload using the GPUs (amd-smi process)'
+  category: health
+  origin: added 2026-10-15
+- id: HC-005
+  level: L1
+  title: 'Health check: no GPU ECC errors, no uncorrected machine checks and no AER / amdgpu / IFoE kernel errors on the trays (corrected machine checks counted)'
+  category: health
+  origin: added 2026-10-15
+- id: HC-006
+  level: L1
+  title: 'Health check: tray disk and memory headroom'
+  category: health
+  origin: added 2026-10-15
+- id: HC-007
+  level: L1
+  title: 'Health check: no leftover helios-* test objects in AFM (vPODs, policies, users, roles, role bindings)'
+  category: health
+  origin: added 2026-10-15
+- id: HC-008
+  level: L1
+  title: 'Health check: no critical AFM events in the recent window'
+  category: health
+  origin: added 2026-10-15
+- id: HC-009
+  level: L1
+  title: 'Health check: AFM controllers up for a while (no recent restart)'
+  category: health
+  origin: added 2026-10-15
+- id: HC-010
+  level: L1
+  title: 'Health check: same amdgpu, ROCm, IFoE, afmctl and GPU firmware versions on every tray'
+  category: health
+  origin: added 2026-10-15
+- id: HC-011
+  level: L1
+  title: 'Health check: hardware inventory and usage of every switch and tray (CPU, memory, disks, GPUs, compute<->switch links up / down)'
+  category: health
+  origin: added 2026-10-15

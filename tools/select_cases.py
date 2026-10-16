@@ -1,6 +1,6 @@
 """Build a --tc list from the test-plan workbook's columns (Level, Scope, Disruptive, Origin, status) - e.g. every
-non-disruptive automated case whose scope is the switch or the AFM API - split into the AFM suite (needs the AFM
-password) and the SSH suites.
+non-disruptive automated case whose scope is the switch or the AFM API, or the health-check cases (--health
+Blocker,Warning) - split into the AFM suite (needs the AFM password) and the SSH suites.
 
     python tools/select_cases.py testplan/full_rack_testplan.xlsx --disruptive Non-disruptive \\
         --scope "Switch,Switch (AFM API)" --suite afm -o results/afm-nondisruptive-tcs.txt
@@ -21,7 +21,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from access_needed import automated  # noqa: E402
 from update_testplan import ROW_ALIASES  # noqa: E402
 
-COLS = {"level": 2, "status": 6, "scope": 10, "origin": 11, "disruptive": 12}
+COLS = {"level": 2, "status": 6, "scope": 10, "origin": 11, "disruptive": 12, "health": 13}
 
 
 def select(wb_path: Path, suite: str = "all", **filters) -> list[str]:
@@ -31,9 +31,9 @@ def select(wb_path: Path, suite: str = "all", **filters) -> list[str]:
     out = []
     for row in ws.iter_rows(min_row=3, values_only=True):
         tid = row[0]
-        if not tid or not str(tid).startswith("TC-"):
+        if not tid or not str(tid).startswith(("TC-", "HC-")):
             continue
-        vals = {k: str(row[c - 1] or "").strip().lower() for k, c in COLS.items()}
+        vals = {k: str((row[c - 1] if c <= len(row) else None) or "").strip().lower() for k, c in COLS.items()}
         if any(vals[k] not in v for k, v in want.items()):
             continue
         # the row's code ID (shared TIDs: TC-AFM-005 RCCL row = TC-AFM-005A, ...)

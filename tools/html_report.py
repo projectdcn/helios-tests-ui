@@ -167,7 +167,7 @@ def workbook_all_rows(wb_path) -> list[dict]:
     for r in ws.iter_rows(min_row=3, values_only=True):
         if r and not r[0] and "not allowed in minirack" in str(r[2] or "").lower():
             r = ("TC-AFM-035A",) + tuple(r[1:])      # the TC-AFM-035A row has no TID in the workbook
-        if not r or not r[0] or not str(r[0]).strip().startswith("TC-"):
+        if not r or not r[0] or not str(r[0]).strip().startswith(("TC-", "HC-")):
             continue
         r = list(r) + [None] * 12
         st = str(r[5] or "").strip()
@@ -178,7 +178,7 @@ def workbook_all_rows(wb_path) -> list[dict]:
         code = next((a for a, (t, frag) in ROW_ALIASES.items() if t == tid and frag and frag.lower() in title.lower()), tid)
         out.append({"id": tid, "code": code, "level": str(r[1] or ""), "title": title, "automation": auto,
                     "status": shown, "note": str(r[7] or "").split("\n\nEarlier: ", 1)[0], "scope": str(r[9] or ""),
-                    "origin": str(r[10] or ""), "disruptive": str(r[11] or "")})
+                    "origin": str(r[10] or ""), "disruptive": str(r[11] or ""), "health": str(r[12] or "")})
     return out
 
 
@@ -227,17 +227,20 @@ def all_cases_section(rows: list[dict], wb_name: str) -> str:
     h.append("</tbody></table>")
     h.append('<h3>By scope (where the case runs from)</h3>' + dim_matrix(rows, "scope", "Scope"))
     h.append('<h3>By origin</h3>' + dim_matrix(rows, "origin", "Origin"))
+    hc = [r for r in rows if r.get("health")]
+    if hc:
+        h.append(f'<h3>Health check cases ({len(hc)}, filter the table with "health")</h3>' + dim_matrix(hc, "health", "Health check gate"))
     h.append('<div class="toggles"><input id="pf" type="search" placeholder="Filter: ID, title, scope, notes..." '
              'style="padding:5px 8px;min-width:260px;font-size:12px"> <select id="ps" style="font-size:12px;padding:4px">'
              '<option value="">All statuses</option>' + "".join(f'<option>{esc(o)}</option>' for o in order) +
              '</select> <select id="pl" style="font-size:12px;padding:4px"><option value="">All levels</option>' +
              "".join(f'<option>{esc(l)}</option>' for l in levels) + '</select> <span id="pc" class="desc"></span></div>')
     h.append('<table id="plantable"><thead><tr><th>Plan ID</th><th>Level</th><th>Title</th><th>Scope</th><th>Disruptive</th>'
-             '<th>Origin</th><th>Automation</th><th>Status</th><th>Latest execution note</th></tr></thead><tbody>')
+             '<th>Origin</th><th>Health check</th><th>Automation</th><th>Status</th><th>Latest execution note</th></tr></thead><tbody>')
     for r in rows:
         h.append(f'<tr data-s="{esc(r["status"])}" data-l="{esc(r["level"])}"><td class="mono">{esc(r["id"])}</td>'
                  f'<td>{esc(r["level"])}</td><td>{esc(r["title"])}</td><td>{esc(r["scope"])}</td>'
-                 f'<td>{esc(r["disruptive"])}</td><td>{esc(r["origin"])}</td>'
+                 f'<td>{esc(r["disruptive"])}</td><td>{esc(r["origin"])}</td><td>{esc(r.get("health", ""))}</td>'
                  f'<td>{esc(r["automation"])}</td><td><span class="{cls.get(r["status"], "")}">{esc(r["status"])}</span>'
                  + ('<br><span class="desc">earlier notes only</span>' if earlier(r) else '') + '</td>'
                  f'<td class="reason">{esc(r["note"] if len(r["note"]) <= 400 else r["note"][:400] + " ...")}</td></tr>')

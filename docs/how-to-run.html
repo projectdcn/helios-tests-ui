@@ -143,7 +143,7 @@
   <p class="muted">Only needed for the AFM controller API tests (<code>tests/afm</code>):</p>
   <div class="cmd"><pre>read -s &quot;HELIOS_AFM_PASSWORD?AFM admin password: &quot; &amp;&amp; export HELIOS_AFM_PASSWORD &amp;&amp; echo</pre></div>
   <div class="note">
-    <strong>Scope today:</strong> 423 of 565 cases are automated (the 542 plan cases plus 23 switch-tray cases added on 14 Oct, TC-SWH-037…059), plus 2 RCCL smoke tests used as evidence. <code>tools/coverage.py</code> gives the current numbers. 52 of them (MCH rack, LDAP/RADIUS, syslog, upgrade images, management-network control) skip until the equipment is in the inventory.
+    <strong>Scope today:</strong> 435 of 577 cases are automated (the 542 plan cases, 23 switch-tray cases added on 14 Oct, TC-SWH-037…059, and the 12 health checks added on 15 Oct, HC-000…011), plus 2 RCCL smoke tests used as evidence. <code>tools/coverage.py</code> gives the current numbers. 52 of them (MCH rack, LDAP/RADIUS, syslog, upgrade images, management-network control) skip until the equipment is in the inventory.
     <ul>
       <li><strong>Over SSH:</strong> switch hardware, switch agent, datapath, scale-out RDMA, RAS reset, metrics exporter, node platform, sideband and IFCP.</li>
       <li><strong>Over the AFM REST API and AggWatch WebSocket (<code>tests/afm</code>, 233 cases):</strong> auth, cluster and object specs, failover policies, RBAC, audit, metrics, techsupport and AggWatch. Plus 149 disruptive cases, built from the full-rack procedures: compute Reconfigure, agent/controller restarts, vPOD/compute/switch lifecycle, fabric-link failover (TC-AFM-006…047, RC-001…026), the FO failover scenarios and vPOD operations (TC-E2E), controller resilience, snapshot/restore, bug regressions, stress, compute-side afmctl checks, IFCP recovery, switch-agent cases and traffic with AFM operations.</li>
@@ -456,7 +456,7 @@ defaults:
   </table>
   </div>
   <h3>Select cases from the workbook (Level, Scope, Disruptive, Origin, status)</h3>
-  <p><code>tools/select_cases.py</code> turns the workbook's columns into a <code>--tc</code> list of automated cases, split into the AFM suite (<code>--suite afm</code>, needs the AFM password) and the SSH suites (<code>--suite ssh</code>). Filters take comma-separated column values: <code>--level</code>, <code>--scope</code>, <code>--disruptive</code>, <code>--origin</code>, <code>--status</code>. Example, every non-disruptive switch-scope case:</p>
+  <p><code>tools/select_cases.py</code> turns the workbook's columns into a <code>--tc</code> list of automated cases, split into the AFM suite (<code>--suite afm</code>, needs the AFM password) and the SSH suites (<code>--suite ssh</code>). Filters take comma-separated column values: <code>--level</code>, <code>--scope</code>, <code>--disruptive</code>, <code>--origin</code>, <code>--status</code>, <code>--health</code> (Blocker / Warning). Example, every non-disruptive switch-scope case:</p>
   <div class="cmd"><pre>.venv/bin/python tools/select_cases.py testplan/full_rack_testplan.xlsx --disruptive Non-disruptive --scope &quot;Switch,Switch (AFM API)&quot; --suite afm -o results/afm-nondisruptive-tcs.txt</pre></div>
   <div class="cmd"><pre>.venv/bin/python tools/select_cases.py testplan/full_rack_testplan.xlsx --disruptive Non-disruptive --scope &quot;Switch,Switch (AFM API)&quot; --suite ssh -o results/switch-nondisruptive-tcs.txt</pre></div>
   <p>Then pass the file to <code>--tc</code>. The AFM part (72 cases on 14 Oct), from your Mac with the 8443 tunnel open and <code>HELIOS_AFM_PASSWORD</code> exported in the same terminal; techsupport is left out because each node's bundle downloads through the tunnel:</p>
@@ -517,6 +517,7 @@ defaults:
       <tr><td>I Access needed</td><td>What a run needs (<code>tools/access_needed.py</code>).</td></tr>
       <tr><td>J Scope</td><td>Where the case runs: Switch, Compute, Switch + Compute, or Switch (AFM API) (the controller runs on the switch trays).</td></tr>
       <tr><td>K Origin</td><td>"BKC-26.12 plan", or "Added - helios-tests (&lt;date&gt;)" for cases we added (listed in <code>testplan/added.yaml</code>). Filter on it to show only the added cases.</td></tr>
+      <tr><td>M Health check</td><td><strong>Blocker</strong> / <strong>Warning</strong> for the 48 cases of the full-rack health check (<code>tools/rack_health.py</code>): the 12 health-only checks HC-000…HC-011 (rows added 15 Oct, Origin "Added - helios-tests (15 Oct 2026)", Scope "Health check (…)") and the 36 plan cases it reuses. Filter on it to see the health check; <code>tools/select_cases.py --health Blocker,Warning</code> gives the same list.</td></tr>
       <tr><td>L Disruptive</td><td><strong>Disruptive</strong> / <strong>Non-disruptive</strong>: from the test's <code>disruptive</code> marker for automated cases (needs <code>--allow-disruptive</code>, changes rack state); for cases not automated yet, estimated from the title and marked "(est.)". Filled by <code>tools/access_needed.py</code> (mortaro: column J).</td></tr>
     </tbody>
   </table>
@@ -619,7 +620,7 @@ Not run: RAS power-cycle tests (disruptive)</pre></div>
   <h2><span class="num">10</span>Coverage: automated vs. missing</h2>
   <div class="cmd"><pre>.venv/bin/python tools/coverage.py</pre></div>
   <div class="cmd"><pre>.venv/bin/python tools/coverage.py --missing &gt; results/missing.txt</pre></div>
-  <p class="muted">14 Oct: 423 of 565 automated (L1 59/59, L2 123/127, L3 241/379). <code>automated</code> = cases with a <code>@pytest.mark.tc</code> test; <code>total</code> = cases in the plan plus the cases in <code>testplan/added.yaml</code>; <code>--missing</code> lists every case with no test yet.</p>
+  <p class="muted">15 Oct: 435 of 577 automated (L1 71/71, L2 123/127, L3 241/379). <code>automated</code> = cases with a <code>@pytest.mark.tc</code> test; <code>total</code> = cases in the plan plus the cases in <code>testplan/added.yaml</code>; <code>--missing</code> lists every case with no test yet.</p>
 </section>
 
 <footer>helios-tests · see README.md for layout, calibration notes and how to add tests</footer>

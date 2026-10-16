@@ -249,6 +249,8 @@ Read-only gate to run before every disruptive batch, after each one, and wheneve
   HC-001..006 (SSH, BMC power, GPUs ACTIVE, other GPU workload, GPU ECC / kernel hardware errors, tray resources) and
   HC-007..011 (leftover helios-* AFM objects, critical AFM events, controller restarts, tray versions, hardware
   inventory + compute<->switch links). HC-005 counts corrected CPU machine-check events without failing on them.
+- In the workbook: rows HC-000…HC-011 (Origin "Added - helios-tests (15 Oct 2026)", Scope "Health check (…)"), and
+  column M "Health check" = Blocker / Warning on all 48 cases (`tools/select_cases.py --health Blocker,Warning`).
 - `testplan/health-known.yaml`: g02-g17 issues already reported to AMD, accepted with `--known` (shown as KNOWN).
 - **GO** (exit 0): every blocker passed or is accepted in `--known`; **NO-GO** (1): a blocker failed, was blocked or
   only partially passed; **INCOMPLETE** (2): a blocker could not run (e.g. no `HELIOS_AFM_PASSWORD`).
@@ -273,7 +275,7 @@ The table has one row per category:
 `--missing` also lists every case that has **no test yet**, with its ID, level
 and title.
 
-## Coverage (423 of 565 cases: 542 plan + 23 added, TC-SWH-037…059)
+## Coverage (435 of 577 cases: 542 plan + 23 switch cases TC-SWH-037…059 + 12 health checks HC-000…011)
 
 * **TC-SWH-001…036, switch hardware.** Firmware, fans, PSUs, platform/EEPROM,
   multi-ASIC namespaces, interface state/speed/MTU, error-counter deltas,
