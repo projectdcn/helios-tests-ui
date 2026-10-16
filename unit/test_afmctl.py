@@ -84,3 +84,34 @@ def test_acc_renumbering_conflict_fails():
     c = _Checks()
     check_acc_renumbering([(0, 3, "a"), (0, 2, "b"), (1, 3, "c")], c, "t")
     assert len(c.failures) == 2
+
+
+G02_1337 = """0004:01:00.1                   : Ping test results (1 pings per port pair)
+Accel ID    Port#     IFoE Req        IFoE Rsp        Non-IFoE    
+--------    -----     --------        ---------       --------    
+8           24        1/1 PASS        1/1 PASS        1/1 PASS    
+8           25        1/1 PASS        1/1 PASS        0/1 FAIL    
+8           26        0/1 FAIL        1/1 PASS        1/1 PASS    
+8           27        1/1 PASS        1/1 PASS        1/1 PASS    
+
+Summary:
+  IFoE Request    : 35/36 PASS, 1/36 fail (2.78% loss)
+  IFoE Response   : 36/36 PASS, 0/36 fail (0.00% loss)
+  Non-IFoE        : 35/36 PASS, 1/36 fail (2.78% loss)
+"""
+
+
+def test_parse_ping_reads_all_three_checks_per_port():
+    """g02-g17 16 Oct 13:37 (CT03 acc 11 -> 8): two separate failures - port 25 non-IFoE, port 26 IFoE request."""
+    r = parse_ping(G02_1337)
+    assert (r.request_fail, r.response_fail, r.non_ifoe_fail, r.total) == (1, 0, 1, 36)
+    assert r.port_checks == {"25": ["non-IFoE"], "26": ["req"]} and not r.ok
+    assert r.describe() == "IFoE request 1/36, response 0/36, non-IFoE 1/36 failed; ports 25 (non-IFoE), 26 (req)"
+
+
+def test_a_non_ifoe_only_failure_is_not_ok():
+    """The request count alone would call this a pass."""
+    text = G02_1337.replace("8           26        0/1 FAIL", "8           26        1/1 PASS").replace(
+        "IFoE Request    : 35/36 PASS, 1/36 fail", "IFoE Request    : 36/36 PASS, 0/36 fail")
+    r = parse_ping(text)
+    assert r.request_fail == 0 and r.non_ifoe_fail == 1 and not r.ok
