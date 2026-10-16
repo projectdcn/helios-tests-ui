@@ -350,8 +350,28 @@ function sizeHealth() {
   var f = document.getElementById('healthframe');
   f.addEventListener('load', function () {
     sizeHealth();
-    try { new ResizeObserver(sizeHealth).observe(f.contentDocument.body);
-          f.contentDocument.addEventListener('toggle', sizeHealth, true); } catch (e) {}
+    try {
+      var d = f.contentDocument;
+      new ResizeObserver(sizeHealth).observe(d.body);
+      d.addEventListener('toggle', sizeHealth, true);
+      // in-page links of the embedded report (#s1 ...): a srcdoc frame resolves them against THIS page's URL and
+      // would load the whole report inside the frame - scroll this page to the target instead
+      d.addEventListener('click', function (ev) {
+        var a = ev.target.closest && ev.target.closest('a[href]');
+        if (!a) return;
+        var href = a.getAttribute('href') || '';
+        if (href.charAt(0) === '#') {
+          ev.preventDefault();
+          var el = href.length > 1 ? d.getElementById(decodeURIComponent(href.slice(1))) : d.body;
+          if (!el) return;
+          var bar = document.querySelector('.tabbar');
+          var top = f.getBoundingClientRect().top + window.scrollY + el.getBoundingClientRect().top - (bar ? bar.offsetHeight : 0) - 8;
+          window.scrollTo({ top: top, behavior: 'smooth' });
+        } else if (!/^javascript:/i.test(href)) {
+          a.setAttribute('target', '_blank'); a.setAttribute('rel', 'noopener');   // external links: new tab, not the frame
+        }
+      }, true);
+    } catch (e) {}
   });
   showTab(location.hash === '#health-tab' ? 'health' : 'report');
 }());
