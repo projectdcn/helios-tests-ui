@@ -1,6 +1,6 @@
 """Write helios-tests run results into the test-plan workbook (Testcases sheet).
 
-    python tools/update_testplan.py testplan/full_rack_testplan.xlsx results/<run> [more runs] \\
+    python tools/update_testplan.py testplan/full_rack_testplan.xlsx results/runs/<rack>/<run> [more runs] \\
         --sw-version "AFM 0.1.0-AICC-817" --label "g02-g17 full rack, 2026-10-14" [--dry-run]
 
 Per plan ID (several runs merge like tools/html_report.py: a run that executed a test beats one that
@@ -115,7 +115,7 @@ def find_row(ws, tc: str) -> int | None:
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("workbook", type=Path)
-    ap.add_argument("runs", type=Path, nargs="+", help="results/<rack>-<timestamp> folders")
+    ap.add_argument("runs", type=Path, nargs="+", help="results/runs/<rack>-<timestamp> folders")
     ap.add_argument("--sw-version", default="", help="SW Version column text (e.g. 'AFM 0.1.0-AICC-817')")
     ap.add_argument("--label", default="", help="prefix for notes, e.g. 'g02-g17 full rack, 2026-10-14'")
     ap.add_argument("--mark-skipped", action="store_true", help=argparse.SUPPRESS)   # now the default

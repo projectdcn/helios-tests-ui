@@ -3,8 +3,8 @@ non-disruptive automated case whose scope is the switch or the AFM API, or the h
 Blocker,Warning) - split into the AFM suite (needs the AFM password) and the SSH suites.
 
     python tools/select_cases.py testplan/full_rack_testplan.xlsx --disruptive Non-disruptive \\
-        --scope "Switch,Switch (AFM API)" --suite afm -o results/afm-nondisruptive-tcs.txt
-    .venv/bin/pytest tests/afm --inventory <inv> --tc "$(cat results/afm-nondisruptive-tcs.txt)"
+        --scope "Switch,Switch (AFM API)" --suite afm -o results/notes/afm-nondisruptive-tcs.txt
+    .venv/bin/pytest tests/afm --inventory <inv> --tc "$(cat results/notes/afm-nondisruptive-tcs.txt)"
 
 Only automated cases are listed (a test with that plan ID exists). Filters are comma-separated and exact
 (case-insensitive; a comma inside parentheses is part of the value); "(empty)" matches a blank cell, e.g.

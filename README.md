@@ -102,7 +102,7 @@ full L1 suite:
 
 ```bash
 .venv/bin/pytest tests --inventory inventory/rack1.local.yaml --switches sw1 --computes c01,c02 -v
-.venv/bin/pytest tests -m l1 --inventory inventory/rack1.local.yaml --log-file=results/run.log
+.venv/bin/pytest tests -m l1 --inventory inventory/rack1.local.yaml --log-file=results/console-logs/run.log
 ```
 
 `--log-file` records every SSH command, its output, exit code and duration. The
@@ -168,7 +168,7 @@ For example, to run only the PSU checks on `sw1` and `sw2`:
 
 ### 4. Results
 
-Each run creates a folder `results/<rack>-<timestamp>/` with two files:
+Each run creates a folder `results/runs/<rack>/<rack>-<timestamp>/` (every run is also listed in `results/index.csv`; `tools/results_index.py history <TC-ID>`) with two files:
 - `tc_summary.csv`: one PASS / FAIL / BLOCKED / SKIP / PARTIAL verdict per plan ID
   (BLOCKED = the datapath pre-flight refused to start traffic).
 - `tc_results.csv`: one row per test, with the failure message and measured
@@ -196,7 +196,7 @@ Add `--automation` to also rewrite column D (Automaton Yes/No) from the code:
 ### Record results in the test-plan workbook
 
 ```bash
-.venv/bin/python tools/update_testplan.py testplan/full_rack_testplan.xlsx results/<run> [more runs] \
+.venv/bin/python tools/update_testplan.py testplan/full_rack_testplan.xlsx results/runs/<rack>/<run> [more runs] \
     --sw-version "AFM 0.1.0-AICC-817" --label "g02-g17 full rack, <date>" [--dry-run]
 ```
 
@@ -214,7 +214,7 @@ Turn one or more run folders into one self-contained HTML page: a summary dashbo
 own collapsible command log.
 
 ```bash
-.venv/bin/python tools/html_report.py results/<run-folder> [more run folders] -o results/report.html --title "..." --subtitle "..." --notes results/findings.txt
+.venv/bin/python tools/html_report.py results/runs/<rack>/<run-folder> [more run folders] -o results/reports/report.html --title "..." --subtitle "..." --notes results/notes/findings.txt
 ```
 
 - **Run folders:** find them with `ls -td results/*-2*/` and pass them oldest first. When
@@ -227,13 +227,13 @@ own collapsible command log.
   Disruptive per case and status-by-scope / status-by-origin tables.
 - **`--all-cases`** (with `--workbook`): the overall report - every workbook case (executed,
   not run, not automated), automation coverage from `tools/coverage.py`, a filterable table.
-- **`--health-run results/<health-run>`:** adds the rack health summary section and the full health report as a
+- **`--health-run results/runs/<rack>/<health-run>`:** adds the rack health summary section and the full health report as a
   second "Rack health check" tab of the same page (isolated frame; `#health-tab` opens it). `--health <health.json>`
   [`--health-link URL`] adds only the summary.
 - **`--tz RUN=HOURS`:** UTC offset for run folders recorded before 14 Oct evening (runner-local
   `started`; Mac = -7, jump host = 0). Newer runs record UTC.
 - **Size:** each embedded command log is clipped to its first and last 75,000 characters
-  (full log in `results/<run>/logs/`), so reports stay under the 16 MB artifact limit.
+  (full log in `results/runs/<rack>/<run>/logs/`), so reports stay under the 16 MB artifact limit.
 - **Where to keep reports:** in `results/`, which is git-ignored. Reports contain lab
   hostnames and IPs; check that every password value reads `<REDACTED>` before sharing.
   The charts load Chart.js from a CDN.
@@ -243,7 +243,7 @@ own collapsible command log.
 Read-only gate to run before every disruptive batch, after each one, and whenever the rack state is unclear:
 
 ```bash
-.venv/bin/python tools/rack_health.py --inventory <inventory> [--known testplan/health-known.yaml] [--baseline results/<run>/health.json]
+.venv/bin/python tools/rack_health.py --inventory <inventory> [--known testplan/health-known.yaml] [--baseline results/runs/<rack>/<run>/health.json]
 ```
 
 - Runs the 48 `healthcheck` cases (`helios/healthcheck.py`; `pytest tests -m healthcheck` selects the same):
@@ -257,9 +257,9 @@ Read-only gate to run before every disruptive batch, after each one, and wheneve
 - **GO** (exit 0): every blocker passed or is accepted in `--known`; **NO-GO** (1): a blocker failed, was blocked or
   only partially passed; **INCOMPLETE** (2): a blocker could not run (e.g. no `HELIOS_AFM_PASSWORD`).
 - Writes `health.json` (verdict, blockers, warnings, snapshot), `health.html` and `health-notes.txt` into the run
-  folder. `--baseline` lists what changed since an earlier run; `--run results/<run>` re-judges without the rack
+  folder. `--baseline` lists what changed since an earlier run; `--run results/runs/<rack>/<run>` re-judges without the rack
   (only the cases that run collected count).
-- `--rerun-failed results/<run>` re-runs that run's FAIL / PARTIAL / BLOCKED cases, merges (latest result per case)
+- `--rerun-failed results/runs/<rack>/<run>` re-runs that run's FAIL / PARTIAL / BLOCKED cases, merges (latest result per case)
   and judges; `--merge A B` merges by hand. Cases failing only on an unreachable node are grouped under one
   ROOT CAUSE line; failure messages start with a per-node count; AFM nodes are named with their tray; older merged
   results are flagged; HC-008 looks back to the previous run; known entries take `{reason, match, until}`.
@@ -279,7 +279,7 @@ Read-only gate to run before every disruptive batch, after each one, and wheneve
 
 ```bash
 .venv/bin/python tools/coverage.py                               # per-category table
-.venv/bin/python tools/coverage.py --missing > results/missing.txt   # plus every unautomated case
+.venv/bin/python tools/coverage.py --missing > results/notes/missing.txt   # plus every unautomated case
 ```
 
 The table has one row per category:
