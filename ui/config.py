@@ -49,7 +49,9 @@ class RackProfile:
     def as_dict(self) -> dict:
         d = {"name": self.name, "title": self.title, "runner": self.runner, "inventory": str(self.inventory),
              "inventory_exists": self.inventory.is_file(), "results_dir": str(self.results_dir),
-             "known": self.known, "password_env": password_env(self.inventory)}
+             "known": self.known, "password_env": password_env(self.inventory),
+             "workbook": str(self.workbook) if self.workbook else None,
+             "workbook_exists": bool(self.workbook and self.workbook.is_file())}
         if self.ssh:
             d["ssh"] = {"target": self.ssh.target, "port": self.ssh.port, "code_dir": self.ssh.code_dir,
                         "inventory": self.ssh.inventory, "ref": self.ssh.ref}

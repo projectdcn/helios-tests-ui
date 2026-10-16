@@ -49,15 +49,14 @@ class App:
         return p
 
 
-def select_cases(filters: dict) -> list[str]:
-    """tools/select_cases.py on the test-plan workbook (read only)."""
-    wb = filters.get("workbook") or next((str(p) for p in sorted((ROOT / "testplan").glob("*.xlsx"))
-                                          if not p.name.startswith("~$")), None)
-    if not wb:
-        raise JobError("no test-plan workbook in testplan/")
-    wbp = (ROOT / wb).resolve() if not Path(wb).is_absolute() else Path(wb)
+def select_cases(filters: dict, profile) -> list[str]:
+    """tools/select_cases.py (read only) on the rack's test-plan workbook (``workbook:`` in ui/racks.yaml). No
+    fallback: another workbook layout would filter on the wrong columns, so select_cases checks the header."""
+    wbp = profile.workbook
+    if not wbp:
+        raise JobError(f"no test-plan workbook configured for {profile.name}: set 'workbook:' in ui/racks.yaml")
     if not wbp.is_file() or wbp.suffix != ".xlsx":
-        raise JobError(f"workbook not found: {wb}")
+        raise JobError(f"{profile.name}: workbook not found: {wbp}")
     args = [sys.executable, "tools/select_cases.py", str(wbp), "--suite", filters.get("suite") or "all"]
     for k in ("level", "status", "scope", "origin", "disruptive", "health"):
         v = str(filters.get(k) or "").strip()
@@ -225,7 +224,8 @@ class Handler(BaseHTTPRequestHandler):
             if m:
                 return self.json(self.app.runs.stop(m.group(1)).as_dict())
             if path == "/api/select":
-                return self.json({"tc": select_cases(body)})
+                p = self.app.profile(str(body.get("rack") or ""))
+                return self.json({"tc": select_cases(body, p), "workbook": p.workbook.name})
             m = re.fullmatch(r"/api/racks/([^/]+)/report", path)
             if m:
                 p = self.app.profile(m.group(1))

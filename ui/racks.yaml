@@ -9,6 +9,8 @@ racks:
     runner: local                       # pytest / tools/rack_health.py run in this checkout
     inventory: inventory/mr3.local.yaml
     results_dir: results
+    # test plan for "test plan pick" (read only; same plan IDs as the full rack). git-ignored, lives in the main checkout
+    workbook: ~/dev/helios-tests/testplan/full_rack_testplan.xlsx
 
   g02-g17:
     title: g02-g17 full rack (via jump host)
@@ -18,6 +20,7 @@ racks:
     inventory: inventory/fullrack-jump-afm.local.yaml
     results_dir: results
     known: testplan/health-known.yaml   # health runs pass --known (as ~/helios/run-health.sh does)
+    workbook: ~/dev/helios-tests/testplan/full_rack_testplan.xlsx   # read only, for "test plan pick"
     ssh:
       host: 165.204.38.103
       port: 8059
@@ -33,3 +36,4 @@ racks:
     runner: local
     inventory: selftest/inventory.yaml
     results_dir: results
+    workbook: ~/dev/helios-tests/testplan/full_rack_testplan.xlsx

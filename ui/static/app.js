@@ -72,9 +72,10 @@ $("#resolve").addEventListener("click", async () => {
   try {
     const f = {};
     for (const k of ["level", "scope", "disruptive", "health", "origin", "status", "suite"]) f[k] = form["s_" + k].value;
+    f.rack = rack.name;
     const d = await api("POST", "/api/select", f);
     form.tc.value = d.tc.join(",");
-    $("#resolved").textContent = `${d.tc.length} case(s)`;
+    $("#resolved").textContent = `${d.tc.length} case(s) from ${d.workbook}`;
   } catch (e) { $("#resolved").textContent = e.message; }
 });
 form.addEventListener("submit", async ev => {
