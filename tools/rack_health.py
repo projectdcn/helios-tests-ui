@@ -36,6 +36,46 @@ def load_known(path: Path | None) -> dict[str, str]:
     return {str(k): str(v) for k, v in (yaml.safe_load(path.read_text()) or {}).items()}
 
 
+def merge_runs(runs: list[Path], results_dir: Path) -> Path:
+    """One results folder from several health runs (e.g. a full run + a re-run of its failed checks): every case
+    comes from the LATEST run that ran it (its result rows and summary row); logs are kept per source run."""
+    import csv
+    import shutil
+    runs = sorted(runs, key=lambda r: r.name)            # run folders are named <rack>-YYYYmmdd-HHMMSS
+    out = results_dir / f"{runs[-1].name}-merged"
+    if out.exists():
+        shutil.rmtree(out)
+    (out / "logs").mkdir(parents=True)
+    owner: dict[str, Path] = {}
+    for r in runs:
+        for row in csv.DictReader(open(r / "tc_summary.csv", newline="")):
+            owner[row["tc_id"]] = r
+    res_rows, sum_rows, res_fields, sum_fields = [], [], None, None
+    for r in runs:
+        rows = list(csv.DictReader(open(r / "tc_results.csv", newline="")))
+        res_fields = res_fields or (list(rows[0]) if rows else None)
+        for row in rows:
+            if owner.get(row["tc_id"]) == r:
+                if row.get("log"):
+                    src = r / row["log"]
+                    row["log"] = f"logs/{r.name}/{Path(row['log']).name}"
+                    if src.exists():
+                        (out / "logs" / r.name).mkdir(exist_ok=True)
+                        shutil.copy2(src, out / row["log"])
+                res_rows.append(row)
+        for row in csv.DictReader(open(r / "tc_summary.csv", newline="")):
+            sum_fields = sum_fields or list(row)
+            if owner.get(row["tc_id"]) == r:
+                sum_rows.append(row)
+    for name, fields, rows in (("tc_results.csv", res_fields, res_rows), ("tc_summary.csv", sum_fields, sum_rows)):
+        with open(out / name, "w", newline="") as f:
+            w = csv.DictWriter(f, fieldnames=fields)
+            w.writeheader()
+            w.writerows(rows)
+    (out / "merged-from.txt").write_text("\n".join(r.name for r in runs) + "\n")
+    return out
+
+
 def run_pytest(inventory: str, results_dir: Path, extra: list[str]) -> Path:
     before = set(results_dir.glob("*-2*")) if results_dir.exists() else set()
     cmd = [sys.executable, "-m", "pytest", "tests", "-m", "healthcheck", "--inventory", inventory,
@@ -65,6 +105,8 @@ def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--inventory", help="inventory to run against (or $HELIOS_INVENTORY)")
     ap.add_argument("--run", type=Path, help="judge this existing results folder instead of running")
+    ap.add_argument("--merge", type=Path, nargs="+", metavar="RUN",
+                    help="merge these health runs (latest result per case wins) into <latest>-merged and judge that")
     ap.add_argument("--known", type=Path, help="YAML {TC-ID: reason} of accepted failures (do not block)")
     ap.add_argument("--baseline", type=Path, help="health.json of an earlier run: report what changed")
     ap.add_argument("--results-dir", type=Path, default=ROOT / "results")
@@ -72,7 +114,9 @@ def main(argv=None) -> int:
     ap.add_argument("pytest_args", nargs="*", help="extra pytest arguments after --, e.g. -- --computes ct01,ct03")
     a = ap.parse_args(argv)
 
-    if a.run:
+    if a.merge:
+        run_dir = a.run = merge_runs(a.merge, a.results_dir)
+    elif a.run:
         run_dir = a.run
     else:
         import os
