@@ -344,3 +344,18 @@ def test_fault_is_detected(tmp_path, fault):
     assert must_fail <= failed, f"{fault}: expected {sorted(must_fail)} to fail, failed={sorted(failed)}"
     unexpected = failed - must_fail
     assert not unexpected, f"{fault}: collateral failures {sorted(unexpected)}"
+
+
+def test_failed_ping_keeps_command_and_afmctl_output(tmp_path):
+    """A failed L2 ping leaves its exact afmctl command, host, rc and afmctl's output in the result properties (the
+    vendor asks for them; a long test log can be cut off before the pings)."""
+    import json as _json
+    _run(tmp_path, FAULTS["ping_loss"][0], extra_args=("--tc", "TC-AFM-001"))
+    row = next(r for r in csv.DictReader(open(next((tmp_path / "results").glob("*/tc_results.csv"))))
+               if r["tc_id"] == "TC-AFM-001")
+    props = _json.loads(row["properties"])
+    ev = props.get("ping_evidence", []) + props.get("probe_ping_evidence", [])
+    assert ev, props.keys()
+    for e in ev:
+        assert e["cmd"].startswith("timeout ") and "afmctl test ping -b " in e["cmd"], e["cmd"]
+        assert "2/35 fail" in e["output"] and e["host"] and e["at"].endswith("UTC") and "rc" in e

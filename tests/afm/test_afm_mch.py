@@ -16,6 +16,7 @@ import pytest
 
 from helios.afm import CLUSTER, MONITORING, conditions_ok
 from helios.afm_ops import CN, SN, TERMINAL
+from helios.afmctl import mac_stat_ports
 
 pytestmark = [pytest.mark.l3]
 
@@ -304,13 +305,13 @@ def test_disabled_ports_in_telemetry_without_data(ops, mch, checks, record_prope
     """Disabled ports are listed in the port statistics inventory but report no traffic (all counters 0)."""
     for name, tray in _trays(ops):
         doc = json.loads(tray.run("afmctl show port statistics mac --json 2>/dev/null", sudo=True, timeout=120).stdout)
-        for d in doc.get("devices") or doc.get("device") or []:
-            ports = {int(p["port_id"]): p for p in d.get("port") or []}
+        for bdf, plist in mac_stat_ports(doc):
+            ports = {int(p["port_id"]): p for p in plist}
             missing = sorted((set(range(36)) - mch["used"]) - set(ports))
-            checks.check(not missing, f"{tray.name}/{d.get('bdf')}: disabled ports missing from statistics: {missing[:6]}")
+            checks.check(not missing, f"{tray.name}/{bdf}: disabled ports missing from statistics: {missing[:6]}")
             busy = [p for p, row in ports.items() if p not in mch["used"]
                     and any(str(v).isdigit() and int(v) for v in (row.get("statistics") or {}).values())]
-            checks.check(not busy, f"{tray.name}/{d.get('bdf')}: disabled ports with traffic counters: {busy[:6]}")
+            checks.check(not busy, f"{tray.name}/{bdf}: disabled ports with traffic counters: {busy[:6]}")
     checks.assert_all()
 
 

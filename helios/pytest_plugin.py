@@ -155,6 +155,8 @@ def datapath_ready(rack, computes, inventory, pytestconfig, request):
     if key not in cache:
         cache[key] = preflight.assess(rack, computes, inventory, tools, need)
     a = cache[key]
+    if a.evidence:      # failed probe pings (command, rc, afmctl output) - recorded even when the test is blocked
+        request.node.user_properties.append(("probe_ping_evidence", a.evidence[:20]))
     if a.problems:
         pytest.fail("datapath pre-flight failed - not starting IFoE traffic (it would hang or be meaningless):\n"
                     + "\n".join(f"  - {p}" for p in a.problems), pytrace=False)

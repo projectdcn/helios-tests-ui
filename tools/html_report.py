@@ -238,7 +238,7 @@ def all_cases_section(rows: list[dict], wb_name: str) -> str:
     h.append('<table id="plantable"><thead><tr><th>Plan ID</th><th>Level</th><th>Title</th><th>Scope</th><th>Disruptive</th>'
              '<th>Origin</th><th>Health check</th><th>Automation</th><th>Status</th><th>Latest execution note</th></tr></thead><tbody>')
     for r in rows:
-        h.append(f'<tr data-s="{esc(r["status"])}" data-l="{esc(r["level"])}"><td class="mono">{esc(r["id"])}</td>'
+        h.append(f'<tr id="case-{esc(r["id"])}" data-s="{esc(r["status"])}" data-l="{esc(r["level"])}"><td class="mono">{esc(r["id"])}</td>'
                  f'<td>{esc(r["level"])}</td><td>{esc(r["title"])}</td><td>{esc(r["scope"])}</td>'
                  f'<td>{esc(r["disruptive"])}</td><td>{esc(r["origin"])}</td><td>{esc(r.get("health", ""))}</td>'
                  f'<td>{esc(r["automation"])}</td><td><span class="{cls.get(r["status"], "")}">{esc(r["status"])}</span>'
@@ -337,6 +337,7 @@ def health_section(path: Path, link: str | None = None, embedded: bool = False) 
 
 
 TAB_CSS = """
+#plantable tr.hl td { background:rgba(250,204,21,.28); transition:background .4s; }
 .tabbar { position:sticky; top:0; z-index:50; display:flex; gap:6px; padding:8px 0 10px; background:var(--bg, #f7f9fc);
   border-bottom:1px solid var(--border, #dce1e7); margin-bottom:14px; }
 .tabbar button { font:inherit; font-size:13px; font-weight:600; padding:7px 16px; border-radius:8px; cursor:pointer;
@@ -373,6 +374,24 @@ function sizeHealth() {
         var a = ev.target.closest && ev.target.closest('a[href]');
         if (!a) return;
         var href = a.getAttribute('href') || '';
+        if (href.indexOf('#report:') === 0) {          // a link into the Test report tab (case row, plan table)
+          ev.preventDefault();
+          var id = decodeURIComponent(href.slice(8));
+          showTab('report');
+          var row = document.getElementById(id);
+          if (row && row.parentNode && row.closest('#plantable')) {
+            ['pf', 'ps', 'pl'].forEach(function (k) {   // clear the plan-table filters so the row is visible
+              var e = document.getElementById(k); if (e && e.value) { e.value = ''; e.dispatchEvent(new Event('input')); }
+            });
+            row.classList.add('hl'); setTimeout(function () { row.classList.remove('hl'); }, 2500);
+          }
+          if (row) {
+            var bar2 = document.querySelector('.tabbar');
+            window.scrollTo({ top: row.getBoundingClientRect().top + window.scrollY - (bar2 ? bar2.offsetHeight : 0) - 8,
+                              behavior: 'smooth' });
+          }
+          return;
+        }
         if (href.charAt(0) === '#') {
           ev.preventDefault();
           var el = href.length > 1 ? d.getElementById(decodeURIComponent(href.slice(1))) : d.body;
@@ -406,7 +425,7 @@ def embed_health_tab(page: str, health_page: str, verdict: str) -> str:
     return page.replace("</body></html>", "</div>\n" + frame + "\n" + TAB_JS + "\n</body></html>", 1)
 
 
-def build_health_page(run_dir: Path, tz: dict) -> tuple[str, str]:
+def build_health_page(run_dir: Path, tz: dict, notes_extra=None, report_ids=None) -> tuple[str, str]:
     """(health report HTML, verdict) for a tools/rack_health.py run folder."""
     from argparse import Namespace
     d = json.loads((run_dir / "health.json").read_text())
@@ -414,7 +433,8 @@ def build_health_page(run_dir: Path, tz: dict) -> tuple[str, str]:
     hargs = Namespace(title=f"Rack health check - {v}", subtitle=f"{len(d.get('blockers') or [])} blocker(s), "
                       f"{len(d.get('warnings') or [])} warning(s); judged {d.get('judged', '')}; run {run_dir.name}",
                       notes=run_dir / "health-notes.txt" if (run_dir / "health-notes.txt").exists() else None,
-                      workbook=None, all_cases=False, health=None, health_run=None, health_link=None, tz=[])
+                      workbook=None, all_cases=False, health=None, health_run=None, health_link=None, tz=[],
+                      notes_extra=notes_extra or [], report_ids=report_ids)
     global LOG_KEEP
     keep, LOG_KEEP = LOG_KEEP, HEALTH_LOG_KEEP      # the embedded page is escaped into the parent: clip harder
     try:
@@ -601,6 +621,22 @@ def coverage_section(plan_rows: list[dict] | None) -> str:
     return "\n".join(h)
 
 
+PLAN_ID_RE = re.compile(r"\b(?:TC|HC|SMOKE)-[A-Za-z0-9]+(?:-[A-Za-z0-9]+)*")
+
+
+def link_ids(text: str, ids) -> str:
+    """Escaped text; with ``ids`` every plan ID that has a row in the parent report becomes a link to it
+    (#report:case-<ID>, handled by the tab script of the report page)."""
+    if not ids:
+        return esc(text)
+    out, last = [], 0
+    for m in PLAN_ID_RE.finditer(text):
+        if m.group(0) in ids:
+            out += [esc(text[last:m.start()]), f'<a href="#report:case-{esc(m.group(0))}">{esc(m.group(0))}</a>']
+            last = m.end()
+    return "".join(out) + esc(text[last:])
+
+
 def build(items: list[dict], args) -> str:
     verdicts = plan_verdicts(items)
     # plan cases (AMD plan + testplan/added.yaml) vs extra evidence tests (e.g. SMOKE-RCCL-*), counted separately
@@ -703,8 +739,10 @@ def build(items: list[dict], args) -> str:
     bars = [suite_counts(v) for v in suites.values()]
 
     notes = []
-    if args.notes:
-        for line in Path(args.notes).read_text().splitlines():
+    note_files = [Path(args.notes)] if args.notes else []
+    note_files += [Path(x) for x in (getattr(args, "notes_extra", None) or [])]
+    for nf in note_files:
+        for line in nf.read_text().splitlines():
             line = line.rstrip()
             if not line:
                 continue
@@ -774,6 +812,7 @@ pre.logpre .lvl-note {{ color: #9aa7b4; font-style: italic; }}
 .viz .chart-wrap {{ position:relative; height:260px; }}
 .viz .findings {{ background:var(--card); border:1px solid var(--border); border-radius:12px; padding:18px 22px; }}
 .viz .findings li {{ margin:6px 0; }}
+.viz .findings a {{ color:inherit; text-decoration:underline dotted; }}
 .viz .findings .bad::marker {{ color:var(--fail); }} .viz .findings .good::marker {{ color:var(--pass); }}
 .viz .findings .bad b {{ color:#fca5a5; }} .viz .findings .good b {{ color:#86efac; }}
 @media (max-width:900px) {{ .viz .kpi-grid {{ grid-template-columns:repeat(3,1fr); }} .viz .charts-row {{ grid-template-columns:1fr; }} }}
@@ -810,11 +849,15 @@ pre.logpre .lvl-note {{ color: #9aa7b4; font-style: italic; }}
     <div class="chart-card"><h3>Test cases by result</h3><div class="chart-wrap"><canvas id="vizDoughnut"></canvas></div></div>
     <div class="chart-card"><h3>Test items per suite</h3><div class="chart-wrap"><canvas id="vizSuiteBar"></canvas></div></div>
   </div>""")
-    if notes:
+    report_ids = getattr(args, "report_ids", None)      # embedded health page: plan IDs that have a row in the report
+    if notes or report_ids:
         h.append('  <div class="findings"><h3>Key findings</h3><ul>')
+        if report_ids:
+            h.append('    <li class="neutral"><b>Every case in the test plan:</b> status and latest execution note in the '
+                     '<a href="#report:plan">Test report tab</a>; case IDs below open their row there.</li>')
         for kind, text in notes:
             head, _, tail = text.partition(":")
-            body = f"<b>{esc(head)}:</b>{esc(tail)}" if tail else esc(text)
+            body = f"<b>{link_ids(head, report_ids)}:</b>{link_ids(tail, report_ids)}" if tail else link_ids(text, report_ids)
             h.append(f'    <li class="{kind}">{body}</li>')
         h.append("  </ul></div>")
     h.append("</div>")
@@ -947,6 +990,10 @@ def main():
     ap.add_argument("--health", type=Path, help="health.json of a tools/rack_health.py run: adds a 'Rack health check' "
                                                  "section (verdict, blockers, warnings)")
     ap.add_argument("--health-link", help="URL of the full health report, linked from that section")
+    ap.add_argument("--health-notes", type=Path, action="append", default=[], metavar="FILE",
+                    help="with --health-run: extra key-finding lines (same '!' / '+' format as --notes) for the health "
+                         "tab, e.g. related results outside the health check (datapath, pre-flight pings); case IDs in "
+                         "the health tab's key findings link to their row in the Test report tab")
     ap.add_argument("--health-run", type=Path, help="a tools/rack_health.py run folder: adds the health summary section "
                                                      "AND the full health report as a 'Rack health check' tab of this page")
     ap.add_argument("--workbook", type=Path, help="show the reviewed status (Testcases column F + notes) of each plan case "
@@ -956,7 +1003,10 @@ def main():
     page = build(items, args)
     if args.health_run:
         tz = {k: float(v) for k, v in (x.split("=", 1) for x in args.tz)}
-        hpage, verdict = build_health_page(args.health_run, tz)
+        ids = None
+        if args.workbook and args.all_cases:
+            ids = set(re.findall(r'<tr id="case-([^"]+)"', page))
+        hpage, verdict = build_health_page(args.health_run, tz, args.health_notes, ids)
         page = embed_health_tab(page, hpage, verdict)
     args.output.write_text(page)
     v = Counter(plan_verdicts(items).values())

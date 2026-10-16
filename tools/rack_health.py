@@ -52,12 +52,26 @@ def failed_cases(run_dir: Path) -> list[str]:
                   if gate_of(r["tc_id"]) and r["verdict"] in BAD)
 
 
+def source_runs(run: Path) -> list[Path]:
+    """The plain health runs behind ``run``: a merged folder stands for the runs it was merged from, and a plain run
+    that was already merged (``<run>-merged`` exists) stands for that merged result - so a re-run or merge never
+    drops what an earlier merge brought in (e.g. the passes of the full run before a re-run of its failed checks)."""
+    merged = run if (run / "merged-from.txt").exists() else run.parent / f"{run.name}-merged"
+    if not (merged / "merged-from.txt").exists():
+        return [run]
+    if merged != run:
+        print(f"note: {run.name} was merged into {merged.name} - using its sources", flush=True)
+    names = [n.strip() for n in (merged / "merged-from.txt").read_text().splitlines() if n.strip()]
+    return [run.parent / n for n in names]               # merged-from.txt only ever lists plain runs
+
+
 def merge_runs(runs: list[Path], results_dir: Path) -> Path:
     """One results folder from several health runs (e.g. a full run + a re-run of its failed checks): every case
     comes from the LATEST run that ran it (its result rows and summary row); logs are kept per source run."""
     import csv
     import shutil
-    runs = sorted(runs, key=lambda r: r.name)            # run folders are named <rack>-YYYYmmdd-HHMMSS
+    runs = sorted({s.resolve(): s for r in runs for s in source_runs(r)}.values(), key=lambda r: r.name)
+    # (plain run folders are named <rack>-YYYYmmdd-HHMMSS, so name order is time order)
     out = results_dir / f"{runs[-1].name}-merged"
     if out.exists():
         shutil.rmtree(out)
@@ -158,6 +172,10 @@ def main(argv=None) -> int:
         inv = a.inventory or os.environ.get("HELIOS_INVENTORY")
         if not inv:
             ap.error("--inventory (or HELIOS_INVENTORY) is required with --rerun-failed")
+        latest = a.rerun_failed.parent / f"{a.rerun_failed.name}-merged"
+        if not (a.rerun_failed / "merged-from.txt").exists() and (latest / "merged-from.txt").exists():
+            print(f"note: using {latest.name} (the merged result of {a.rerun_failed.name})", flush=True)
+            a.rerun_failed = latest
         tcs = failed_cases(a.rerun_failed)
         if not tcs:
             print(f"nothing to re-run: every health check passed in {a.rerun_failed}")

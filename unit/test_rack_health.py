@@ -212,3 +212,37 @@ def test_hc000_records_slot_to_tray_map(tmp_path):
     row = next(r for r in _csv.DictReader(open(next(tmp_path.glob("*/tc_results.csv")))) if r["tc_id"] == "HC-000")
     ts = json.loads(row["properties"])["snapshot"]["tray_slots"]
     assert ts == {"c1": {"slot": 0, "afm": "pod-1-0-ComputeTray"}, "c2": {"slot": 1, "afm": "pod-1-1-ComputeTray"}}, ts
+
+
+def _fake_run(d: Path, cases: dict[str, str]):
+    import csv as _csv
+    (d / "logs").mkdir(parents=True)
+    with open(d / "tc_summary.csv", "w", newline="") as f:
+        w = _csv.writer(f)
+        w.writerow(["tc_id", "verdict", "passed", "failed", "skipped", "error", "blocked"])
+        for tc, v in cases.items():
+            w.writerow([tc, v, int(v == "PASS"), int(v != "PASS"), 0, 0, 0])
+    with open(d / "tc_results.csv", "w", newline="") as f:
+        w = _csv.writer(f)
+        w.writerow(["tc_id", "nodeid", "suite", "test", "description", "outcome", "duration_s", "properties", "message",
+                    "started", "log"])
+        for tc, v in cases.items():
+            w.writerow([tc, f"x::{tc}", "s", tc, "", "passed" if v == "PASS" else "failed", 1, "", "", "", ""])
+
+
+def test_merge_keeps_what_an_earlier_merge_brought_in(tmp_path):
+    """Full run A + re-run B were merged into B-merged. Merging B (or B-merged) with a newer re-run C must still carry
+    A's passes - given the plain re-run folder, the merge follows B-merged's sources."""
+    import csv as _csv
+    sys.path.insert(0, str(ROOT / "tools"))
+    from rack_health import merge_runs
+    a, b, c = (tmp_path / f"rk-2026101{i}-000000" for i in (4, 5, 6))
+    _fake_run(a, {"HC-001": "FAIL", "HC-003": "FAIL", "HC-004": "PASS"})
+    _fake_run(b, {"HC-001": "FAIL", "HC-003": "PASS"})
+    merge_runs([a, b], tmp_path)
+    _fake_run(c, {"HC-001": "PASS"})
+    for given in (b, tmp_path / f"{b.name}-merged"):
+        out = merge_runs([given, c], tmp_path)
+        got = {r["tc_id"]: r["verdict"] for r in _csv.DictReader(open(out / "tc_summary.csv"))}
+        assert got == {"HC-001": "PASS", "HC-003": "PASS", "HC-004": "PASS"}, (given.name, got)
+        assert (out / "merged-from.txt").read_text().split() == [a.name, b.name, c.name]

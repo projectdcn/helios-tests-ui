@@ -14,6 +14,7 @@ import pytest
 
 from helios import datapath
 from helios.afm_ops import CN, TERMINAL
+from helios.afmctl import mac_stat_ports
 from helios.compute import render
 from helios.rack import fan_out
 
@@ -97,13 +98,9 @@ def test_rccl_allreduce_in_domain(computes, inventory, checks, record_property):
 def _mac_counters(tray) -> dict:
     """{bdf: total of every numeric MAC counter over its ports}."""
     r = tray.run("afmctl show port statistics mac --json 2>/dev/null", sudo=True, timeout=120).check()
-    doc = json.loads(r.stdout)
     out = {}
-    for d in doc.get("devices") or doc.get("device") or []:
-        tot = 0
-        for p in d.get("port") or []:
-            tot += sum(int(v) for v in (p.get("statistics") or {}).values() if str(v).isdigit())
-        out[d.get("bdf")] = tot
+    for bdf, ports in mac_stat_ports(json.loads(r.stdout)):
+        out[bdf] = sum(int(v) for p in ports for v in (p.get("statistics") or {}).values() if str(v).isdigit())
     return out
 
 
