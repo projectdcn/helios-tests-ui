@@ -62,16 +62,29 @@ footer { font-size:13px; color:var(--muted); border-top:1px solid var(--line); p
 <body>
 <div class="wrap">
 <header>
-  <div class="eyebrow">Helios ScaleUp test plan · BKC-26.12</div>
+  <div class="eyebrow">Helios ScaleUp test plan · BKC-26.12 · updated 16 Oct 2026</div>
   <h1>Test inputs we need from AMD</h1>
   <p class="lede">We automated what can be observed through the AFM API, afmctl and SONiC. These are the remaining plan cases and what would let us run them. Each group says exactly what we need; the case lists are folded underneath.</p>
   <div class="stats">
-    <div class="stat"><b>542</b><span>plan cases</span></div>
-    <div class="stat"><b>400</b><span>automated</span></div>
+    <div class="stat"><b>577</b><span>plan cases (incl. 35 added)</span></div>
+    <div class="stat"><b>435</b><span>automated</span></div>
     <div class="stat"><b>52</b><span>of those wait for lab equipment</span></div>
     <div class="stat"><b>142</b><span>need AMD input or setup</span></div>
   </div>
 </header>
+
+<section id="status">
+  <span class="tag">Status · 16 Oct</span>
+  <h2>What changed since 13 Oct</h2>
+  <p>Your 16 Oct answers covered our findings message, not this list, so groups A–F below are all still open. From those answers:</p>
+  <ul class="asks">
+    <li><strong>RBAC:</strong> you see it working as expected; our role / user / role-binding configuration is in our 16 Oct reply (behaviour box below).</li>
+    <li><strong>UAL stats in sideband mode:</strong> supported and enabled by default – this may answer A.4 (IFCP counters, TC-SBM-004); which command or API shows them?</li>
+    <li><strong>Metrics exporter:</strong> on your roadmap; the 10 telemetry cases that need it (TC-CTL-139…148) are automated and stay Pending until it is deployed.</li>
+    <li><strong>TransferBench / RCCL:</strong> TransferBench works with <code>/opt/TransferBench/TransferBench</code>; the RCCL performance cases need one more input (behaviour box below).</li>
+  </ul>
+  <p class="muted">Since 13 Oct we automated 35 more cases (the 12 rack health checks and 23 switch-tray checks we added to the plan); none of them needs AMD input.</p>
+</section>
 
 <section id="sessions">
   <span class="tag">A · 34 cases</span>
@@ -81,7 +94,7 @@ footer { font-size:13px; color:var(--muted); border-top:1px solid var(--line); p
     <li>A command or API that lists every control session per GPU: GPU / accelerator id, terminating switch and ASIC, SelectedLink, standby links, control port, state, SPDM encryption on/off, IFCP version, sequence number.</li>
     <li>The per-switch view of the same sessions (for the per-switch count and load-balance cases).</li>
     <li>How to tell which of a GPU's links is currently the active control link, so we can flap that specific link (TRG-002/003).</li>
-    <li>Whether IFCP rx/tx packet counters exist somewhere other than <code>afmctl show port statistics ifcp</code>.</li>
+    <li>Whether IFCP rx/tx packet counters exist somewhere other than <code>afmctl show port statistics ifcp</code>. <em>16 Oct: you said UAL stats are supported and on by default in sideband mode – where do we read them?</em></li>
     <li>The Sideband / Node Manager view: registration, compatibility result and GPU reachability per compute.</li>
   </ol>
   <details><summary>The cases (34)</summary><div class='tw'><table><thead><tr><th>Plan ID</th><th>Title</th></tr></thead><tbody><tr><td class='id'>TC-BU-004</td><td>Each session has 6 links with one active (SelectedLink)</td></tr><tr><td class='id'>TC-BU-005</td><td>Each switch has expected session count (load balanced)</td></tr><tr><td class='id'>TC-BU-008</td><td>First discovered link used as SelectedLink</td></tr><tr><td class='id'>TC-BU-010</td><td>Each GPU session has a control port selected</td></tr><tr><td class='id'>TC-BU-012</td><td>All GPU sessions per compute node served by one node agent</td></tr><tr><td class='id'>TC-CTL-137</td><td>SPDM session is established between switch and GPU and communication is encrypted</td></tr><tr><td class='id'>TC-SBM-001</td><td>Sideband Topology and Session-Count Formulas</td></tr><tr><td class='id'>TC-SBM-003</td><td>SPDM Session Link Selection and Query API</td></tr><tr><td class='id'>TC-SBM-004</td><td>IFCP Packet/Session Stats API (Host and Switch Side)</td></tr><tr><td class='id'>TC-SBM-010</td><td>ASIC-Level SPDM Session Failover (Single ASIC Down)</td></tr><tr><td class='id'>TC-SBM-012</td><td>Switch-to-Controller Link Isolation -- SPDM/IFCP Sessions Remain Local</td></tr><tr><td class='id'>TC-SBM-015</td><td>vPod Compute Add/Remove -- Untouched Computes&#x27; CP Sessions Stay Stable</td></tr><tr><td class='id'>TC-SBM-017</td><td>VLAN/FDB Churn Does Not Disrupt IFCP Control-Plane Sessions</td></tr><tr><td class='id'>TC-SBM-019</td><td>Sb-node-agent Reconciliation of Config/Link Delta After Restart</td></tr><tr><td class='id'>TC-SBM-041</td><td>Compute Readmit via afm-agent Restart Landing Admitted but With IFCP Sessions Down</td></tr><tr><td class='id'>TC-SBM-052</td><td>All 72 GPUs form a total of 72 SPDM control sessions</td></tr><tr><td class='id'>TC-SBM-053</td><td>Every switch has 12 control sessions terminated on it</td></tr><tr><td class='id'>TC-SBM-056</td><td>The first discovered link is used to establish the session</td></tr><tr><td class='id'>TC-SBM-059</td><td>All GPUs of one compute node must form session with one node agent</td></tr><tr><td class='id'>TC-SBM-080</td><td>The sequence number is retained when the session fails over to a new switch</td></tr><tr><td class='id'>TC-SBM-088</td><td>GPU uses same link to send control packet from which it got the control message</td></tr><tr><td class='id'>TC-SBM-093</td><td>Event packets can use a different link than the control session link</td></tr><tr><td class='id'>TC-SBM-127</td><td>Active standby switch election</td></tr><tr><td class='id'>TC-SBM-130</td><td>Bring down the AISC over which the SPDM session is established</td></tr><tr><td class='id'>TC-SBM-147</td><td>Discovery flow initiated and responded</td></tr><tr><td class='id'>TC-SBM-149</td><td>GPU mapping creation in Sideband Agent</td></tr><tr><td class='id'>TC-SBM-152</td><td>Node Agent triggers control channel setup via Switch IFCP</td></tr><tr><td class='id'>TC-SBM-155</td><td>Compatibility set from Switch IFCP lib</td></tr><tr><td class='id'>TC-SEQ-004</td><td>GPU reachability reported to Sideband Manager</td></tr><tr><td class='id'>TC-SEQ-008</td><td>Compatibility check completed</td></tr><tr><td class='id'>TC-TRG-002</td><td>Flap active link — CP disrupted then recovers</td></tr><tr><td class='id'>TC-TRG-003</td><td>Bring down all 6 CP links — sessions drop then recover</td></tr><tr><td class='id'>TC-CTRL-009</td><td>Major version consistent across all sessions</td></tr><tr><td class='id'>TC-CTRL-011</td><td>Minor version mismatch tolerated</td></tr></tbody></table></div></details>
@@ -146,11 +159,15 @@ footer { font-size:13px; color:var(--muted); border-top:1px solid var(--line); p
 </section>
 
 <section id="confirm">
-  <span class="tag">Observed on MR3</span>
+  <span class="tag">Observed on MR3 and g02-g17</span>
   <h2>Behaviour to confirm</h2>
-  <p>From the first automated AFM run on the MR3 mini rack (13 Oct, AFM 0.1.0-AICC-797, 46 pass, 13 fail). Please tell us whether each is intended.</p>
+  <p>From the first automated AFM run on the MR3 mini rack (13 Oct, AFM 0.1.0-AICC-797, 46 pass, 13 fail) and the g02-g17 runs (14–16 Oct). Please tell us whether each is intended.</p>
   <div class="note">
     <p><strong>Read access is open to every authenticated user.</strong> A user whose role grants only the cluster group can read auth users and monitoring alerts (HTTP 200). Writes outside the granted groups are refused (403). Is read RBAC enforced by design?</p>
+    <p class="muted">16 Oct: you see RBAC working as expected; our exact configuration is in our 16 Oct reply. Same on g02-g17 (14 Oct), where also a user with only the <code>auth</code> group role gets 403 creating a role (TC-CTL-046).</p>
+  </div>
+  <div class="note">
+    <p><strong>RCCL performance cases (TC-AFM-004, TC-AFM-005A, TC-NA-006):</strong> automated with rccl-tests (<code>all_reduce_perf</code> etc.), which is not installed on any g02-g17 tray; the trays have RcclSmokeTest (passes, in-tray and across 16 trays) and <code>/opt/helicop/utils/rccl-sweep</code>. Which tool and command do you use for the in-domain and cross-domain RCCL runs? We would run the same.</p>
   </div>
   <div class="note">
     <p><strong>An idle AggWatch stream closes after about 32 seconds</strong> with <code>{"type":"Error", ... "stream error: EOF"}</code>. Is there an idle timeout, and should clients send keepalive pings? (Plan case AGGW-020 expects an idle connection to stay open.)</p>
@@ -181,8 +198,8 @@ footer { font-size:13px; color:var(--muted); border-top:1px solid var(--line); p
 </section>
 
 <footer>
-  Prepared from the helios-tests automation of the HPE/AMD Helios Juniper ScaleUp test plan (542 cases), 13 Oct 2026.
-  Case titles are quoted from the plan. Counts reflect the automation as of 13 Oct 2026 (400 of 542 automated).
+  Prepared from the helios-tests automation of the HPE/AMD Helios Juniper ScaleUp test plan, 13 Oct 2026; updated 16 Oct 2026.
+  Case titles are quoted from the plan. Counts reflect the automation as of 16 Oct 2026 (435 of 577 automated: 542 plan cases plus 35 we added).
 </footer>
 </div>
 </body>
