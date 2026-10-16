@@ -130,3 +130,13 @@ import pytest  # noqa: E402
 def test_afm_health_fault_detected(tmp_path, fault, tc):
     v = _afm_health(tmp_path, fault)
     assert {t for t, x in v.items() if x == "FAIL"} == {tc}, v
+
+
+def test_rack_health_subset_run_judged_on_its_cases(tmp_path):
+    """--tc limits the run; the verdict is judged on those cases only (not INCOMPLETE for the rest)."""
+    r = subprocess.run([sys.executable, "tools/rack_health.py", "--inventory", "selftest/inventory.yaml",
+                        "--results-dir", str(tmp_path), "--no-html", "--", "--tc", "HC-001,HC-003,TC-BU-009"],
+                       cwd=ROOT, capture_output=True, text=True)
+    assert r.returncode == 0 and "RACK HEALTH: GO" in r.stdout, r.stdout[-1500:]
+    doc = json.loads((next(tmp_path.glob("selftest-*")) / "health.json").read_text())
+    assert sorted(doc["passed"]) == ["HC-001", "HC-003", "TC-BU-009"] and not doc["not_checked"]

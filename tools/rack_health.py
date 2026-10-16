@@ -84,7 +84,9 @@ def main(argv=None) -> int:
     verdicts, messages, snapshot = read_run(run_dir)
     # re-judging an existing run: only the cases that run collected are expected (a case added to the check later
     # is not "not run"); a live run expects every blocker case
-    expected = {t for t in verdicts if gate_of(t)} if a.run else None
+    # a run limited with --tc (e.g. re-running the failed cases) is judged on the cases it ran, too
+    subset = any(x == "--tc" or x.startswith("--tc=") for x in a.pytest_args)
+    expected = {t for t in verdicts if gate_of(t)} if (a.run or subset) else None
     j = judge({t: v for t, v in verdicts.items() if gate_of(t)}, messages, load_known(a.known), expected)
     diffs: list[str] = []
     if a.baseline:
