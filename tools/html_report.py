@@ -1,8 +1,8 @@
 """Build a self-contained HTML test report (summary dashboard + per-test logs) from helios result runs.
 
-    python tools/html_report.py results/mr3-20261013-002808 [more run dirs...] \
+    python tools/html_report.py results/runs/mr3/mr3-20261013-002808 [more run dirs...] \
         --title "Helios MR3 Test Report" --subtitle "1 switch tray / 2 compute trays" \
-        --notes results/findings.txt -o results/MR3-report.html
+        --notes results/notes/findings.txt -o results/reports/MR3-report.html
 
 Each run dir is what one pytest session writes: tc_results.csv (+ logs/*.log per test item).
 When several runs contain the same test item, an executed result (pass/fail/blocked) wins over a

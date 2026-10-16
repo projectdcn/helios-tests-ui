@@ -4,6 +4,7 @@ from __future__ import annotations
 import csv
 import json
 import logging
+import sys
 import os
 import time
 from collections import defaultdict
@@ -40,7 +41,8 @@ def pytest_addoption(parser):
     g.addoption("--computes", default=None, help="comma-separated subset of compute names")
     g.addoption("--allow-disruptive", action="store_true", help="run tests marked disruptive")
     g.addoption("--run-manual", action="store_true", help="run tests marked manual")
-    g.addoption("--results-dir", default="results", help="where tc_results.csv / tc_summary.csv go")
+    g.addoption("--results-dir", default=None,
+                help="folder that gets this run's <rack>-<timestamp>/ results folder (default results/runs/<rack>)")
 
 
 def pytest_configure(config):
@@ -268,7 +270,9 @@ def pytest_sessionfinish(session):
     reports = getattr(cfg, "_helios_reports", None)
     if not reports or cfg._helios_inventory is None:
         return
-    out = Path(cfg.getoption("--results-dir")) / f"{cfg._helios_inventory.rack}-{time.strftime('%Y%m%d-%H%M%S')}"
+    rack = cfg._helios_inventory.rack
+    base = Path(cfg.getoption("--results-dir") or Path("results") / "runs" / rack)
+    out = base / f"{rack}-{time.strftime('%Y%m%d-%H%M%S')}"
     out.mkdir(parents=True, exist_ok=True)
     # one command-trace file per test item, referenced from tc_results.csv (used by tools/html_report.py)
     logs = cfg.__dict__.get("_helios_item_logs", {})
@@ -298,6 +302,12 @@ def pytest_sessionfinish(session):
                        "SKIP" if not n["passed"] else "PARTIAL")
             w.writerow([tc, verdict, n["passed"], n["failed"], n["skipped"], n["error"], n["blocked"]])
     session.config._helios_results_dir = out
+    try:        # results/index.csv (tools/results_index.py) - only when the run sits in <results>/runs/<rack>/
+        sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "tools"))
+        from results_index import update_run
+        update_run(out)
+    except Exception as e:  # noqa: BLE001 - the index must never break a run
+        logging.getLogger("helios").warning("results index not updated: %s", e)
 
 
 def pytest_terminal_summary(terminalreporter, config):

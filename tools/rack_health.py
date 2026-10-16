@@ -2,8 +2,8 @@
 """Full-rack health check: run every ``healthcheck`` case, then say GO / NO-GO for disruptive tests.
 
     python tools/rack_health.py --inventory ~/helios/fullrack-jump-afm.yaml
-    python tools/rack_health.py --inventory ... --known testplan/health-known.yaml --baseline results/<run>/health.json
-    python tools/rack_health.py --run results/<run>          # judge an existing run again (no rack access)
+    python tools/rack_health.py --inventory ... --known testplan/health-known.yaml --baseline results/runs/<rack>/<run>/health.json
+    python tools/rack_health.py --run results/runs/<rack>/<run>          # judge an existing run again (no rack access)
 
 Read-only (no case in the check is disruptive). Export HELIOS_AFM_PASSWORD first for the AFM part; without it those
 blocker cases SKIP and the verdict is INCOMPLETE.
@@ -21,6 +21,8 @@ import subprocess
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
+
+import yaml
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
@@ -158,12 +160,22 @@ def main(argv=None) -> int:
                     help="merge these health runs (latest result per case wins) into <latest>-merged and judge that")
     ap.add_argument("--known", type=Path, help="YAML {TC-ID: reason} of accepted failures (do not block)")
     ap.add_argument("--baseline", type=Path, help="health.json of an earlier run: report what changed")
-    ap.add_argument("--results-dir", type=Path, default=ROOT / "results")
+    ap.add_argument("--results-dir", type=Path, default=None,
+                    help="where new runs go (default results/runs/<rack>; a merge goes next to the runs it merges)")
     ap.add_argument("--no-html", action="store_true")
     ap.add_argument("pytest_args", nargs="*", help="extra pytest arguments after --, e.g. -- --computes ct01,ct03")
     a = ap.parse_args(argv)
 
     import os
+    if a.results_dir is None:       # results/runs/<rack> - a re-run / merge goes next to the runs it builds on
+        if a.rerun_failed:
+            a.results_dir = a.rerun_failed.parent
+        elif a.merge:
+            a.results_dir = a.merge[-1].parent
+        else:
+            inv = a.inventory or os.environ.get("HELIOS_INVENTORY")
+            rack = (yaml.safe_load(Path(inv).expanduser().read_text()) or {}).get("rack") if inv else None
+            a.results_dir = ROOT / "results" / "runs" / rack if rack else ROOT / "results"
     if a.rerun_failed:
         inv = a.inventory or os.environ.get("HELIOS_INVENTORY")
         if not inv:
