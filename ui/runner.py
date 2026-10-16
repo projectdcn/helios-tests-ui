@@ -27,6 +27,8 @@ MARKER_RX = re.compile(r"^[A-Za-z0-9_ ()]+$")
 ENV_RX = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 KINDS = ("pytest", "health", "rerun")
 
+SECRET_ENV = re.compile(r"PASSWORD|PASSWD|SECRET|TOKEN", re.I)   # env vars a run must not inherit
+
 
 class JobError(ValueError):
     pass
@@ -230,7 +232,10 @@ class LocalRunner(Runner):
             raise JobError(f"no results folder {job.base_run} in {p.results_dir}")
         rack = inventory_rack_name(p.inventory)
         before = _result_dirs(p.results_dir, rack)
-        env = {**os.environ, "PYTHONUNBUFFERED": "1"}
+        # never hand an inherited password / secret / token to the run: only the one typed in the form
+        pw_env = password_env(p.inventory)
+        env = {k: v for k, v in os.environ.items() if k != pw_env and not SECRET_ENV.search(k)}
+        env["PYTHONUNBUFFERED"] = "1"
         if password:
             env[password_env(p.inventory)] = password
         argv = self.command(job)

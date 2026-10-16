@@ -4,6 +4,8 @@ from __future__ import annotations
 import collections
 import csv
 import json
+import os
+import re
 import random
 import string
 import subprocess
@@ -16,6 +18,21 @@ from .config import ROOT, RackProfile, inventory_rack_name
 from .runner import Job, JobError, NAME_RX, clean_filters, make_runner
 
 REDACTED = "<REDACTED>"
+SECRET_NAME = re.compile(r"PASSWORD|PASSWD|SECRET|TOKEN", re.I)
+# secret-looking text in a log line: JSON keys ("password": "x"), Python reprs ('password': 'x'), NAME=value assignments
+_SECRET_TEXT = [
+    re.compile(r"""(["'](?:password|passwd|private-key|recovery-key|token|secret)["']\s*:\s*)(["'])(?:(?!\2).)*\2""", re.I),
+    re.compile(r"\b([A-Z0-9_]*(?:PASSWORD|PASSWD|SECRET|TOKEN)[A-Z0-9_]*=)(\S+)", re.I),
+]
+
+
+def redact(line: str, values=()) -> str:
+    """The run's own password, any secret-valued env var of the UI process, and secret-looking text."""
+    for v in values:
+        if v and len(v) >= 4 and v in line:
+            line = line.replace(v, REDACTED)
+    line = _SECRET_TEXT[0].sub(lambda m: f"{m.group(1)}{m.group(2)}{REDACTED}{m.group(2)}", line)
+    return _SECRET_TEXT[1].sub(lambda m: m.group(1) + REDACTED if m.group(2) != REDACTED else m.group(0), line)
 FINAL = ("finished", "failed", "stopped", "error", "cancelled")
 
 
@@ -109,9 +126,7 @@ class RunManager:
                     self.active[rack] = None
 
     def _log(self, run: Run, fh, line: str) -> None:
-        pw = run._password
-        if pw and pw in line:
-            line = line.replace(pw, REDACTED)
+        line = redact(line, (run._password, *(v for k, v in os.environ.items() if SECRET_NAME.search(k))))
         fh.write(line + "\n")
         fh.flush()
         with run.cond:
