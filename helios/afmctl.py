@@ -202,3 +202,11 @@ def ping_evidence(pair: str, r, limit: int = 8000) -> dict:
     out = r.stdout + (f"\n[stderr]\n{r.stderr}" if r.stderr.strip() else "")
     return {"pair": pair, "host": r.host, "at": datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC"),
             "cmd": r.cmd, "rc": r.rc, "duration_s": round(r.duration, 1), "output": out[-limit:]}
+
+
+def mac_stat_ports(doc: dict) -> list[tuple[str, list[dict]]]:
+    """[(bdf, ports)] from ``afmctl show port statistics mac --json``. Real afmctl (g02-g17, 16 Oct) lists each
+    device's ports under "ports" (each {station_id, port_id, statistics: {tx_total_packets, rx_total_packets, ...}});
+    "port" / "device" are accepted too."""
+    return [(d.get("bdf"), d.get("ports") or d.get("port") or [])
+            for d in doc.get("devices") or doc.get("device") or []]

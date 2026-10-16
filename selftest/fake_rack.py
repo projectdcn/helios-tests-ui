@@ -956,10 +956,12 @@ class FakeComputeTransport:
                 sim.stat_reads = getattr(sim, "stat_reads", 0) + (0 if "stats_frozen" in st.f else 1)
                 busy = lambda pid: "mch_stats_on_unused" in st.f and pid not in sim.used  # noqa: E731
                 n = sim.stat_reads * 1000
-                out = json.dumps({"devices": [{"bdf": self.bdf(g), "port": [
+                # the real afmctl layout (g02-g17, 16 Oct): "ports", tx/rx_total_packets (+ many more counters)
+                out = json.dumps({"devices": [{"bdf": self.bdf(g), "ports": [
                     {"station_id": str(pid // 2), "port_id": str(pid),
-                     "statistics": {"rx_frames": str(n if self._port_up(g, pid) or busy(pid) else 0),
-                                    "tx_frames": str(n if self._port_up(g, pid) or busy(pid) else 0)}}
+                     "statistics": {"tx_total_packets": str(n if self._port_up(g, pid) or busy(pid) else 0),
+                                    "rx_total_packets": str(n if self._port_up(g, pid) or busy(pid) else 0),
+                                    "rx_bad_fcs": "0"}}
                     for pid in sim.gpu_pids()]} for g in self._gpus(m.group(1))]})
             elif m := re.fullmatch(r"cat /sys/bus/pci/devices/(\S+)/ualink/station_lane_en_bitmap", c):
                 g = next((g for g in range(4) if self.bdf(g) == m.group(1)), None)
