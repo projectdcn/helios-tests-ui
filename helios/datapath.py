@@ -130,7 +130,10 @@ def _l2_ping_afmctl(computes, inventory, checks: Checks, evidence: list | None =
             elif res.total is None:
                 fails.append(f"{tag}: no 'IFoE Request' summary{' (host busy)' if res.busy else ''}: {r.tail(200)!r}")
             elif not res.ok:
-                fails.append(f"{tag}: {res.request_fail}/{res.total} port(s) failed {res.failed_ports or ''}".rstrip())
+                # afmctl's summary counts lost IFoE requests; its per-port rows can mark more ports than that
+                # (one lost packet often shows on two neighbouring ports) - say both, plainly
+                ports = f"; per-port rows show failures on port(s) {', '.join(res.failed_ports)}" if res.failed_ports else ""
+                fails.append(f"{tag}: afmctl summary {res.request_fail}/{res.total} requests lost{ports}")
             if evidence is not None and len(fails) > n:
                 evidence.append(ping_evidence(tag, r))
         return fails
