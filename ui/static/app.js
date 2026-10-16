@@ -68,6 +68,7 @@ function rackChanged() {
     formRack = rack.name;
     restoreForm();
     loadPresets();
+    loadPlan();
   }
 }
 
@@ -126,8 +127,8 @@ function fillForm(s) {
   const f = s.filters || {};
   for (const k of FILTERS) form["s_" + k].value = f[k] || (k === "suite" ? "all" : "");
   form.password.value = "";
-  $("#resolved").textContent = "";
   kindChanged();
+  pickerRestore();
 }
 const lsKey = r => "helios-ui:runform:" + r;
 function rememberForm() {
@@ -138,7 +139,12 @@ function restoreForm() {
   let s = null;
   try { s = JSON.parse(localStorage.getItem(lsKey(rack.name)) || "null"); } catch (e) { s = null; }
   if (s && typeof s === "object" && !Array.isArray(s)) { delete s.password; fillForm(s); }
-  else { form.reset(); kindChanged(); }
+  else {
+    form.reset();
+    for (const k of PICK_COLS) form["s_" + k].value = "";     // hidden inputs keep their value across reset()
+    kindChanged();
+    pickerRestore();
+  }
   formMsg("");
 }
 // a preset or a past run's settings into the form (re-run of failed checks: the Results tab's re-run box)
@@ -195,16 +201,178 @@ $("#preset-delete").addEventListener("click", async () => {
     formMsg(`deleted preset "${name}"`, "ok");
   } catch (e) { formMsg(e.message, "err"); }
 });
-$("#resolve").addEventListener("click", async () => {
-  $("#resolved").textContent = "reading the workbook…";
+// ---------------------------------------------------------------- test-plan pick (filters -> case list -> tc ids)
+// The workbook is read by the server (GET .../plan: dropdown values + cases, cached per workbook mtime); the pick
+// itself (POST .../plan/select) is tools/select_cases.py's matching, so the UI lists exactly what the CLI would.
+// "Don't overwrite my ids": pickerTc is what the picker last wrote into the tc box. A filter change or a tick
+// replaces the box only while it still holds that (or is empty); once the user typed or edited it, a
+// "Replace with N picked cases" link is offered instead. Loading a preset / Run again / the remembered form sets the
+// filters without any event, ticks the listed cases that are in the saved ids and leaves the ids exactly as saved.
+const PICK_COLS = ["level", "scope", "disruptive", "health", "origin", "status"];
+const EMPTY = "(empty)";
+let plan = null, planById = new Map(), pickSeq = 0, pickTimer = null, pickerTc = null, caseRows = [], lastPick = null;
+const splitVals = v => (v || "").split(/,(?![^()]*\))/).map(x => x.trim()).filter(Boolean);
+const normTc = v => (v || "").split(/[\s,]+/).filter(Boolean).join(",");
+const valLabel = (col, v) => v === EMPTY ? (col === "status" ? "(not run)" : "(blank)") : v;
+function pickMsg(text, cls = "muted") { $("#resolved").textContent = text; $("#resolved").className = cls; }
+
+function renderPickers() {
+  for (const div of $$("#pick .ms")) {
+    const col = div.dataset.col, hidden = form["s_" + col];
+    const chosen = splitVals(hidden.value), chosenL = new Set(chosen.map(x => x.toLowerCase()));
+    const known = plan ? plan.columns[col] : [];
+    const knownL = new Set(known.map(x => x.toLowerCase()));
+    // values saved earlier that the workbook does not have (old preset, free text): kept and ticked, marked
+    const opts = [...known, ...chosen.filter(c => !knownL.has(c.toLowerCase()))];
+    const value = h("span", { class: "ms-value", id: `ms-${col}-v` });
+    const boxes = opts.map(o => h("label", {},
+      h("input", { type: "checkbox", value: o, checked: chosenL.has(o.toLowerCase()) }), " ", valLabel(col, o),
+      knownL.has(o.toLowerCase()) ? null : h("span", { class: "muted" }, " (not in the workbook)")));
+    const showValue = () => {
+      const sel = boxes.map(b => b.firstChild).filter(b => b.checked).map(b => valLabel(col, b.value));
+      value.textContent = sel.length ? sel.join(", ") : "any";
+      value.title = value.textContent;
+    };
+    const changed = () => {
+      hidden.value = boxes.map(b => b.firstChild).filter(b => b.checked).map(b => b.value).join(",");
+      showValue();
+      schedulePick();
+    };
+    boxes.forEach(b => b.firstChild.addEventListener("change", changed));
+    const clear = h("button", { type: "button", class: "ms-clear", onclick: () => {
+      boxes.forEach(b => { b.firstChild.checked = false; }); changed(); rememberForm(); } }, "Clear");
+    const dd = h("details", { class: "ms-dd" },
+      h("summary", { "aria-labelledby": `ms-${col}-l ms-${col}-v` }, value),
+      h("div", { class: "ms-panel", role: "group", "aria-labelledby": `ms-${col}-l` },
+        opts.length ? boxes : h("span", { class: "muted" }, plan ? "(no values)" : "(workbook not read)"),
+        opts.length ? clear : null));
+    dd.addEventListener("keydown", ev => {
+      if (ev.key === "Escape" && dd.open) { dd.open = false; $("summary", dd).focus(); ev.preventDefault(); }
+    });
+    showValue();
+    div.replaceChildren(div.querySelector(".ms-label"), dd);
+  }
+}
+document.addEventListener("click", ev => {            // one dropdown open at a time; a click outside closes it
+  for (const d of $$("#pick .ms-dd[open]")) if (!d.contains(ev.target)) d.open = false;
+});
+form.s_suite.addEventListener("change", () => schedulePick());
+
+function schedulePick() {
+  clearTimeout(pickTimer);
+  pickTimer = setTimeout(() => runPick("filter"), 500);
+}
+// after the form was filled programmatically: no auto-overwrite, the list shows the saved ids ticked
+function pickerRestore() {
+  clearTimeout(pickTimer);
+  pickSeq++;                                     // a pick still in flight belongs to the old form: ignore it
+  $("#replace-tc").hidden = true;
+  $("#case-search").value = "";
+  pickerTc = null;
+  renderPickers();
+  if (plan) runPick("restore");
+}
+async function loadPlan() {
+  const r = rack.name;
+  plan = null; planById = new Map(); caseRows = []; lastPick = null;
+  $("#caselist").hidden = true; $("#replace-tc").hidden = true;
+  renderPickers();
+  if (!rack.workbook) { pickMsg("no test-plan workbook configured for this rack ('workbook:' in ui/racks.yaml)"); return; }
+  pickMsg("reading the workbook…");
   try {
-    const f = {};
-    for (const k of ["level", "scope", "disruptive", "health", "origin", "status", "suite"]) f[k] = form["s_" + k].value;
-    f.rack = rack.name;
-    const d = await api("POST", "/api/select", f);
-    form.tc.value = d.tc.join(",");
-    $("#resolved").textContent = `${d.tc.length} case(s) from ${d.workbook}`;
-  } catch (e) { $("#resolved").textContent = e.message; }
+    const p = await api("GET", `/api/racks/${enc(r)}/plan`);
+    if (!rack || rack.name !== r) return;
+    plan = p; planById = new Map(p.cases.map(c => [c.id, c]));
+    renderPickers();
+    await runPick("restore");
+  } catch (e) { if (rack && rack.name === r) pickMsg(e.message, "err"); }
+}
+// mode: "filter" (filters changed: tick all, replace the ids only if the picker owns them), "fill" (the button:
+// tick all and write the ids), "restore" (tick what the saved ids contain, leave the ids alone)
+async function runPick(mode) {
+  if (!rack || !plan) return;
+  const seq = ++pickSeq, r = rack.name;
+  try {
+    const d = await api("POST", `/api/racks/${enc(r)}/plan/select`, { filters: filterState() });
+    if (seq !== pickSeq || !rack || rack.name !== r) return;
+    renderCases(d, mode);
+  } catch (e) { if (seq === pickSeq) pickMsg(e.message, "err"); }
+}
+function renderCases(d, mode) {
+  lastPick = d;
+  const saved = new Set(normTc(form.tc.value).split(",").filter(Boolean));
+  const seen = new Set();
+  caseRows = d.tc.filter(id => !seen.has(id) && seen.add(id)).map(id => {
+    const c = planById.get(id) || { id, title: "" };
+    const cb = h("input", { type: "checkbox", value: id, "aria-label": `use ${id}` });
+    cb.checked = mode === "restore" ? saved.has(id) : true;
+    const tr = h("tr", {}, h("td", {}, cb), h("td", {}, h("code", {}, id)), h("td", {}, c.title),
+      h("td", {}, c.level), h("td", {}, c.scope), h("td", {}, c.disruptive), h("td", {}, c.health),
+      h("td", {}, c.status || "(not run)"));
+    return { id, cb, tr, text: (id + " " + c.title).toLowerCase() };
+  });
+  const frag = document.createDocumentFragment();
+  caseRows.forEach(x => frag.append(x.tr));
+  $("#cases tbody").replaceChildren(frag);
+  $("#caselist").hidden = !caseRows.length;
+  $("#case-noauto").textContent = d.not_automated ? `· ${d.not_automated} matching case(s) not automated (not listed)` : "";
+  applySearch();
+  pickMsg(`${caseRows.length} case(s) from ${d.workbook}`);
+  if (mode === "restore") {
+    // the box is the picker's when it holds exactly the ticked cases (or nothing); otherwise it is the user's
+    pickerTc = normTc(form.tc.value) === tickedIds().join(",") ? form.tc.value : null;
+    $("#replace-tc").hidden = true;
+    countMsg();
+  } else syncTc(mode === "fill");
+}
+function tickedIds() { return caseRows.filter(x => x.cb.checked).map(x => x.id); }
+function countMsg() {
+  const shown = caseRows.filter(x => !x.tr.hidden).length;
+  $("#case-count").textContent = `${tickedIds().length} of ${caseRows.length} selected`
+    + (shown < caseRows.length ? ` · ${shown} shown` : "");
+}
+// put the ticked cases into the tc box, unless the user's own ids are there (then offer to replace them)
+function syncTc(force = false) {
+  countMsg();
+  const v = tickedIds().join(",");
+  const cur = normTc(form.tc.value);
+  const owned = !cur || cur === v || (pickerTc !== null && cur === normTc(pickerTc));
+  if (force || owned) {
+    form.tc.value = v; pickerTc = v;
+    $("#replace-tc").hidden = true;
+    rememberForm();
+  } else {
+    const n = v ? v.split(",").length : 0;
+    $("#replace-tc").textContent = `Replace the test case ids with the ${n} picked case(s)`;
+    $("#replace-tc").title = "the test case ids were typed or edited by hand, so they were not replaced";
+    $("#replace-tc").hidden = false;
+  }
+}
+$("#replace-tc").addEventListener("click", ev => { ev.preventDefault(); syncTc(true); form.tc.focus(); });
+$("#cases tbody").addEventListener("change", ev => { if (ev.target.type === "checkbox") syncTc(); });
+function applySearch() {
+  const q = $("#case-search").value.trim().toLowerCase();
+  for (const x of caseRows) x.tr.hidden = !!q && !x.text.includes(q);
+  countMsg();
+}
+$("#case-search").addEventListener("input", applySearch);
+$("#case-search").addEventListener("keydown", ev => { if (ev.key === "Enter") ev.preventDefault(); });
+for (const [id, on] of [["#case-all", true], ["#case-none", false]]) {
+  $(id).addEventListener("click", () => {
+    caseRows.filter(x => !x.tr.hidden).forEach(x => { x.cb.checked = on; });
+    syncTc();
+  });
+}
+$("#resolve").addEventListener("click", async () => {      // manual refresh: read the workbook again, tick all
+  if (!rack) return;
+  pickMsg("reading the workbook…");
+  try {
+    const p = await api("GET", `/api/racks/${enc(rack.name)}/plan`);
+    plan = p; planById = new Map(p.cases.map(c => [c.id, c]));
+    renderPickers();
+    clearTimeout(pickTimer);
+    await runPick("fill");
+  } catch (e) { pickMsg(e.message, "err"); }
 });
 form.addEventListener("submit", async ev => {
   ev.preventDefault();

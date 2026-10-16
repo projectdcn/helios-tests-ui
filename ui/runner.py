@@ -34,12 +34,13 @@ class JobError(ValueError):
 
 FILTER_KEYS = ("level", "scope", "disruptive", "health", "origin", "status", "suite")
 SUITES = ("all", "afm", "ssh")
-_FILTER_VALUE_RX = re.compile(r"^[^\x00-\x1f\x7f]{0,200}$")
+_FILTER_VALUE_RX = re.compile(r"^[^\x00-\x1f\x7f]{0,2000}$")
 
 
 def clean_filters(d) -> dict:
     """The Run form's test-plan pick filters (tools/select_cases.py options), kept with a run / preset so the form
-    can be filled again. Only known keys, short single-line strings; empty values dropped."""
+    can be filled again. Only known keys; each value one line of text, or a list of them (the UI's multi-selects),
+    stored as the comma-separated string tools/select_cases.py takes; empty values dropped."""
     if d in (None, ""):
         return {}
     if not isinstance(d, dict):
@@ -52,8 +53,12 @@ def clean_filters(d) -> dict:
         v = d.get(k)
         if v is None:
             continue
+        if isinstance(v, (list, tuple)) and k != "suite":
+            if not all(isinstance(x, str) for x in v):
+                raise JobError(f"filter {k}: a list of text values")
+            v = ",".join(x.strip() for x in v if x.strip())
         if not isinstance(v, str) or not _FILTER_VALUE_RX.match(v):
-            raise JobError(f"filter {k}: one line of text, at most 200 characters")
+            raise JobError(f"filter {k}: one line of text, at most 2000 characters")
         v = v.strip()
         if k == "suite" and v and v not in SUITES:
             raise JobError(f"filter suite must be one of {SUITES}")

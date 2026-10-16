@@ -20,7 +20,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, unquote, urlparse
 
-from . import inventory_edit, presets
+from . import inventory_edit, plan, presets
 from .config import ROOT, load_config
 from .runner import JobError, NAME_RX
 from .runs import RunManager, build_report, history
@@ -223,6 +223,13 @@ class Handler(BaseHTTPRequestHandler):
             m = re.fullmatch(r"/api/racks/([^/]+)/presets", path)
             if m:
                 return self.json(presets.list_presets(self.app.profile(m.group(1))))
+            m = re.fullmatch(r"/api/racks/([^/]+)/plan", path)
+            if m:
+                p = self.app.profile(m.group(1))
+                try:
+                    return self.json(plan.load(p))
+                except JobError as e:         # no / missing workbook, other layout: say so (not a server fault)
+                    return self.err(400, str(e))
             m = re.fullmatch(r"/api/racks/([^/]+)/results/([^/]+)/zip", path)
             if m:
                 return self._download_result(m.group(1), m.group(2), "zip")
@@ -315,6 +322,9 @@ class Handler(BaseHTTPRequestHandler):
             if path == "/api/select":
                 p = self.app.profile(str(body.get("rack") or ""))
                 return self.json({"tc": select_cases(body, p), "workbook": p.workbook.name})
+            m = re.fullmatch(r"/api/racks/([^/]+)/plan/select", path)
+            if m:
+                return self.json(plan.pick(self.app.profile(m.group(1)), body.get("filters")))
             m = re.fullmatch(r"/api/racks/([^/]+)/report", path)
             if m:
                 p = self.app.profile(m.group(1))

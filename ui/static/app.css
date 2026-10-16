@@ -53,3 +53,26 @@ a.btn:hover { border-color: var(--accent); }
 td button { margin: 0 4px 4px 0; }
 p.small { margin: 0 0 8px; }
 .ok { color: var(--ok); }
+/* test-plan pick: the filter grid wraps at any width; checkbox dropdowns stay inside their column */
+fieldset { min-width: 0; }
+.grid { grid-template-columns: repeat(auto-fill, minmax(min(190px, 100%), 1fr)); }
+.grid > *, .grid input, .grid select { min-width: 0; }
+.filters { gap: 6px 12px; margin: 4px 0 8px; }
+.ms { position: relative; margin: 6px 0; }
+.ms-label { display: block; }
+.ms-dd > summary { list-style: none; cursor: pointer; margin-top: 2px; padding: 4px 22px 4px 6px; border: 1px solid var(--line); border-radius: 4px; background: var(--bg); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; position: relative; }
+.ms-dd > summary::-webkit-details-marker { display: none; }
+.ms-dd > summary::after { content: "▾"; position: absolute; right: 7px; top: 4px; color: var(--muted); }
+.ms-dd[open] > summary { border-color: var(--accent); }
+.ms-dd > summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.ms-panel { position: absolute; z-index: 5; left: 0; right: 0; max-height: 260px; overflow-y: auto; padding: 4px 6px; background: var(--panel); border: 1px solid var(--accent); border-radius: 4px; box-shadow: 0 4px 12px rgba(0, 0, 0, .15); }
+.ms-panel label { display: flex; gap: 4px; align-items: flex-start; margin: 3px 0; overflow-wrap: anywhere; }
+.ms-panel input { margin-top: 3px; flex: none; }
+.ms-clear { margin-top: 4px; padding: 2px 8px; font-size: 12.5px; }
+#replace-tc { font-weight: 600; color: var(--accent); }
+#case-search { min-width: 0; width: 220px; max-width: 100%; }
+.case-wrap { max-height: 50vh; overflow: auto; border: 1px solid var(--line); border-radius: 4px; }
+#cases { margin: 0; font-size: 12.5px; }
+#cases thead th { position: sticky; top: 0; background: var(--panel); z-index: 1; }
+#cases td:nth-child(3) { min-width: 180px; }
+#cases td:nth-child(2) { white-space: nowrap; }
