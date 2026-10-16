@@ -91,7 +91,10 @@ def main(argv=None) -> int:
     diffs: list[str] = []
     if a.baseline:
         base = json.loads(a.baseline.read_text())
-        diffs = diff_snapshots(base.get("snapshot") or {}, snapshot)
+        before = base.get("snapshot") or {}
+        if subset or a.run:      # a partial run only compares the snapshot sections it collected
+            before = {k: v for k, v in before.items() if k in snapshot}
+        diffs = diff_snapshots(before, snapshot)
     out = {"run": str(run_dir), "judged": datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC"),
            **j.as_dict(), "baseline": str(a.baseline) if a.baseline else None, "changed": diffs, "snapshot": snapshot}
     (run_dir / "health.json").write_text(json.dumps(out, indent=1))
