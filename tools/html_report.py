@@ -976,6 +976,7 @@ pre.logpre .lvl-note {{ color: #9aa7b4; font-style: italic; }}
 
 
 def main():
+    global LOG_KEEP, HEALTH_LOG_KEEP
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("runs", nargs="+", type=Path)
     ap.add_argument("-o", "--output", type=Path, required=True)
@@ -990,6 +991,11 @@ def main():
     ap.add_argument("--health", type=Path, help="health.json of a tools/rack_health.py run: adds a 'Rack health check' "
                                                  "section (verdict, blockers, warnings)")
     ap.add_argument("--health-link", help="URL of the full health report, linked from that section")
+    ap.add_argument("--log-keep", type=int, default=LOG_KEEP, metavar="CHARS",
+                    help=f"characters kept from each end of a long command log (default {LOG_KEEP}); the full log stays "
+                         "under results/ and the cut says where - lower it when the page nears the 16 MB limit")
+    ap.add_argument("--health-log-keep", type=int, default=HEALTH_LOG_KEEP, metavar="CHARS",
+                    help=f"the same for the embedded health tab (default {HEALTH_LOG_KEEP})")
     ap.add_argument("--health-notes", type=Path, action="append", default=[], metavar="FILE",
                     help="with --health-run: extra key-finding lines (same '!' / '+' format as --notes) for the health "
                          "tab, e.g. related results outside the health check (datapath, pre-flight pings); case IDs in "
@@ -999,6 +1005,7 @@ def main():
     ap.add_argument("--workbook", type=Path, help="show the reviewed status (Testcases column F + notes) of each plan case "
                                                 "from this test-plan workbook instead of the raw test verdict")
     args = ap.parse_args()
+    LOG_KEEP, HEALTH_LOG_KEEP = args.log_keep, args.health_log_keep
     items = load_runs(args.runs, {k: float(v) for k, v in (x.split("=", 1) for x in args.tz)})
     page = build(items, args)
     if args.health_run:
