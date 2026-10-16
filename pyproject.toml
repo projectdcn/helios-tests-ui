@@ -23,7 +23,7 @@ dev = ["pytest-xdist>=3.5", "pyflakes>=3"]  # parallel self-test: pytest unit -n
 include = ["helios*"]
 
 [tool.pytest.ini_options]
-addopts = "-ra"
+addopts = "-ra --tb=short"   # short tracebacks: no function arguments, so a login body (password) can never reach a log
 # AFM controllers use self-signed certs (afm.verify_tls: false)
 filterwarnings = ["ignore::urllib3.exceptions.InsecureRequestWarning"]
 # live progress in the terminal: which node is running what, heartbeats every 30s, timeouts
