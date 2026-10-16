@@ -2,9 +2,15 @@
 # TC-ID -> reason. A listed case is shown as KNOWN instead of a blocker / warning - so it also hides any NEW failure of
 # the same case: keep entries few, dated, and remove them once AMD / HPE fix the issue or answer.
 # All entries are warnings reported to AMD on 14-15 Oct (AMD-findings-message-2026-10-14); none of them blocks.
-TC-SWH-057: "radvd not running on all 6 switches although declared critical - reported to AMD 14 Oct"
+# TC-CTL-035 (NTP) removed 16 Oct: NTP synchronised on every reachable node since 16 Oct.
+TC-SWH-057:
+  reason: "radvd not running on all 6 switches although declared critical - reported to AMD 14 Oct"
+  match: "radv"                 # another critical process down still shows
 TC-SWH-042: "st1 orchagent/syncd core files from 10 Oct 16:51 UTC, st1/st5 reboot cause Unknown - reported to AMD 14 Oct"
 TC-SWH-047: "saved config_db still holds FDB / VLAN_MEMBER entries AFM removed - reported to AMD 14 Oct"
-TC-SWH-050: "72 stale static MACs per switch in Vlan2 (no members) - reported to AMD 14 Oct"
-TC-SWH-055: "CPU_VDDCR_CPU 680-695 mV below the 700 mV threshold, moving between switches - reported to AMD 15 Oct"
-TC-CTL-035: "NTP not synchronised on any switch or tray - reported to AMD 14 Oct"
+TC-SWH-050:
+  reason: "72 stale static MACs per switch in Vlan2 (no members) - reported to AMD 14 Oct"
+  match: "in Vlan2|stale static MAC"
+TC-SWH-055:
+  reason: "CPU_VDDCR_CPU 675-695 mV below the 700 mV threshold on 1-3 switches, changing between runs (platform warning raised) - reported to AMD 15 Oct"
+  match: "CPU_VDDCR_CPU"        # only the CPU core voltage is accepted - any other sensor failure still shows

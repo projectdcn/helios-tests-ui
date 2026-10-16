@@ -369,10 +369,11 @@ def conditions_ok(obj: dict, ctype: str = "healthy") -> bool:
                for c in (obj.get("status") or {}).get("conditions") or [])
 
 
-def rack_health(afm: AfmClient, skip=None) -> list[str]:
+def rack_health(afm: AfmClient, skip=None, label=None) -> list[str]:
     """Pre/post check for AFM tests: cluster healthy, every switch + compute admitted and healthy,
     system vPOD online/degraded with no pending ops. Returns the problems found. ``skip(obj)`` -> True leaves a
-    switch / compute node out (quarantined in the inventory: Inventory.is_quarantined_afm)."""
+    switch / compute node out (quarantined in the inventory: Inventory.is_quarantined_afm). ``label(name)`` names a
+    node in the messages (AfmOps.label: 'pod-1-4-ComputeTray (ct05)')."""
     p = []
     c = afm.cluster()
     if not conditions_ok(c):
@@ -385,7 +386,8 @@ def rack_health(afm: AfmClient, skip=None) -> list[str]:
         for o in objs:
             st = o.get("status") or {}
             if st.get("admission-phase") != "admitted" or not conditions_ok(o):
-                p.append(f"{kind} {o['meta']['name']}: {st.get('admission-phase')} conditions={st.get('conditions')}")
+                nm = label(o["meta"]["name"]) if (label and kind == "compute") else o["meta"]["name"]
+                p.append(f"{kind} {nm}: {st.get('admission-phase')} conditions={st.get('conditions')}")
     v = afm.system_vpod()
     if v is None:
         p.append("no system vPOD (pod-N.system)")

@@ -25,15 +25,31 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
-from helios.healthcheck import diff_snapshots, gate_of, judge, meaning_of, quarantine_only_cases, read_run  # noqa: E402
+from helios.healthcheck import (BAD, diff_snapshots, gate_of, judge, meaning_of, quarantine_only_cases,  # noqa: E402
+                               read_details, read_run)
 
 
-def load_known(path: Path | None) -> dict[str, str]:
-    """YAML {TC-ID: reason} of accepted, already-reported failures (e.g. TC-SWH-057: radvd not running - AMD ticket)."""
+def load_known(path: Path | None) -> dict:
+    """YAML of accepted, already-reported failures: 'TC-ID: reason' or 'TC-ID: {reason, match, until}' (match: regex -
+    only failure lines matching it are accepted; until: YYYY-MM-DD after which the entry no longer applies)."""
     if not path:
         return {}
     import yaml
-    return {str(k): str(v) for k, v in (yaml.safe_load(path.read_text()) or {}).items()}
+    return {str(k): v for k, v in (yaml.safe_load(path.read_text()) or {}).items()}
+
+
+def run_started(run_dir: Path) -> str | None:
+    """Earliest 'started' (UTC) of a results folder: the start of that health run."""
+    import csv
+    st = [r["started"] for r in csv.DictReader(open(run_dir / "tc_results.csv", newline="")) if r.get("started")]
+    return min(st) if st else None
+
+
+def failed_cases(run_dir: Path) -> list[str]:
+    """Health-check cases of a run that did not pass (FAIL / BLOCKED / PARTIAL) - for --rerun-failed."""
+    import csv
+    return sorted(r["tc_id"] for r in csv.DictReader(open(run_dir / "tc_summary.csv", newline=""))
+                  if gate_of(r["tc_id"]) and r["verdict"] in BAD)
 
 
 def merge_runs(runs: list[Path], results_dir: Path) -> Path:
@@ -76,16 +92,23 @@ def merge_runs(runs: list[Path], results_dir: Path) -> Path:
     return out
 
 
-def run_pytest(inventory: str, results_dir: Path, extra: list[str]) -> Path:
+def run_pytest(inventory: str, results_dir: Path, extra: list[str], since: str | None = None) -> Path:
+    """``since`` (UTC 'YYYY-mm-dd HH:MM:SS'): HC-008 looks for critical AFM events since then (the previous run)."""
+    import os
     before = set(results_dir.glob("*-2*")) if results_dir.exists() else set()
     cmd = [sys.executable, "-m", "pytest", "tests", "-m", "healthcheck", "--inventory", inventory,
            "--results-dir", str(results_dir), "-q", "-p", "no:cacheprovider", *extra]
     print("$", " ".join(cmd), flush=True)
-    subprocess.run(cmd, cwd=ROOT)
+    env = {**os.environ, **({"HELIOS_HEALTH_SINCE": since} if since else {})}
+    subprocess.run(cmd, cwd=ROOT, env=env)
     new = sorted(set(results_dir.glob("*-2*")) - before, key=lambda p: p.stat().st_mtime)
     if not new:
         sys.exit("no results folder written - see the pytest output above")
     return new[-1]
+
+
+def _age(j, tc: str) -> str:
+    return f" [checked {j.checked.get(tc, '')[:16]} - older result]" if tc in j.stale else ""
 
 
 def notes(j, diffs: list[str]) -> str:
@@ -95,10 +118,20 @@ def notes(j, diffs: list[str]) -> str:
              f"({len(j.blockers)} blocker(s), {len(j.warnings)} warning(s), {len(j.known)} known, "
              f"{len(j.not_checked)} blocker case(s) not checked)."]
     lines += [f"Quarantined (left out of every check): {n} - {why}" for n, why in sorted(j.quarantine.items())]
-    lines += [f"! BLOCKER {tc} ({v}) {meaning_of(tc)}: {msg}" for tc, v, msg in j.blockers]
+    for node, tcs in j.root_causes.items():
+        b = [t for t, _, _ in j.blockers if t in tcs]
+        w = [t for t, _, _ in j.warnings if t in tcs]
+        lines.append(f"! ROOT CAUSE {node} unreachable: {len(b)} blocker(s) and {len(w)} warning(s) fail only on it - "
+                     f"{', '.join(b + w)}")
+    lines += [f"! BLOCKER {tc} ({v}) {meaning_of(tc)}: {msg}{_age(j, tc)}" for tc, v, msg in j.blockers
+              if not j.caused_by(tc)]
     lines += [f"Not checked: {tc} {meaning_of(tc)} - {why}" for tc, why in j.not_checked]
     lines += [f"Known (accepted): {tc} ({v}) - {why}" for tc, v, why in j.known]
-    lines += [f"! warning {tc} ({v}) {meaning_of(tc)}: {msg}" for tc, v, msg in j.warnings]
+    lines += [f"! warning {tc} ({v}) {meaning_of(tc)}: {msg}{_age(j, tc)}" for tc, v, msg in j.warnings
+              if not j.caused_by(tc)]
+    lines += [f"Not configured: {tc} {meaning_of(tc)} - {why}" for tc, why in j.not_configured]
+    if j.stale:
+        lines.append(f"Older results (more than 12 h before the newest): {', '.join(j.stale)}")
     if diffs:
         lines.append(f"Changed since the baseline ({len(diffs)}): " + "; ".join(diffs[:30]))
     return "\n".join(lines) + "\n"
@@ -108,6 +141,9 @@ def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--inventory", help="inventory to run against (or $HELIOS_INVENTORY)")
     ap.add_argument("--run", type=Path, help="judge this existing results folder instead of running")
+    ap.add_argument("--rerun-failed", type=Path, metavar="RUN",
+                    help="re-run the health checks that did not pass in RUN, merge with RUN and judge the merged result "
+                         "(RUN's health.json is the baseline unless --baseline is given)")
     ap.add_argument("--merge", type=Path, nargs="+", metavar="RUN",
                     help="merge these health runs (latest result per case wins) into <latest>-merged and judge that")
     ap.add_argument("--known", type=Path, help="YAML {TC-ID: reason} of accepted failures (do not block)")
@@ -117,16 +153,35 @@ def main(argv=None) -> int:
     ap.add_argument("pytest_args", nargs="*", help="extra pytest arguments after --, e.g. -- --computes ct01,ct03")
     a = ap.parse_args(argv)
 
-    if a.merge:
+    import os
+    if a.rerun_failed:
+        inv = a.inventory or os.environ.get("HELIOS_INVENTORY")
+        if not inv:
+            ap.error("--inventory (or HELIOS_INVENTORY) is required with --rerun-failed")
+        tcs = failed_cases(a.rerun_failed)
+        if not tcs:
+            print(f"nothing to re-run: every health check passed in {a.rerun_failed}")
+            return 0
+        print(f"re-running {len(tcs)} case(s) that did not pass in {a.rerun_failed.name}: {', '.join(tcs)}")
+        new = run_pytest(inv, a.results_dir, ["--tc", ",".join(tcs), *a.pytest_args], run_started(a.rerun_failed))
+        run_dir = a.run = merge_runs([a.rerun_failed, new], a.results_dir)
+        if not a.baseline and (a.rerun_failed / "health.json").exists():
+            a.baseline = a.rerun_failed / "health.json"
+    elif a.merge:
         run_dir = a.run = merge_runs(a.merge, a.results_dir)
     elif a.run:
         run_dir = a.run
     else:
-        import os
         inv = a.inventory or os.environ.get("HELIOS_INVENTORY")
         if not inv:
             ap.error("--inventory (or HELIOS_INVENTORY) is required unless --run is given")
-        run_dir = run_pytest(inv, a.results_dir, a.pytest_args)
+        since = None
+        if a.baseline:
+            try:
+                since = run_started(Path(json.loads(a.baseline.read_text())["run"]))
+            except (OSError, KeyError, ValueError):
+                since = None
+        run_dir = run_pytest(inv, a.results_dir, a.pytest_args, since)
 
     verdicts, messages, snapshot = read_run(run_dir)
     # re-judging an existing run: only the cases that run collected are expected (a case added to the check later
@@ -134,8 +189,11 @@ def main(argv=None) -> int:
     # a run limited with --tc (e.g. re-running the failed cases) is judged on the cases it ran, too
     subset = any(x == "--tc" or x.startswith("--tc=") for x in a.pytest_args)
     expected = {t for t in verdicts if gate_of(t)} if (a.run or subset) else None
+    lines, checked = read_details(run_dir)
     qonly, qlist = quarantine_only_cases(run_dir)
-    j = judge({t: v for t, v in verdicts.items() if gate_of(t)}, messages, load_known(a.known), expected, qonly, qlist)
+    j = judge({t: v for t, v in verdicts.items() if gate_of(t)}, messages, load_known(a.known), expected,
+              lines=lines, unreachable=snapshot.get("unreachable") or [], tray_slots=snapshot.get("tray_slots"),
+              checked=checked, quarantine_only=qonly, quarantine=qlist)
     diffs: list[str] = []
     if a.baseline:
         base = json.loads(a.baseline.read_text())
@@ -154,14 +212,22 @@ def main(argv=None) -> int:
         print(f"  QUARANTINED {n:<8} {why}")
     if j.quarantine_only:
         print(f"  passed without the quarantined node(s): {', '.join(sorted(j.quarantine_only))}")
+    for node, tcs in j.root_causes.items():
+        print(f"  ROOT CAUSE {node} unreachable -> {len(tcs)} case(s) fail only on it: {', '.join(tcs)}")
     for tc, v, msg in j.blockers:
-        print(f"  BLOCKER  {tc:<11} {v:<8} {meaning_of(tc)}\n           {msg[:220]}")
+        if not j.caused_by(tc):
+            print(f"  BLOCKER  {tc:<11} {v:<8} {meaning_of(tc)}{_age(j, tc)}\n           {msg[:220]}")
     for tc, why in j.not_checked:
         print(f"  NOT RUN  {tc:<11} {meaning_of(tc)} - {why[:160]}")
     for tc, v, why in j.known:
         print(f"  KNOWN    {tc:<11} {v:<8} {why}")
     for tc, v, msg in j.warnings:
-        print(f"  warning  {tc:<11} {v:<8} {meaning_of(tc)}: {msg[:160]}")
+        if not j.caused_by(tc):
+            print(f"  warning  {tc:<11} {v:<8} {meaning_of(tc)}: {msg[:160]}{_age(j, tc)}")
+    for tc, why in j.not_configured:
+        print(f"  NOT CONFIGURED {tc} {meaning_of(tc)} - {why[:140]}")
+    if j.stale:
+        print(f"  older results (> 12 h before the newest): {', '.join(j.stale)}")
     print(f"  passed: {len(j.passed)} case(s)")
     for d in diffs:
         print(f"  changed  {d}")

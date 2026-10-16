@@ -524,19 +524,24 @@ def test_interfaces_admin_oper_state(switch, inventory, checks):
     for ns, rows in switch.all_interfaces_status().items():
         checks.check(rows, f"{switch.name}/{ns}: no fabric interfaces listed")
         skip = quarantined_ports(switch, ns, inventory)     # cabled to a quarantined tray
+        try:            # cabling context for the messages ('To ComputeTray Slot4/GPU3[19]/Port33')
+            desc = switch.port_descriptions(ns)
+        except Exception:  # noqa: BLE001 - context only
+            desc = {}
         for r in rows:
             if r["Interface"] in skip:
                 continue
             admin, oper = r.get("Admin", "").lower(), r.get("Oper", "").lower()
+            port = r["Interface"] + (f" ({desc[r['Interface']]})" if desc.get(r["Interface"]) else "")
             if expected is not None:
                 if expected(r["Interface"]):
                     checks.check(admin == "up" and oper == "up",
-                                 f"{switch.name}/{ns}: {r['Interface']} expected up, admin {admin} oper {oper}")
+                                 f"{switch.name}/{ns}: {port} expected up, admin {admin} oper {oper}")
                 continue
             if all_up:
-                checks.check(admin == "up", f"{switch.name}/{ns}: {r['Interface']} admin {admin}")
+                checks.check(admin == "up", f"{switch.name}/{ns}: {port} admin {admin}")
             if admin == "up":
-                checks.check(oper == "up", f"{switch.name}/{ns}: {r['Interface']} admin up but oper {oper}")
+                checks.check(oper == "up", f"{switch.name}/{ns}: {port} admin up but oper {oper}")
     checks.assert_all()
 
 

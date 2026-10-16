@@ -301,22 +301,35 @@ def health_section(path: Path, link: str | None = None, embedded: bool = False) 
     if facts:
         h.append('<ul>' + "".join(f"<li>{esc(f)}</li>" for f in facts) + "</ul>")
 
+    checked, stale = d.get("checked") or {}, set(d.get("stale") or [])
+    causes = d.get("root_causes") or {}
+    caused = {t for tcs in causes.values() for t in tcs}
+
     def table(title, rows, cls):
         if not rows:
             return ""
         out = [f"<h3>{esc(title)} ({len(rows)})</h3><table><thead><tr><th>Case</th><th>Checks</th><th>Verdict</th>"
-               "<th>Detail</th></tr></thead><tbody>"]
+               "<th>Checked (UTC)</th><th>Detail</th></tr></thead><tbody>"]
         for r in rows:
             tc, verdict, msg = (list(r) + ["", ""])[:3]
+            when = esc(str(checked.get(tc, ""))[:16]) + (' <span class="blocked">older</span>' if tc in stale else "")
             out.append(f'<tr><td class="mono">{esc(tc)}</td><td>{esc(meaning_of(tc))}</td><td><span class="{cls}">{esc(verdict)}</span></td>'
-                       f'<td class="reason">{esc(str(msg)[:500])}</td></tr>')
+                       f'<td class="mono">{when}</td><td class="reason">{esc(str(msg)[:500])}</td></tr>')
         out.append("</tbody></table>")
         return "".join(out)
 
-    h.append(table("Blockers", d.get("blockers") or [], "fail"))
+    for node, tcs in causes.items():
+        h.append(f'<div class="info"><strong>Root cause: {esc(node)} unreachable</strong> - {len(tcs)} case(s) fail only on '
+                 f'it: <span class="mono">{esc(", ".join(tcs))}</span>. They are listed once here instead of below.</div>')
+    h.append(table("Blockers", [b for b in d.get("blockers") or [] if b[0] not in caused], "fail"))
     h.append(table("Known (accepted)", d.get("known") or [], "skip"))
     h.append(table("Blocker cases not checked", [(t, "NOT RUN", why) for t, why in d.get("not_checked") or []], "blocked"))
-    h.append(table("Warnings", d.get("warnings") or [], "blocked"))
+    h.append(table("Warnings", [w for w in d.get("warnings") or [] if w[0] not in caused], "blocked"))
+    if d.get("not_configured"):
+        h.append(table("Not configured", [(t, "not configured", why) for t, why in d["not_configured"]], "skip"))
+    if stale:
+        h.append(f'<p class="desc">Results more than 12 h older than the newest one (merged from an earlier run): '
+                 f'<span class="mono">{esc(", ".join(sorted(stale)))}</span>.</p>')
     if d.get("changed"):
         h.append(f'<h3>Changed since the baseline ({len(d["changed"])})</h3><ul>' +
                  "".join(f"<li class='mono'>{esc(c)}</li>" for c in d["changed"][:60]) + "</ul>")

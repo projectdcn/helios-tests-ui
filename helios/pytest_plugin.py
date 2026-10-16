@@ -248,6 +248,10 @@ def pytest_runtest_makereport(item, call):
             # passed, but only on the trays the pre-flight kept: not a full-rack PASS
             outcome = "partial"
             msg = "passed on the remaining trays; excluded: " + "; ".join(excluded.values())
+        ch = getattr(item, "funcargs", {}).get("checks")
+        if rep.failed and ch is not None and ch.failures and "failures" not in dict(item.user_properties):
+            # the full list (the message is cut at 2000 chars): used by the health check and the reports
+            item.user_properties.append(("failures", ch.failures[:5000]))
         q = item.config._helios_inventory.quarantine_summary()
         applied = "quarantine_applied" in dict(item.user_properties)   # an AFM-only test that left quarantined nodes out
         if q and (applied or RACK_FIXTURES & set(getattr(item, "fixturenames", ()))):

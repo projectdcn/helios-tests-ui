@@ -69,7 +69,9 @@ def test_node_agent_count_matches_compute_trays(rack, inventory, checks, record_
     checks.check(not dup, f"slots served by more than one agent: {dup}")
     if expected is not None:
         checks.check(sorted(owners) == sorted(expected), f"slots {sorted(owners)}, expected {sorted(expected)}")
-    checks.check(len(owners) == n_trays, f"{len(owners)} sb-node-agent slots {sorted(owners)} for {n_trays} compute trays")
+    gap = sorted(set(range(n_trays)) - set(owners)) if owners and max(owners) < n_trays else []   # slots 0..n-1
+    checks.check(len(owners) == n_trays, f"{len(owners)} sb-node-agent slots {sorted(owners)} for {n_trays} compute trays"
+                                         + (f" - no agent for {', '.join(f'slot {s}' for s in gap)}" if gap else ""))
     checks.assert_all()
 
 

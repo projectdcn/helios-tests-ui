@@ -173,7 +173,7 @@ def test_switches_admitted(afm, inventory, checks, record_property):
 
 @pytest.mark.l2
 @pytest.mark.tc("TC-CTL-090")
-def test_compute_node_specs(afm, inventory, checks, record_property):
+def test_compute_node_specs(afm, ops, inventory, checks, record_property):
     """Every compute: admitted + healthy, slot-id, CPU info, gpu-info has the inventory GPU count, every
     GPU Ready with a rack-unique acc-id and vPOD membership, GPU ports PortReady (failed ports listed)."""
     left_out = [n["meta"]["name"] for n in afm.computes() if inventory.is_quarantined_afm(n)]   # quarantined trays
@@ -186,8 +186,13 @@ def test_compute_node_specs(afm, inventory, checks, record_property):
     checks.check(len(nodes) == want_n, f"AFM has {len(nodes)} compute nodes (quarantined left out), expected {want_n}")
     acc_ids: dict[int, str] = {}
     summary = {}
+    try:
+        ops.tray_map()
+        lab = ops.label
+    except Exception:  # noqa: BLE001 - naming only
+        lab = str
     for n in nodes:
-        name = n["meta"]["name"]
+        name = lab(n["meta"]["name"])
         spec, st = n.get("spec") or {}, n.get("status") or {}
         checks.check(st.get("admission-phase") == "admitted", f"{name}: admission-phase {st.get('admission-phase')}")
         checks.check(conditions_ok(n), f"{name}: conditions {st.get('conditions')}")

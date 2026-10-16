@@ -105,3 +105,15 @@ def test_classify_kernel_errors():
     assert r["other"] == ["k: amdgpu 0001:01:00.0: ring gfx timeout"]
     assert classify_kernel_errors(["k: [Hardware Error]: CPU:1 MC2_STATUS[-|CE|]"])["corrected_events"] == 0   # no header: detail only
     assert classify_kernel_errors(["k: pcieport 0000:00:01.1: AER: Corrected error received"])["other"]
+
+
+def test_checks_summarise_failures_by_node():
+    import pytest
+    from helios.rack import Checks
+    c = Checks()
+    for m in ("st1/asic0: Ethernet9 down", "st1/asic0: Ethernet10 down", "ct05: unreachable", "pod-1-4-ComputeTray: unhealthy"):
+        c.fail(m)
+    assert c.by_node() == {"st1": 2, "ct05": 1, "pod-1-4-ComputeTray": 1}
+    with pytest.raises(pytest.fail.Exception) as e:
+        c.assert_all()
+    assert "by node: st1 2, ct05 1, pod-1-4-ComputeTray 1" in str(e.value)
