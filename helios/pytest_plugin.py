@@ -222,6 +222,11 @@ def _describe(item) -> tuple[str, str, str]:
     return suite, item.name, (doc[0].strip() if doc else "")
 
 
+# fixtures through which a test reaches the rack's nodes: with quarantined nodes such a test ran on part of the rack
+# (a pure AFM API test - only the 'afm' client - is not affected)
+RACK_FIXTURES = {"rack", "computes", "switch", "switch_name", "ops", "afm_ready", "datapath_ready", "links"}
+
+
 @pytest.hookimpl(hookwrapper=True)
 def pytest_runtest_makereport(item, call):
     outcome = yield
@@ -243,6 +248,15 @@ def pytest_runtest_makereport(item, call):
             # passed, but only on the trays the pre-flight kept: not a full-rack PASS
             outcome = "partial"
             msg = "passed on the remaining trays; excluded: " + "; ".join(excluded.values())
+        q = item.config._helios_inventory.quarantine_summary()
+        applied = "quarantine_applied" in dict(item.user_properties)   # an AFM-only test that left quarantined nodes out
+        if q and (applied or RACK_FIXTURES & set(getattr(item, "fixturenames", ()))):
+            # quarantined nodes were left out of this test: record it, and a pass is not a full-rack PASS
+            item.user_properties.append(("quarantined", {n: v.get("reason", "") for n, v in q.items()}))
+            if outcome == "passed":
+                outcome = "partial"
+                msg = (msg + "; " if msg else "") + "passed without the quarantined node(s): " + \
+                    "; ".join(f"{n} ({v.get('reason', '')})" for n, v in q.items())
         suite, test, desc = _describe(item)
         item.config._helios_reports.append({
             "tc_id": tc_id(item) or "",

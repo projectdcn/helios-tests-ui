@@ -152,8 +152,14 @@ def test_switches_admitted(afm, inventory, checks, record_property):
     switch count = inventory switches; every ASIC port reported has an oper-state."""
     sw = afm.switches()
     record_property("switchnodes", {s["meta"]["name"]: (s.get("status") or {}).get("admission-phase") for s in sw})
-    want = int(inventory.th("afm.expected_switches", len(inventory.switches)))
-    checks.check(len(sw) == want, f"AFM has {len(sw)} switch nodes, expected {want}")
+    left_out = [s["meta"]["name"] for s in sw if inventory.is_quarantined_afm(s)]   # quarantined switches left out
+    sw = [s for s in sw if not inventory.is_quarantined_afm(s)]
+    if left_out:
+        record_property("quarantine_applied", left_out)
+    exp = inventory.th("afm.expected_switches")
+    nq = sum(1 for h in inventory.quarantined if h.role == "switch")
+    want = int(exp) - nq if exp is not None else len(inventory.switches)
+    checks.check(len(sw) == want, f"AFM has {len(sw)} switch nodes (quarantined left out), expected {want}")
     for s in sw:
         st = s.get("status") or {}
         n = s["meta"]["name"]
@@ -170,9 +176,14 @@ def test_switches_admitted(afm, inventory, checks, record_property):
 def test_compute_node_specs(afm, inventory, checks, record_property):
     """Every compute: admitted + healthy, slot-id, CPU info, gpu-info has the inventory GPU count, every
     GPU Ready with a rack-unique acc-id and vPOD membership, GPU ports PortReady (failed ports listed)."""
-    nodes = afm.computes()
-    want_n = int(inventory.th("afm.expected_computes", len(inventory.computes)))
-    checks.check(len(nodes) == want_n, f"AFM has {len(nodes)} compute nodes, expected {want_n}")
+    left_out = [n["meta"]["name"] for n in afm.computes() if inventory.is_quarantined_afm(n)]   # quarantined trays
+    nodes = [n for n in afm.computes() if not inventory.is_quarantined_afm(n)]
+    if left_out:
+        record_property("quarantine_applied", left_out)
+    exp = inventory.th("afm.expected_computes")
+    nq = sum(1 for h in inventory.quarantined if h.role == "compute")
+    want_n = int(exp) - nq if exp is not None else len(inventory.computes)
+    checks.check(len(nodes) == want_n, f"AFM has {len(nodes)} compute nodes (quarantined left out), expected {want_n}")
     acc_ids: dict[int, str] = {}
     summary = {}
     for n in nodes:

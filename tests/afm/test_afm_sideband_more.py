@@ -45,7 +45,7 @@ def _per_switch(placement) -> Counter:
 
 
 def _slots(ops) -> set[int]:
-    return {c["spec"]["slot-id"] for c in ops.afm.computes() if (c.get("status") or {}).get("admission-phase") == "admitted"}
+    return {c["spec"]["slot-id"] for c in ops.active_computes() if (c.get("status") or {}).get("admission-phase") == "admitted"}
 
 
 def _one_each(ops) -> bool:
@@ -62,10 +62,10 @@ def _balanced(ops, switches=None) -> bool:
 
 
 def _healthy(ops, checks, what):
-    p = rack_health(ops.afm)
+    p = ops.rack_health()
     if p:
-        ok = ops.wait(lambda: not rack_health(ops.afm), 600, 15)
-        checks.check(ok, f"rack not healthy after {what}: {rack_health(ops.afm)[:4]}")
+        ok = ops.wait(lambda: not ops.rack_health(), 600, 15)
+        checks.check(ok, f"rack not healthy after {what}: {ops.rack_health()[:4]}")
 
 
 def _host_switch(ops, controller=False):
@@ -273,9 +273,9 @@ def test_pairwise_process_restarts(ops, afm_ready, checks, record_property):
                 t.start()
             for t in ts:
                 t.join()
-            ok = ops.wait(lambda: not rack_health(ops.afm), 900, 15)
+            ok = ops.wait(lambda: not ops.rack_health(), 900, 15)
             took[" + ".join(pair)] = round(time.monotonic() - t0, 1)
-            checks.check(ok, f"rack not healthy after restarting {pair}: {rack_health(ops.afm)[:3]}")
+            checks.check(ok, f"rack not healthy after restarting {pair}: {ops.rack_health()[:3]}")
     record_property("recovery_s", took)
     checks.assert_all()
 

@@ -260,6 +260,15 @@ Read-only gate to run before every disruptive batch, after each one, and wheneve
 - On g02-g17: run it on the jump host (`ssh -t -p 8059 tenant-hpe@165.204.38.103 'bash ~/helios/run-health.sh'`,
   password typed there, ~30 min), copy the run folder back, and add it to the overall report with `--health-run`.
 
+#### Quarantine and merged re-runs
+
+- A switch / compute entry with `quarantine: {reason, since, until}` (and, for a compute, its AFM `slot:`) is left
+  out of every check; passing checks are PARTIAL ("passed without the quarantined node(s)"); the health check counts
+  those as passed and can say **GO (with quarantine: …)**. HC-001 still probes quarantined nodes and suggests lifting
+  the quarantine when one answers again.
+- Re-run only some health checks with `-- --tc A,B,...` (judged on those cases), and combine runs with
+  `tools/rack_health.py --merge <full-run> <re-run>` (latest result per case) for the report.
+
 ### 7. Coverage: automated vs. missing
 
 ```bash

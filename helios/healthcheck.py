@@ -103,22 +103,29 @@ class Judgement:
     known: list[tuple[str, str, str]] = field(default_factory=list)       # accepted failures (tc, verdict, reason)
     not_checked: list[tuple[str, str]] = field(default_factory=list)      # blocker cases skipped / missing (tc, why)
     passed: list[str] = field(default_factory=list)
+    quarantine_only: list[str] = field(default_factory=list)   # PARTIAL only because quarantined nodes were left out
+    quarantine: dict = field(default_factory=dict)              # {node: {reason, since, until, ...}} of the run
 
     def as_dict(self) -> dict:
         return {"verdict": self.verdict, "blockers": self.blockers, "warnings": self.warnings, "known": self.known,
-                "not_checked": self.not_checked, "passed": self.passed}
+                "not_checked": self.not_checked, "passed": self.passed, "quarantine_only": self.quarantine_only,
+                "quarantine": self.quarantine}
 
 
 def judge(verdicts: dict[str, str], messages: dict[str, str] | None = None,
-          known: dict[str, str] | None = None, expected: set[str] | None = None) -> Judgement:
+          known: dict[str, str] | None = None, expected: set[str] | None = None,
+          quarantine_only: set[str] | None = None, quarantine: dict | None = None) -> Judgement:
     """verdicts {tc: PASS/FAIL/...} from a health run -> GO / NO-GO / INCOMPLETE.
 
     NO-GO: a blocker case FAIL / BLOCKED / PARTIAL that is not in ``known`` (tc -> accepted reason).
     INCOMPLETE: no NO-GO, but a blocker case was skipped or not run (``expected`` = the cases that should have run).
-    GO: every blocker case passed (or is known). Warn-gate failures are listed, never block."""
+    GO: every blocker case passed (or is known). Warn-gate failures are listed, never block.
+    ``quarantine_only``: PARTIAL cases whose only gap is the quarantined nodes - they count as passed (the verdict then
+    reads 'GO with quarantine' in the report)."""
     messages, known = messages or {}, known or {}
     expected = expected if expected is not None else {t for t in {**CASES, **HEALTH_ONLY} if gate_of(t) == BLOCKER}
-    j = Judgement("GO")
+    j = Judgement("GO", quarantine=dict(quarantine or {}))
+    quarantine_only = quarantine_only or set()
     for tc in sorted(set(verdicts) | {t for t in expected if gate_of(t) == BLOCKER}):
         gate, v, msg = gate_of(tc), verdicts.get(tc), messages.get(tc, "")
         if gate is None:
@@ -126,6 +133,10 @@ def judge(verdicts: dict[str, str], messages: dict[str, str] | None = None,
         if v is None:
             if gate == BLOCKER:
                 j.not_checked.append((tc, "not run"))
+            continue
+        if v == "PARTIAL" and tc in quarantine_only:
+            j.quarantine_only.append(tc)
+            j.passed.append(tc)
             continue
         if v in BAD:
             if tc in known:
@@ -141,6 +152,24 @@ def judge(verdicts: dict[str, str], messages: dict[str, str] | None = None,
             j.passed.append(tc)
     j.verdict = "NO-GO" if j.blockers else "INCOMPLETE" if j.not_checked else "GO"
     return j
+
+
+def quarantine_only_cases(run_dir: Path) -> tuple[set[str], dict]:
+    """(PARTIAL cases whose partial items were partial ONLY because of quarantine, quarantine list) of a results
+    folder. An item excluded by the datapath pre-flight (excluded_trays) is a real gap and does not qualify."""
+    per_tc: dict[str, bool] = {}
+    q: dict = {}
+    for r in csv.DictReader(open(run_dir / "tc_results.csv", newline="")):
+        if r["outcome"] != "partial":
+            continue
+        try:
+            props = json.loads(r.get("properties") or "{}")
+        except ValueError:
+            props = {}
+        ok = "quarantined" in props and "excluded_trays" not in props
+        q.update(props.get("quarantined") or {})
+        per_tc[r["tc_id"]] = per_tc.get(r["tc_id"], True) and ok
+    return {t for t, ok in per_tc.items() if ok}, q
 
 
 def read_run(run_dir: Path) -> tuple[dict[str, str], dict[str, str], dict]:

@@ -318,7 +318,8 @@ class Sim:
             host = self.slot_host(slot)
             ok = host is not None and (slot not in self.stopped or "sigstop_ignored" in self.f) and \
                 o["status"]["admission-phase"] == "admitted" and \
-                (slot not in self.mgmt_down_ct or "mgmt_loss_unnoticed" in self.f)
+                (slot not in self.mgmt_down_ct or "mgmt_loss_unnoticed" in self.f) and \
+                not ("last_compute_unhealthy" in self.f and slot == len(self.computes) - 1)   # quarantine tests
             o["status"]["conditions"] = [{"type": "healthy", "status": "true" if ok else "unknown"}]
             for u, g in o["status"]["scale-up-info"]["gpu-info"].items():
                 g["vpod-membership"] = member.get((slot, g["index"]), "")

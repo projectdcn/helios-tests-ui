@@ -25,7 +25,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
-from helios.healthcheck import diff_snapshots, gate_of, judge, meaning_of, read_run  # noqa: E402
+from helios.healthcheck import diff_snapshots, gate_of, judge, meaning_of, quarantine_only_cases, read_run  # noqa: E402
 
 
 def load_known(path: Path | None) -> dict[str, str]:
@@ -34,6 +34,46 @@ def load_known(path: Path | None) -> dict[str, str]:
         return {}
     import yaml
     return {str(k): str(v) for k, v in (yaml.safe_load(path.read_text()) or {}).items()}
+
+
+def merge_runs(runs: list[Path], results_dir: Path) -> Path:
+    """One results folder from several health runs (e.g. a full run + a re-run of its failed checks): every case
+    comes from the LATEST run that ran it (its result rows and summary row); logs are kept per source run."""
+    import csv
+    import shutil
+    runs = sorted(runs, key=lambda r: r.name)            # run folders are named <rack>-YYYYmmdd-HHMMSS
+    out = results_dir / f"{runs[-1].name}-merged"
+    if out.exists():
+        shutil.rmtree(out)
+    (out / "logs").mkdir(parents=True)
+    owner: dict[str, Path] = {}
+    for r in runs:
+        for row in csv.DictReader(open(r / "tc_summary.csv", newline="")):
+            owner[row["tc_id"]] = r
+    res_rows, sum_rows, res_fields, sum_fields = [], [], None, None
+    for r in runs:
+        rows = list(csv.DictReader(open(r / "tc_results.csv", newline="")))
+        res_fields = res_fields or (list(rows[0]) if rows else None)
+        for row in rows:
+            if owner.get(row["tc_id"]) == r:
+                if row.get("log"):
+                    src = r / row["log"]
+                    row["log"] = f"logs/{r.name}/{Path(row['log']).name}"
+                    if src.exists():
+                        (out / "logs" / r.name).mkdir(exist_ok=True)
+                        shutil.copy2(src, out / row["log"])
+                res_rows.append(row)
+        for row in csv.DictReader(open(r / "tc_summary.csv", newline="")):
+            sum_fields = sum_fields or list(row)
+            if owner.get(row["tc_id"]) == r:
+                sum_rows.append(row)
+    for name, fields, rows in (("tc_results.csv", res_fields, res_rows), ("tc_summary.csv", sum_fields, sum_rows)):
+        with open(out / name, "w", newline="") as f:
+            w = csv.DictWriter(f, fieldnames=fields)
+            w.writeheader()
+            w.writerows(rows)
+    (out / "merged-from.txt").write_text("\n".join(r.name for r in runs) + "\n")
+    return out
 
 
 def run_pytest(inventory: str, results_dir: Path, extra: list[str]) -> Path:
@@ -49,9 +89,12 @@ def run_pytest(inventory: str, results_dir: Path, extra: list[str]) -> Path:
 
 
 def notes(j, diffs: list[str]) -> str:
-    lines = [f"{'+' if j.verdict == 'GO' else '!'} Rack health: {j.verdict} for disruptive tests "
+    lines = [f"{'+' if j.verdict == 'GO' else '!'} Rack health: {j.verdict}"
+             f"{' (with quarantine: ' + ', '.join(sorted(j.quarantine)) + ')' if j.quarantine and j.verdict == 'GO' else ''}"
+             " for disruptive tests "
              f"({len(j.blockers)} blocker(s), {len(j.warnings)} warning(s), {len(j.known)} known, "
              f"{len(j.not_checked)} blocker case(s) not checked)."]
+    lines += [f"Quarantined (left out of every check): {n} - {why}" for n, why in sorted(j.quarantine.items())]
     lines += [f"! BLOCKER {tc} ({v}) {meaning_of(tc)}: {msg}" for tc, v, msg in j.blockers]
     lines += [f"Not checked: {tc} {meaning_of(tc)} - {why}" for tc, why in j.not_checked]
     lines += [f"Known (accepted): {tc} ({v}) - {why}" for tc, v, why in j.known]
@@ -65,6 +108,8 @@ def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--inventory", help="inventory to run against (or $HELIOS_INVENTORY)")
     ap.add_argument("--run", type=Path, help="judge this existing results folder instead of running")
+    ap.add_argument("--merge", type=Path, nargs="+", metavar="RUN",
+                    help="merge these health runs (latest result per case wins) into <latest>-merged and judge that")
     ap.add_argument("--known", type=Path, help="YAML {TC-ID: reason} of accepted failures (do not block)")
     ap.add_argument("--baseline", type=Path, help="health.json of an earlier run: report what changed")
     ap.add_argument("--results-dir", type=Path, default=ROOT / "results")
@@ -72,7 +117,9 @@ def main(argv=None) -> int:
     ap.add_argument("pytest_args", nargs="*", help="extra pytest arguments after --, e.g. -- --computes ct01,ct03")
     a = ap.parse_args(argv)
 
-    if a.run:
+    if a.merge:
+        run_dir = a.run = merge_runs(a.merge, a.results_dir)
+    elif a.run:
         run_dir = a.run
     else:
         import os
@@ -87,7 +134,8 @@ def main(argv=None) -> int:
     # a run limited with --tc (e.g. re-running the failed cases) is judged on the cases it ran, too
     subset = any(x == "--tc" or x.startswith("--tc=") for x in a.pytest_args)
     expected = {t for t in verdicts if gate_of(t)} if (a.run or subset) else None
-    j = judge({t: v for t, v in verdicts.items() if gate_of(t)}, messages, load_known(a.known), expected)
+    qonly, qlist = quarantine_only_cases(run_dir)
+    j = judge({t: v for t, v in verdicts.items() if gate_of(t)}, messages, load_known(a.known), expected, qonly, qlist)
     diffs: list[str] = []
     if a.baseline:
         base = json.loads(a.baseline.read_text())
@@ -100,7 +148,12 @@ def main(argv=None) -> int:
     (run_dir / "health.json").write_text(json.dumps(out, indent=1))
     (run_dir / "health-notes.txt").write_text(notes(j, diffs))
 
-    print(f"\nRACK HEALTH: {j.verdict}   ({run_dir})")
+    qtag = f" (with quarantine: {', '.join(sorted(j.quarantine))})" if j.quarantine and j.verdict == "GO" else ""
+    print(f"\nRACK HEALTH: {j.verdict}{qtag}   ({run_dir})")
+    for n, why in sorted(j.quarantine.items()):
+        print(f"  QUARANTINED {n:<8} {why}")
+    if j.quarantine_only:
+        print(f"  passed without the quarantined node(s): {', '.join(sorted(j.quarantine_only))}")
     for tc, v, msg in j.blockers:
         print(f"  BLOCKER  {tc:<11} {v:<8} {meaning_of(tc)}\n           {msg[:220]}")
     for tc, why in j.not_checked:

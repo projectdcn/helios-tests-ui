@@ -60,6 +60,10 @@ def test_node_agent_count_matches_compute_trays(rack, inventory, checks, record_
             checks.fail(f"{sw}: cannot list sb-node-agents: {exc}")
         for s in slots:
             owners[s].append(sw)
+    qslots = inventory.quarantined_slots()          # agents of quarantined trays are not counted
+    if qslots:
+        record_property("quarantined_slots", {s: owners.get(s, []) for s in sorted(qslots)})
+        owners = collections.defaultdict(list, {s: v for s, v in owners.items() if s not in qslots})
     record_property("slots", {s: v for s, v in sorted(owners.items())})
     dup = {s: v for s, v in owners.items() if len(v) > 1}
     checks.check(not dup, f"slots served by more than one agent: {dup}")

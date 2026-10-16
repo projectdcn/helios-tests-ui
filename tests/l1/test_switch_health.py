@@ -46,6 +46,7 @@ def test_port_config_matches_cabling(switch, inventory, checks, record_property)
     switch.uncabled_admin_down, ports without a description must be admin down."""
     strict = bool(inventory.th("switch.uncabled_admin_down", False))
     cabled, wrong = 0, Counter()
+    qslots = inventory.quarantined_slots()
     for ns in switch.namespaces():
         desc = switch.port_descriptions(ns)
         members = {p for ports in switch.vlan_members(ns).values() for p in ports}
@@ -53,6 +54,9 @@ def test_port_config_matches_cabling(switch, inventory, checks, record_property)
             port = r["Interface"]
             cab = parse_port_description(desc.get(port, ""))
             mode, admin = r.get("Vlan", "").lower(), r.get("Admin", "").lower()
+            if cab and cab[0] in qslots:
+                wrong["quarantined (not checked)"] += 1      # cabled to a quarantined tray
+                continue
             if cab:
                 cabled += 1
                 where = f"{switch.name}/{ns}: {port} ({desc[port]})"

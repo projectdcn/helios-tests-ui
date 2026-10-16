@@ -36,7 +36,7 @@ def _ifcp(ops, tray) -> dict:
 
 @pytest.mark.healthcheck("blocker")
 @pytest.mark.tc("HC-000")
-def test_afm_rack_state_and_snapshot(afm, ops, rack, checks, record_property):
+def test_afm_rack_state_and_snapshot(afm, ops, rack, inventory, checks, record_property):
     """AFM reports a healthy rack; snapshot of cluster, nodes, system vPOD, node-agent placement, up fabric ports and
     per-tray IFCP state."""
     snap: dict = {}
@@ -45,6 +45,8 @@ def test_afm_rack_state_and_snapshot(afm, ops, rack, checks, record_property):
                        "quorum": sorted(m.get("name") for m in (cl.get("quorum-status") or {}).get("members") or [])}
     snap["switches"] = {s["meta"]["name"]: _state(s) for s in afm.switches()}
     snap["computes"] = {c["meta"]["name"]: _state(c) for c in afm.computes()}
+    if inventory.quarantined:
+        snap["quarantined"] = inventory.quarantine_summary()
     sv = afm.system_vpod()
     if sv:
         st = sv.get("status") or {}
@@ -67,7 +69,7 @@ def test_afm_rack_state_and_snapshot(afm, ops, rack, checks, record_property):
     snap["ifcp"] = {c.name: (res if not exc else "unreachable")
                     for c, res, exc in fan_out(lambda t: _ifcp(ops, t), list(rack.computes.values()))}
     record_property("snapshot", snap)
-    for problem in rack_health(afm):
+    for problem in rack_health(afm, inventory.is_quarantined_afm):
         checks.fail(problem)
     checks.assert_all()
 

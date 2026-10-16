@@ -616,6 +616,22 @@ Not run: RAS power-cycle tests (disruptive)</pre></div>
   <p class="muted">The list lives in <code>helios/healthcheck.py</code>; <code>pytest tests -m healthcheck</code> selects the same cases. Output in the run folder: <code>health.json</code> (verdict, blockers, warnings, and the snapshot: cluster, nodes, system vPOD, node-agent placement, up fabric ports, per-tray IFCP sessions and down / no-session ports, GPU phases, unreachable nodes, controller start times and restart counts, tray versions), <code>health.html</code> and <code>health-notes.txt</code>. <code>--known</code> takes a YAML of accepted, already-reported failures (<code>TC-ID: reason</code>): <code>testplan/health-known.yaml</code> holds the g02-g17 issues already reported to AMD and <code>~/helios/run-health.sh</code> passes it automatically. A known case also hides a new failure of the same case, so keep the list short and dated; <code>--run results/&lt;run&gt;</code> judges an existing run again without touching the rack; only the cases that run collected count (a case added to the check later is not reported as "not run"). Thresholds: <code>thresholds.health.max_correctable_ecc</code> (0), <code>kernel_window_min</code> (60), <code>max_disk_pct</code> (90), <code>min_mem_avail_pct</code> (10), <code>ssh_timeout_s</code> (20), <code>event_window_min</code> (60), <code>controller_min_uptime_min</code> (60), <code>max_corrected_mce_per_hour</code> (unset); TC-SWH-041 fails only on container restarts in the last <code>thresholds.switch.restart_window_h</code> hours (24; older ones are recorded). On the trays <code>amd-smi</code> runs with <code>/opt/rocm/bin</code> on the PATH: CT08, CT09 and CT11-CT16 have no <code>/usr/bin/amd-smi</code> link.</p>
 </section>
 
+<section id="quarantine">
+  <h2><span class="num">9a</span>Quarantine a switch or compute tray</h2>
+  <p>A node that is known to be down or broken (reported, waiting for repair) can be quarantined in the inventory so it stops failing every check. Add <code>quarantine:</code> to its entry; for a compute tray also its AFM slot-id (<code>slot:</code>), so the AFM-side and fabric checks can drop its AFM node, node-agent slot and switch ports:</p>
+  <div class="cmd"><pre>  - {name: ct05, host: 10.255.4.51, slot: 4, quarantine: {reason: 'CT05 down since 13 Oct, reported to AMD 14 Oct', since: '2026-10-13', until: '2026-10-31'}}</pre></div>
+  <ul>
+    <li>Every test leaves the node out; a passing test is reported <strong>PARTIAL</strong> with "passed without the quarantined node(s): …", never plain PASS. Covered on the AFM side: HC-000, TC-CTL-090 / 089 node counts, TC-001, TC-SBM-135 / 136, TC-BU-009, and the switch ports cabled to the tray (TC-SWH-030 / 037, HC-011 link counts).</li>
+    <li>The health check treats a case that is PARTIAL only because of quarantine as passed: the verdict can be <strong>GO (with quarantine: ct05)</strong>, and the quarantine list is printed and reported. A pre-flight exclusion for another reason (busy GPUs, black-holed port) still blocks.</li>
+    <li>HC-001 still probes quarantined nodes; when one answers SSH again it says so ("consider lifting the quarantine"). An <code>until</code> date in the past is flagged as expired, not lifted silently.</li>
+    <li>To lift it, delete the <code>quarantine:</code> key. On g02-g17 edit the inventories on the jump host too (<code>~/helios/fullrack-jump*.yaml</code>).</li>
+  </ul>
+  <h3>Re-run only the failed health checks and merge</h3>
+  <p>Pass the cases after <code>--</code>; the verdict is judged on the cases that ran. Then merge the full run and the re-run (latest result per case) for the report:</p>
+  <div class="cmd"><pre>ssh -t -p 8059 tenant-hpe@165.204.38.103 &#x27;bash ~/helios/run-health.sh -- --tc HC-001,TC-BU-009,...&#x27;</pre></div>
+  <div class="cmd"><pre>.venv/bin/python tools/rack_health.py --merge results/&lt;full-run&gt; results/&lt;re-run&gt; --known testplan/health-known.yaml</pre></div>
+</section>
+
 <section id="coverage">
   <h2><span class="num">10</span>Coverage: automated vs. missing</h2>
   <div class="cmd"><pre>.venv/bin/python tools/coverage.py</pre></div>

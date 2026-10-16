@@ -51,7 +51,7 @@ def _agents_connected(ops) -> list[str]:
 def test_baseline_session_state(ops, checks, record_property):
     """Every LINK_UP GPU port on every tray has an IFCP session up (ll_up, peer enabled, no errors)."""
     counts, bad = {}, []
-    for c in ops.afm.computes():
+    for c in ops.active_computes():           # quarantined trays left out
         try:        # a tray that is down (no SSH / no afmctl) is one failed check, not the end of the test
             tray = ops.tray(c["meta"]["name"])
             st = ops.ifcp(tray)

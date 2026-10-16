@@ -369,14 +369,17 @@ def conditions_ok(obj: dict, ctype: str = "healthy") -> bool:
                for c in (obj.get("status") or {}).get("conditions") or [])
 
 
-def rack_health(afm: AfmClient) -> list[str]:
+def rack_health(afm: AfmClient, skip=None) -> list[str]:
     """Pre/post check for AFM tests: cluster healthy, every switch + compute admitted and healthy,
-    system vPOD online/degraded with no pending ops. Returns the problems found."""
+    system vPOD online/degraded with no pending ops. Returns the problems found. ``skip(obj)`` -> True leaves a
+    switch / compute node out (quarantined in the inventory: Inventory.is_quarantined_afm)."""
     p = []
     c = afm.cluster()
     if not conditions_ok(c):
         p.append(f"cluster not healthy: {(c.get('status') or {}).get('conditions')}")
     for kind, objs in (("switch", afm.switches()), ("compute", afm.computes())):
+        if skip is not None:
+            objs = [o for o in objs if not skip(o)]
         if not objs:
             p.append(f"no {kind} nodes in AFM")
         for o in objs:

@@ -32,6 +32,21 @@ class AfmOps:
     def __init__(self, afm: AfmClient, rack=None, inventory=None):
         self.afm, self.rack, self.inv = afm, rack, inventory
 
+    # ------------------------------------------------------------------ quarantine (inventory)
+    def quarantined(self, obj: dict) -> bool:
+        """AFM node of a switch / compute tray quarantined in the inventory."""
+        return self.inv is not None and self.inv.is_quarantined_afm(obj)
+
+    def active_computes(self) -> list[dict]:
+        return [c for c in self.afm.computes() if not self.quarantined(c)]
+
+    def active_switches(self) -> list[dict]:
+        return [s for s in self.afm.switches() if not self.quarantined(s)]
+
+    def rack_health(self) -> list[str]:
+        from .afm import rack_health
+        return rack_health(self.afm, self.quarantined)
+
     def th(self, key: str, default):
         v = self.inv.th(f"afm.{key}", default) if self.inv is not None else default
         return default if v is None else v

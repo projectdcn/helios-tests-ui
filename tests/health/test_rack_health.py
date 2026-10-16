@@ -31,7 +31,19 @@ def test_every_node_answers_ssh(rack, computes, inventory, checks, record_proper
             down.append(n.name)
             checks.fail(f"{n.name}: not answering SSH ({why})")
     record_property("unreachable", down)
-    record_property("snapshot", {"unreachable": sorted(down)})
+    # quarantined nodes are not judged, but their reachability is recorded: one that answers again can be released
+    snap = {"unreachable": sorted(down)}
+    if inventory.quarantined:
+        from helios.transport import make_transport
+
+        def probe(h):
+            return make_transport(h, inventory.transport).run("true", timeout=timeout).ok
+        qr = {h.name: (bool(ok) if not exc else False) for h, ok, exc in fan_out(probe, inventory.quarantined)}
+        snap["quarantined_reachable"] = qr
+        back = sorted(n for n, ok in qr.items() if ok)
+        if back:
+            record_property("release_quarantine", f"{', '.join(back)} answer SSH again - consider lifting the quarantine")
+    record_property("snapshot", snap)
     checks.assert_all()
 
 
@@ -246,10 +258,17 @@ def test_hardware_inventory(rack, computes, inventory, checks, record_property):
     def switch(sw):
         info = node_info(sections(sw.run(HW_SCRIPT, sudo=True, timeout=90).stdout))
         info["platform"] = parse_platform_summary(sw.run("show platform summary", timeout=60).stdout)
-        up = down = unknown = 0
+        up = down = unknown = quarantined = 0
         down_ports = []
+        qslots = inventory.quarantined_slots()
         for ns in sw.namespaces():
-            cabled = {p for p, d in sw.port_descriptions(ns).items() if parse_port_description(d)}
+            cabled = set()
+            for p, d in sw.port_descriptions(ns).items():
+                if cab := parse_port_description(d):
+                    if cab[0] in qslots:
+                        quarantined += 1                 # cabled to a quarantined tray: counted apart
+                    else:
+                        cabled.add(p)
             # STATE_DB (one round trip, same source as TC-SWH-049), not 'show interfaces status'
             oper = {p: st.get("netdev_oper_status", "").lower() == "up" for p, st in sw.port_states(ns).items()}
             for p in cabled:
@@ -261,6 +280,7 @@ def test_hardware_inventory(rack, computes, inventory, checks, record_property):
                     down += 1
                     down_ports.append(f"{ns}/{p}" if ns else p)
         info["compute_links"] = {"total": up + down, "up": up, "down": down, "not_in_status": unknown,
+                                 "quarantined": quarantined,
                                  "down_ports": sorted(down_ports)}
         return info
 

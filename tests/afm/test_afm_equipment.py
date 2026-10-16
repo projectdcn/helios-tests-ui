@@ -151,8 +151,8 @@ def _healthy(ops, checks, what, timeout=None):
     timeout = timeout or float(ops.th("upgrade_settle_s", 1800))
     ops.wait(lambda: _try(lambda: conditions_ok(ops.afm.cluster())), timeout, 30)
     _try(ops.afm.login)
-    checks.check(ops.wait(lambda: _try(lambda: not rack_health(ops.afm)), timeout, 30),
-                 f"rack not healthy after {what}: {_try(lambda: rack_health(ops.afm))}")
+    checks.check(ops.wait(lambda: _try(lambda: not ops.rack_health()), timeout, 30),
+                 f"rack not healthy after {what}: {_try(lambda: ops.rack_health())}")
 
 
 def _try(fn):

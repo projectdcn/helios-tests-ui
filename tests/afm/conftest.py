@@ -81,15 +81,16 @@ def afm(afm_cfg):
 
 
 @pytest.fixture
-def afm_ready(afm):
+def afm_ready(afm, inventory):
     """Rack-health gate for state-changing AFM tests: BLOCKED when AFM is not healthy before the test;
     the post-test health is checked too (failure = the test left the rack broken)."""
-    before = rack_health(afm)
+    skip = inventory.is_quarantined_afm          # quarantined nodes do not block
+    before = rack_health(afm, skip)
     if before:
         pytest.fail("AFM pre-flight failed - rack not healthy, not starting:\n"
                     + "\n".join(f"  - {p}" for p in before), pytrace=False)
     yield
-    after = rack_health(afm)
+    after = rack_health(afm, skip)
     if after:
         pytest.fail("AFM rack not healthy after the test:\n" + "\n".join(f"  - {p}" for p in after), pytrace=False)
 

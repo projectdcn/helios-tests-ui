@@ -520,9 +520,13 @@ def _expected_up(inventory, switch):
 def test_interfaces_admin_oper_state(switch, inventory, checks):
     all_up = inventory.th("switch.expect_all_admin_up", False)
     expected = _expected_up(inventory, switch)
+    from helios.quarantine import quarantined_ports
     for ns, rows in switch.all_interfaces_status().items():
         checks.check(rows, f"{switch.name}/{ns}: no fabric interfaces listed")
+        skip = quarantined_ports(switch, ns, inventory)     # cabled to a quarantined tray
         for r in rows:
+            if r["Interface"] in skip:
+                continue
             admin, oper = r.get("Admin", "").lower(), r.get("Oper", "").lower()
             if expected is not None:
                 if expected(r["Interface"]):
