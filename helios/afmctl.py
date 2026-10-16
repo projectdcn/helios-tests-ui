@@ -71,15 +71,33 @@ class PingResult:
     request_pass: int | None = None
     request_fail: int | None = None
     total: int | None = None
+    response_fail: int | None = None          # afmctl's "IFoE Response" summary
+    non_ifoe_fail: int | None = None          # afmctl's "Non-IFoE" summary
     failed_ports: list[str] = field(default_factory=list)
+    port_checks: dict = field(default_factory=dict)   # port -> checks that failed on it ("req", "rsp", "non-IFoE")
     busy: bool = False
 
     @property
     def ok(self) -> bool:
-        return self.request_fail == 0 and bool(self.total)
+        """No loss in ANY of afmctl's three checks (IFoE request, IFoE response, non-IFoE ping) - 16 Oct: a port can
+        fail only the non-IFoE check (CT03 port 25), which the request count alone would miss."""
+        return (bool(self.total) and self.request_fail == 0 and not self.response_fail and not self.non_ifoe_fail
+                and not self.failed_ports)
+
+    def describe(self) -> str:
+        """'IFoE request 1/36, response 0/36, non-IFoE 1/36 failed; ports 25 (non-IFoE), 26 (req)' - afmctl's three
+        summaries and, per failing port, which checks failed (the summaries count checks, not ports)."""
+        t = self.total or "?"
+        counts = (f"IFoE request {self.request_fail}/{t}, response {self.response_fail if self.response_fail is not None else '?'}/{t}, "
+                  f"non-IFoE {self.non_ifoe_fail if self.non_ifoe_fail is not None else '?'}/{t} failed")
+        ports = ", ".join(f"{p} ({'+'.join(self.port_checks.get(p, []))})" for p in self.failed_ports)
+        return counts + (f"; ports {ports}" if ports else "")
 
 
 _SUMMARY_RE = re.compile(r"IFoE Request\s*:\s*(\d+)/(\d+)\s+PASS,\s*(\d+)/\d+\s+fail")
+_RSP_RE = re.compile(r"IFoE Response\s*:\s*\d+/\d+\s+PASS,\s*(\d+)/\d+\s+fail")
+_NON_RE = re.compile(r"Non-IFoE\s*:\s*\d+/\d+\s+PASS,\s*(\d+)/\d+\s+fail")
+_CHECKS = ("req", "rsp", "non-IFoE")
 
 
 def parse_ping(text: str) -> PingResult:
@@ -87,11 +105,18 @@ def parse_ping(text: str) -> PingResult:
     m = _SUMMARY_RE.search(text)
     if m:
         res.request_pass, res.total, res.request_fail = int(m.group(1)), int(m.group(2)), int(m.group(3))
+    m = _RSP_RE.search(text)
+    if m:
+        res.response_fail = int(m.group(1))
+    m = _NON_RE.search(text)
+    if m:
+        res.non_ifoe_fail = int(m.group(1))
     for line in text.splitlines():
         toks = line.split()
         # per-port table: col2 = port, cols 4/6/8 = Request/Response/Non-IFoE result
         if len(toks) >= 8 and toks[0].isdigit() and toks[1].isdigit() and "FAIL" in (toks[3], toks[5], toks[7]):
             res.failed_ports.append(toks[1])
+            res.port_checks[toks[1]] = [c for c, v in zip(_CHECKS, (toks[3], toks[5], toks[7])) if v == "FAIL"]
     return res
 
 

@@ -224,9 +224,7 @@ def _ping_probe(computes, timeout: float, evidence: list | None = None) -> list[
             if res.total is None:
                 fails.append(f"{c.name}/{d.bdf} -> acc {dst.accel_id}: no ping summary (rc={r.rc})")
             elif not res.ok:
-                ports = ",".join(res.failed_ports) or "?"
-                fails.append(f"{c.name}/{d.bdf} -> acc {dst.accel_id}: {res.request_fail}/{res.total} port(s) "
-                             f"black-holed (port {ports})")
+                fails.append(f"{c.name}/{d.bdf} -> acc {dst.accel_id}: ping loss - {res.describe()}")
         return fails
 
     out = []

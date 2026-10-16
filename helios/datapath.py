@@ -130,7 +130,8 @@ def _l2_ping_afmctl(computes, inventory, checks: Checks, evidence: list | None =
             elif res.total is None:
                 fails.append(f"{tag}: no 'IFoE Request' summary{' (host busy)' if res.busy else ''}: {r.tail(200)!r}")
             elif not res.ok:
-                fails.append(f"{tag}: {res.request_fail}/{res.total} port(s) failed {res.failed_ports or ''}".rstrip())
+                # afmctl's three summaries (request / response / non-IFoE) and, per failing port, which checks failed
+                fails.append(f"{tag}: {res.describe()}")
             if evidence is not None and len(fails) > n:
                 evidence.append(ping_evidence(tag, r))
         return fails
