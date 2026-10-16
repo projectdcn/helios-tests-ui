@@ -257,6 +257,10 @@ Read-only gate to run before every disruptive batch, after each one, and wheneve
 - Writes `health.json` (verdict, blockers, warnings, snapshot), `health.html` and `health-notes.txt` into the run
   folder. `--baseline` lists what changed since an earlier run; `--run results/<run>` re-judges without the rack
   (only the cases that run collected count).
+- `--rerun-failed results/<run>` re-runs that run's FAIL / PARTIAL / BLOCKED cases, merges (latest result per case)
+  and judges; `--merge A B` merges by hand. Cases failing only on an unreachable node are grouped under one
+  ROOT CAUSE line; failure messages start with a per-node count; AFM nodes are named with their tray; older merged
+  results are flagged; HC-008 looks back to the previous run; known entries take `{reason, match, until}`.
 - On g02-g17: run it on the jump host (`ssh -t -p 8059 tenant-hpe@165.204.38.103 'bash ~/helios/run-health.sh'`,
   password typed there, ~30 min), copy the run folder back, and add it to the overall report with `--health-run`.
 

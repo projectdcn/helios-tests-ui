@@ -140,3 +140,75 @@ def test_rack_health_subset_run_judged_on_its_cases(tmp_path):
     assert r.returncode == 0 and "RACK HEALTH: GO" in r.stdout, r.stdout[-1500:]
     doc = json.loads((next(tmp_path.glob("selftest-*")) / "health.json").read_text())
     assert sorted(doc["passed"]) == ["HC-001", "HC-003", "TC-BU-009"] and not doc["not_checked"]
+
+
+# ------------------------------------------------------------------ root causes, precise known, age, not configured
+
+def test_root_cause_groups_cases_failing_only_on_an_unreachable_node():
+    v = {**_all_pass(), "HC-001": "FAIL", "TC-SWH-037": "FAIL", "TC-BU-009": "FAIL", "TC-001": "FAIL"}
+    lines = {"HC-001": ["ct05: not answering SSH"],
+             "TC-SWH-037": ["st1/asic0: Ethernet9 (To ComputeTray Slot4/GPU3[19]/Port33) is in no VLAN"],
+             "TC-BU-009": ["17 sb-node-agent slots [...] for 18 compute trays - no agent for slot 4"],
+             "TC-001": ["pod-1-4-ComputeTray (ct05): tray unreachable", "2 LINK_UP ports without an IFCP session: ct02"]}
+    j = judge(v, lines=lines, unreachable=["ct05"], tray_slots={"ct05": {"slot": 4, "afm": "pod-1-4-ComputeTray"}})
+    assert j.verdict == "NO-GO"                      # grouping never changes the verdict
+    assert sorted(j.root_causes["ct05"]) == ["HC-001", "TC-BU-009", "TC-SWH-037"]
+    assert j.caused_by("TC-001") is None            # it also fails on ct02: a real blocker of its own
+
+
+def test_known_match_only_accepts_matching_lines_and_until_expires():
+    v = {**_all_pass(), "TC-SWH-055": "FAIL"}
+    k = {"TC-SWH-055": {"reason": "CPU voltage reported", "match": "CPU_VDDCR_CPU"}}
+    j = judge(v, known=k, lines={"TC-SWH-055": ["st1: voltage CPU_VDDCR_CPU 680.0 below low threshold 700.0"]})
+    assert [x[0] for x in j.known] == ["TC-SWH-055"]
+    j = judge(v, known=k, lines={"TC-SWH-055": ["st1: voltage CPU_VDDCR_CPU 680.0 below", "st2: fan FAN3 speed 0"]})
+    assert not j.known and j.warnings[0][0] == "TC-SWH-055" and "fan FAN3" in j.warnings[0][2]
+    j = judge(v, known={"TC-SWH-055": {"reason": "x", "until": "2000-01-01"}})
+    assert not j.known and "expired" in j.warnings[0][2]
+
+
+def test_not_configured_and_stale_results():
+    v = {**_all_pass(), "HC-002": "SKIP"}
+    checked = {t: "2026-10-16 03:55:00 UTC" for t in v}
+    checked["HC-007"] = "2026-10-15 15:15:00 UTC"
+    j = judge(v, {"HC-002": "not configured: commands.health.bmc_power not set"}, checked=checked)
+    assert j.verdict == "GO" and j.not_configured[0][0] == "HC-002"
+    assert j.stale == ["HC-007"]
+
+
+def test_rerun_failed_reruns_merges_and_judges(tmp_path):
+    """A run where HC-001 / HC-003 failed: --rerun-failed re-runs exactly those on the (healthy) self-test rack and
+    judges the merged result."""
+    import csv as _csv
+    old = tmp_path / "selftest-20261015-000000"
+    (old / "logs").mkdir(parents=True)
+    with open(old / "tc_summary.csv", "w", newline="") as f:
+        w = _csv.writer(f)
+        w.writerow(["tc_id", "verdict", "passed", "failed", "skipped", "error", "blocked"])
+        for tc in ("HC-001", "HC-003"):
+            w.writerow([tc, "FAIL", 0, 1, 0, 0, 0])
+        w.writerow(["HC-004", "PASS", 1, 0, 0, 0, 0])
+    with open(old / "tc_results.csv", "w", newline="") as f:
+        w = _csv.writer(f)
+        w.writerow(["tc_id", "nodeid", "suite", "test", "description", "outcome", "duration_s", "properties", "message",
+                    "started", "log"])
+        for tc, out in (("HC-001", "failed"), ("HC-003", "failed"), ("HC-004", "passed")):
+            w.writerow([tc, f"x::{tc}", "health/test_rack_health", tc, "", out, 1, "", "- c2: down", "2026-10-15 00:00:00 UTC", ""])
+    r = subprocess.run([sys.executable, "tools/rack_health.py", "--inventory", "selftest/inventory.yaml", "--rerun-failed",
+                        str(old), "--results-dir", str(tmp_path), "--no-html"], cwd=ROOT, capture_output=True, text=True,
+                       timeout=600)
+    assert "re-running 2 case(s)" in r.stdout and "HC-001, HC-003" in r.stdout, r.stdout[-1500:]
+    merged = next(tmp_path.glob("*-merged"))
+    doc = json.loads((merged / "health.json").read_text())
+    assert doc["verdict"] == "GO" and sorted(doc["passed"]) == ["HC-001", "HC-003", "HC-004"]
+
+
+def test_hc000_records_slot_to_tray_map(tmp_path):
+    """HC-000 learns which inventory tray is in which AFM slot (afmctl accelerator ids) and records it."""
+    import csv as _csv
+    subprocess.run([sys.executable, "-m", "pytest", "tests/afm/test_afm_health.py", "--tc", "HC-000", "--inventory",
+                    "selftest/inventory.yaml", "--results-dir", str(tmp_path), "-q", "-p", "no:cacheprovider"],
+                   cwd=ROOT, capture_output=True, text=True, timeout=300)
+    row = next(r for r in _csv.DictReader(open(next(tmp_path.glob("*/tc_results.csv")))) if r["tc_id"] == "HC-000")
+    ts = json.loads(row["properties"])["snapshot"]["tray_slots"]
+    assert ts == {"c1": {"slot": 0, "afm": "pod-1-0-ComputeTray"}, "c2": {"slot": 1, "afm": "pod-1-1-ComputeTray"}}, ts

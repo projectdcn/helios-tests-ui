@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import csv
 import json
+import re
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -103,20 +104,63 @@ class Judgement:
     known: list[tuple[str, str, str]] = field(default_factory=list)       # accepted failures (tc, verdict, reason)
     not_checked: list[tuple[str, str]] = field(default_factory=list)      # blocker cases skipped / missing (tc, why)
     passed: list[str] = field(default_factory=list)
+    not_configured: list[tuple[str, str]] = field(default_factory=list)   # warn cases skipped for missing config
+    root_causes: dict[str, list[str]] = field(default_factory=dict)       # unreachable node -> cases failing only on it
+    checked: dict[str, str] = field(default_factory=dict)                 # tc -> when it ran (UTC)
+    stale: list[str] = field(default_factory=list)                        # results much older than the newest
+
+    def caused_by(self, tc: str) -> str | None:
+        return next((n for n, tcs in self.root_causes.items() if tc in tcs), None)
 
     def as_dict(self) -> dict:
         return {"verdict": self.verdict, "blockers": self.blockers, "warnings": self.warnings, "known": self.known,
-                "not_checked": self.not_checked, "passed": self.passed}
+                "not_checked": self.not_checked, "passed": self.passed, "not_configured": self.not_configured,
+                "root_causes": self.root_causes, "checked": self.checked, "stale": self.stale}
+
+
+def normalize_known(known: dict | None) -> dict[str, dict]:
+    """--known entries: 'TC-ID: reason' or 'TC-ID: {reason, match, until}' -> {tc: {reason, match, until}}."""
+    out = {}
+    for tc, v in (known or {}).items():
+        out[str(tc)] = dict(v) if isinstance(v, dict) else {"reason": str(v)}
+        out[str(tc)].setdefault("reason", "known")
+    return out
+
+
+def _aliases(unreachable: list[str], tray_slots: dict | None) -> dict[str, re.Pattern]:
+    """Per unreachable node, a pattern for every way the failure lines name it: tray name, AFM name, 'Slot4/'
+    (cabling description), 'slot 4' (node-agent slot)."""
+    out = {}
+    for n in unreachable:
+        alts = [rf"\b{re.escape(n)}\b"]
+        ts = (tray_slots or {}).get(n) or {}
+        if ts.get("afm"):
+            alts.append(re.escape(str(ts["afm"])))
+        if ts.get("slot") is not None:
+            alts += [rf"Slot{ts['slot']}/", rf"\bslot {ts['slot']}\b"]
+        out[n] = re.compile("|".join(alts), re.I)
+    return out
 
 
 def judge(verdicts: dict[str, str], messages: dict[str, str] | None = None,
-          known: dict[str, str] | None = None, expected: set[str] | None = None) -> Judgement:
+          known: dict | None = None, expected: set[str] | None = None, *,
+          lines: dict[str, list[str]] | None = None, unreachable: list[str] | None = None,
+          tray_slots: dict | None = None, checked: dict[str, str] | None = None,
+          stale_hours: float = 12) -> Judgement:
     """verdicts {tc: PASS/FAIL/...} from a health run -> GO / NO-GO / INCOMPLETE.
 
-    NO-GO: a blocker case FAIL / BLOCKED / PARTIAL that is not in ``known`` (tc -> accepted reason).
+    NO-GO: a blocker case FAIL / BLOCKED / PARTIAL that is not known (``known``: tc -> reason, or {reason, match, until}:
+    with ``match`` only failure lines matching the regex are accepted - a new kind of failure in the same case still
+    counts; an ``until`` date in the past makes the entry inactive).
     INCOMPLETE: no NO-GO, but a blocker case was skipped or not run (``expected`` = the cases that should have run).
-    GO: every blocker case passed (or is known). Warn-gate failures are listed, never block."""
-    messages, known = messages or {}, known or {}
+    GO: every blocker case passed (or is known). Warn-gate failures are listed, never block.
+    ``lines`` (failure lines per case) + ``unreachable`` nodes (HC-001) + ``tray_slots`` (HC-000) group the cases that
+    fail ONLY on an unreachable node under that node (root_causes); the verdict is unchanged. ``checked`` (tc -> UTC
+    time) flags results more than ``stale_hours`` older than the newest one."""
+    import datetime as _dt
+    messages, lines = messages or {}, lines or {}
+    known = normalize_known(known)
+    today = _dt.date.today().isoformat()
     expected = expected if expected is not None else {t for t in {**CASES, **HEALTH_ONLY} if gate_of(t) == BLOCKER}
     j = Judgement("GO")
     for tc in sorted(set(verdicts) | {t for t in expected if gate_of(t) == BLOCKER}):
@@ -128,8 +172,18 @@ def judge(verdicts: dict[str, str], messages: dict[str, str] | None = None,
                 j.not_checked.append((tc, "not run"))
             continue
         if v in BAD:
-            if tc in known:
-                j.known.append((tc, v, known[tc]))
+            k = known.get(tc)
+            if k and k.get("until") and str(k["until"])[:10] < today:
+                msg = f"[known entry expired {k['until']}] {msg}"
+                k = None
+            if k and k.get("match"):
+                rx = re.compile(str(k["match"]), re.I)
+                other = [ln for ln in lines.get(tc) or [msg] if not rx.search(ln)]
+                if other:          # something else fails besides the accepted issue
+                    msg = f"[beyond known: {k['reason']}] " + "; ".join(other[:6])
+                    k = None
+            if k:
+                j.known.append((tc, v, k["reason"]))
             elif gate == BLOCKER:
                 j.blockers.append((tc, v, msg))
             else:
@@ -137,10 +191,52 @@ def judge(verdicts: dict[str, str], messages: dict[str, str] | None = None,
         elif v == "SKIP":
             if gate == BLOCKER:
                 j.not_checked.append((tc, msg or "skipped"))
+            elif re.search(r"not configured|not set", msg, re.I):
+                j.not_configured.append((tc, msg))
         else:
             j.passed.append(tc)
+    # root causes: cases whose every failure line names one unreachable node (or AFM node / slot / port of it)
+    al = _aliases(list(unreachable or []), tray_slots)
+    for tc, _v, msg in j.blockers + j.warnings:
+        ls = [ln for ln in (lines.get(tc) or [msg]) if ln.strip()]
+        for node, rx in al.items():
+            if ls and all(rx.search(ln) for ln in ls):
+                j.root_causes.setdefault(node, []).append(tc)
+                break
+    if checked:
+        def ts(x):
+            try:
+                return _dt.datetime.strptime(x.replace(" UTC", "")[:19], "%Y-%m-%d %H:%M:%S")
+            except ValueError:
+                return None
+        times = {t: ts(x) for t, x in checked.items() if gate_of(t)}
+        newest = max((x for x in times.values() if x), default=None)
+        j.checked = {t: x for t, x in checked.items() if gate_of(t)}
+        if newest:
+            j.stale = sorted(t for t, x in times.items() if x and (newest - x).total_seconds() > stale_hours * 3600)
     j.verdict = "NO-GO" if j.blockers else "INCOMPLETE" if j.not_checked else "GO"
     return j
+
+
+def read_details(run_dir: Path) -> tuple[dict[str, list[str]], dict[str, str]]:
+    """(failure lines per case - the full 'failures' list when recorded, else the message's '- ' lines -, the time
+    each case last ran) of a results folder."""
+    lines: dict[str, list[str]] = {}
+    checked: dict[str, str] = {}
+    for r in csv.DictReader(open(run_dir / "tc_results.csv", newline="")):
+        tc = r["tc_id"]
+        if r.get("started"):
+            checked[tc] = max(checked.get(tc, ""), r["started"])
+        if r["outcome"] in ("passed", "skipped"):
+            continue
+        try:
+            props = json.loads(r.get("properties") or "{}")
+        except ValueError:
+            props = {}
+        ls = props.get("failures") or [ln.strip()[2:] for ln in (r.get("message") or "").split("\n")
+                                         if ln.strip().startswith("- ")]
+        lines.setdefault(tc, []).extend(ls or [" ".join((r.get("message") or "").split())])
+    return lines, checked
 
 
 def read_run(run_dir: Path) -> tuple[dict[str, str], dict[str, str], dict]:

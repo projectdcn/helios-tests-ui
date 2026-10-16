@@ -8,6 +8,7 @@ Read-only.
 """
 from __future__ import annotations
 
+import os
 from datetime import datetime, timedelta, timezone
 
 import pytest
@@ -66,8 +67,14 @@ def test_afm_rack_state_and_snapshot(afm, ops, rack, checks, record_property):
     snap["fabric_ports_up"] = ports
     snap["ifcp"] = {c.name: (res if not exc else "unreachable")
                     for c, res, exc in fan_out(lambda t: _ifcp(ops, t), list(rack.computes.values()))}
+    try:
+        tm = ops.tray_map()
+    except Exception:  # noqa: BLE001 - naming only
+        tm = {}
+    slots = {c["meta"]["name"]: (c.get("spec") or {}).get("slot-id") for c in afm.computes()}
+    snap["tray_slots"] = {t: {"slot": slots.get(n), "afm": n} for n, t in sorted(tm.items(), key=lambda kv: kv[1])}
     record_property("snapshot", snap)
-    for problem in rack_health(afm):
+    for problem in rack_health(afm, ops.label if tm else None):
         checks.fail(problem)
     checks.assert_all()
 
@@ -106,7 +113,9 @@ def _ts(s: str) -> datetime | None:
 @pytest.mark.tc("HC-008")
 def test_no_recent_critical_events(ops, inventory, checks, record_property):
     """No severity=critical AFM event in the last ``health.event_window_min`` minutes (default 60), counted back from
-    the newest event (controller clock - the runner's may be skewed)."""
+    the newest event (controller clock - the runner's may be skewed) - or, when tools/rack_health.py runs with a
+    baseline, since the previous health run started ($HELIOS_HEALTH_SINCE, UTC), so nothing between runs is missed
+    (the longer of the two windows)."""
     window = int(inventory.th("health.event_window_min", 60))
     if window <= 0:
         pytest.skip("health.event_window_min: 0 (disabled)")
@@ -116,6 +125,10 @@ def test_no_recent_critical_events(ops, inventory, checks, record_property):
         record_property("critical_events", {})
         return
     since = newest - timedelta(minutes=window)
+    prev = _ts(os.environ.get("HELIOS_HEALTH_SINCE", "").replace(" ", "T"))
+    if prev is not None and prev < since:
+        since = prev
+    record_property("events_since", since.strftime("%Y-%m-%d %H:%M:%S UTC"))
     crit = [e for e in evs if str(e.get("severity", "")).lower() == "critical"
             and (t := _ts((e.get("meta") or {}).get("creation-time", ""))) and t >= since]
     by_type: dict[str, list] = {}
@@ -125,7 +138,7 @@ def test_no_recent_critical_events(ops, inventory, checks, record_property):
     for typ, es in sorted(by_type.items(), key=lambda kv: -len(kv[1])):
         e = es[0]
         ref = e.get("object-ref") or {}
-        checks.fail(f"{len(es)} critical '{typ}' event(s) in the last {window} min, e.g. {ref.get('name', '')}: "
+        checks.fail(f"{len(es)} critical '{typ}' event(s) since {since:%Y-%m-%d %H:%M} UTC, e.g. {ref.get('name', '')}: "
                     f"{str(e.get('message', ''))[:140]}")
     checks.assert_all()
 

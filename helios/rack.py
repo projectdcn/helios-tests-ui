@@ -74,11 +74,29 @@ class Checks:
     def fail(self, msg: str) -> None:
         self.failures.append(msg)
 
+    NODE_RE = None
+
+    @staticmethod
+    def node_of(msg: str) -> str:
+        """The node a failure line is about (first switch / tray / AFM node token), '' if none."""
+        import re
+        if Checks.NODE_RE is None:
+            Checks.NODE_RE = re.compile(r"\b(st\d+|sw\d+|ct\d+|c\d+|pod-\d+-\d+-(?:Compute|Switch)Tray)\b")
+        m = Checks.NODE_RE.search(msg)
+        return m.group(1) if m else ""
+
+    def by_node(self) -> dict[str, int]:
+        from collections import Counter
+        return dict(Counter(self.node_of(f) or "-" for f in self.failures).most_common())
+
     def assert_all(self, limit: int = 200) -> None:
         if self.failures:
             shown = self.failures[:limit]
             more = len(self.failures) - len(shown)
-            text = f"{len(self.failures)} check(s) failed:\n" + "\n".join(f"  - {f}" for f in shown)
+            text = f"{len(self.failures)} check(s) failed:\n"
+            if len(self.failures) > 1:      # first: where they are (the message is truncated in reports)
+                text += "  by node: " + ", ".join(f"{n} {c}" for n, c in self.by_node().items()) + "\n"
+            text += "\n".join(f"  - {f}" for f in shown)
             if more:
                 text += f"\n  ... and {more} more"
             pytest.fail(text, pytrace=False)

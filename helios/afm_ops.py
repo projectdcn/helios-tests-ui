@@ -426,6 +426,53 @@ class AfmOps:
         pol = (self.vpod(vpod).get("spec") or {}).get("failover-policy") or "system-failover-policy"
         return float((self.afm.get(f"{CLUSTER}/failoverpolicies/{pol}").get("spec") or {}).get("link-fail-threshold", 10))
 
+    # ================================================================ AFM node <-> inventory tray names
+    def tray_map(self) -> dict[str, str]:
+        """{AFM ComputeNode name: inventory tray name}, learned once: inventory afm_name / slot, else the tray whose
+        afmctl accelerator ids match the node's GPU acc-ids; a single AFM node and a single tray left over (e.g. the
+        tray is unreachable, so its acc-ids cannot be read) are paired too. Used to name both in messages."""
+        if "_tray_map" in self.__dict__:
+            return self._tray_map
+        from .afmctl import Afmctl
+        from .rack import fan_out
+        nodes = {c["meta"]["name"]: c for c in self.afm.computes()}
+        trays = list(self.rack.computes.values()) if self.rack is not None else []
+        out: dict[str, str] = {}
+        for name, n in nodes.items():
+            slot = (n.get("spec") or {}).get("slot-id")
+            for c in trays:
+                if c.host.extra.get("afm_name") == name or (slot is not None and c.host.extra.get("slot") == slot):
+                    out[name] = c.name
+        have = {c.name: {d.accel_id for d in r} for c, r, exc in
+                fan_out(lambda c: Afmctl(c, timeout=60).devices(), [c for c in trays if c.name not in out.values()])
+                if not exc}
+        for name, n in nodes.items():
+            if name in out:
+                continue
+            want = {str(g.get("acc-id")) for g in self.gpu_info(n).values()}
+            hit = [t for t, ids in have.items() if want and want <= ids and t not in out.values()]
+            if len(hit) == 1:
+                out[name] = hit[0]
+        left_n = [n for n in nodes if n not in out]
+        left_t = [c.name for c in trays if c.name not in out.values()]
+        if len(left_n) == 1 and len(left_t) == 1:
+            out[left_n[0]] = left_t[0]
+        self._tray_map = out
+        return out
+
+    def label(self, afm_name: str) -> str:
+        """'pod-1-4-ComputeTray (ct05)' when the tray is known, else the AFM name."""
+        t = self.tray_map().get(afm_name) if self.rack is not None else None
+        return f"{afm_name} ({t})" if t else afm_name
+
+    def slot_label(self, slot) -> str:
+        """'slot 4 (ct05)'"""
+        for n in self.afm.computes():
+            if (n.get("spec") or {}).get("slot-id") == slot:
+                t = self.tray_map().get(n["meta"]["name"]) if self.rack is not None else None
+                return f"slot {slot} ({t})" if t else f"slot {slot}"
+        return f"slot {slot}"
+
     # ================================================================ compute side (afmctl over SSH)
     def tray(self, afm_name: str):
         """Inventory compute tray for an AFM ComputeNode: host.extra.afm_name, else the tray whose afmctl
@@ -448,6 +495,9 @@ class AfmOps:
             if want and want <= have:
                 cache[afm_name] = c
                 return c
+        t = self.tray_map().get(afm_name)
+        if t:                     # paired by elimination: the tray exists but its afmctl cannot be read
+            raise RuntimeError(f"{afm_name} ({t}): tray unreachable or afmctl not answering")
         raise RuntimeError(f"no inventory compute matches AFM {afm_name} (acc-ids {sorted(want)}); "
                            f"set afm_name: {afm_name} on its inventory entry")
 

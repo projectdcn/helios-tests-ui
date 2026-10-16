@@ -72,7 +72,7 @@ def build_command(cmd: str, sudo: bool = False, env: dict[str, Any] | None = Non
     return " ".join(prefix) + " bash -c " + shlex.quote(cmd)
 
 
-LOG_OUTPUT_LIMIT = 6000
+LOG_OUTPUT_LIMIT = 20000   # chars of command output kept per command in the logs (port tables, descriptions)
 
 
 def _short(cmd: str, n: int = 110) -> str:

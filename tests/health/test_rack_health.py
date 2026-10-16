@@ -42,7 +42,7 @@ def test_bmc_power_on(rack, computes, inventory, checks, record_property):
     from the tray's ``bmc:`` inventory key, e.g. ipmitool ... chassis power status)."""
     tmpl = inventory.cmd("health.bmc_power")
     if not tmpl:
-        pytest.skip("commands.health.bmc_power not set (e.g. 'IPMI_PASSWORD=\"$HELIOS_BMC_PASSWORD\" ipmitool -I lanplus "
+        pytest.skip("not configured: commands.health.bmc_power not set (e.g. 'IPMI_PASSWORD=\"$HELIOS_BMC_PASSWORD\" ipmitool -I lanplus "
                     "-H {bmc} -U <user> -E chassis power status')")
     states = {}
 
