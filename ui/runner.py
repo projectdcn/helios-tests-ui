@@ -32,6 +32,36 @@ class JobError(ValueError):
     pass
 
 
+FILTER_KEYS = ("level", "scope", "disruptive", "health", "origin", "status", "suite")
+SUITES = ("all", "afm", "ssh")
+_FILTER_VALUE_RX = re.compile(r"^[^\x00-\x1f\x7f]{0,200}$")
+
+
+def clean_filters(d) -> dict:
+    """The Run form's test-plan pick filters (tools/select_cases.py options), kept with a run / preset so the form
+    can be filled again. Only known keys, short single-line strings; empty values dropped."""
+    if d in (None, ""):
+        return {}
+    if not isinstance(d, dict):
+        raise JobError("filters must be an object")
+    bad = sorted(set(map(str, d)) - set(FILTER_KEYS))
+    if bad:
+        raise JobError(f"unknown filter(s): {bad}")
+    out = {}
+    for k in FILTER_KEYS:
+        v = d.get(k)
+        if v is None:
+            continue
+        if not isinstance(v, str) or not _FILTER_VALUE_RX.match(v):
+            raise JobError(f"filter {k}: one line of text, at most 200 characters")
+        v = v.strip()
+        if k == "suite" and v and v not in SUITES:
+            raise JobError(f"filter suite must be one of {SUITES}")
+        if v:
+            out[k] = v
+    return out
+
+
 @dataclass
 class Job:
     """One run request. kind: pytest (selected cases), health (tools/rack_health.py), rerun (rack_health

@@ -8,15 +8,19 @@ from __future__ import annotations
 
 import json
 import mimetypes
+import os
 import re
+import shutil
 import subprocess
 import sys
+import tempfile
 import threading
+import zipfile
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, unquote, urlparse
 
-from . import inventory_edit
+from . import inventory_edit, presets
 from .config import ROOT, load_config
 from .runner import JobError, NAME_RX
 from .runs import RunManager, build_report, history
@@ -24,6 +28,40 @@ from .runs import RunManager, build_report, history
 STATIC = Path(__file__).resolve().parent / "static"
 ALLOWED_HOSTS = {"127.0.0.1", "localhost", "[::1]"}
 MAX_BODY = 4 * 1024 * 1024
+# files of a results folder offered as single downloads (the zip has everything)
+DOWNLOADABLE = ("report.html", "health.html", "tc_summary.csv", "tc_results.csv", "health.json", "health-notes.txt")
+
+
+def result_folder(profile, run: str) -> Path | None:
+    """A results folder of the rack: a plain directory directly inside its results_dir (no symlink, no traversal,
+    not the UI's own ui-runs folder), or None."""
+    if not NAME_RX.match(run) or run == "ui-runs":
+        return None
+    base = profile.results_dir.resolve()
+    d = profile.results_dir / run
+    if d.is_symlink() or not d.is_dir() or d.resolve().parent != base:
+        return None
+    return d.resolve()
+
+
+def zip_folder(folder: Path, fh) -> int:
+    """Every regular file under ``folder`` (symlinks and anything resolving outside it skipped), as <name>/... in a
+    zip written to ``fh``. Returns the number of files."""
+    n = 0
+    with zipfile.ZipFile(fh, "w", zipfile.ZIP_DEFLATED) as z:
+        for dirpath, dirnames, filenames in os.walk(folder, followlinks=False):
+            dp = Path(dirpath)
+            dirnames[:] = sorted(x for x in dirnames if not (dp / x).is_symlink())
+            for fn in sorted(filenames):
+                f = dp / fn
+                if f.is_symlink() or not f.is_file():
+                    continue
+                r = f.resolve()
+                if folder not in r.parents:
+                    continue
+                z.write(r, f"{folder.name}/{r.relative_to(folder).as_posix()}")
+                n += 1
+    return n
 
 
 class App:
@@ -110,6 +148,38 @@ class Handler(BaseHTTPRequestHandler):
             raise ValueError("JSON object expected")
         return d
 
+    def _attachment(self, fh, size: int, ctype: str, filename: str) -> None:
+        """Send an open file as a download (filename comes from validated names only)."""
+        self.send_response(200)
+        self.send_header("Content-Type", ctype)
+        self.send_header("Content-Length", str(size))
+        self.send_header("Content-Disposition", f'attachment; filename="{filename}"')
+        self.send_header("Cache-Control", "no-store")
+        self.send_header("X-Content-Type-Options", "nosniff")
+        self.end_headers()
+        if self.command != "HEAD":
+            shutil.copyfileobj(fh, self.wfile, 256 * 1024)
+
+    def _download_result(self, rack: str, run: str, what: str) -> None:
+        p = self.app.profile(rack)
+        folder = result_folder(p, run)
+        if folder is None:
+            return self.err(404, "no such results folder")
+        if what == "zip":
+            with tempfile.SpooledTemporaryFile(max_size=32 * 1024 * 1024) as fh:
+                zip_folder(folder, fh)
+                size = fh.tell()
+                fh.seek(0)
+                return self._attachment(fh, size, "application/zip", f"{folder.name}.zip")
+        if what not in DOWNLOADABLE:
+            return self.err(404, f"downloadable files: {', '.join(DOWNLOADABLE)}")
+        f = folder / what
+        if f.is_symlink() or not f.is_file() or f.resolve().parent != folder:
+            return self.err(404, "not found")
+        ctype = {".html": "text/html", ".json": "application/json"}.get(f.suffix, "text/plain") + "; charset=utf-8"
+        with open(f, "rb") as fh:
+            return self._attachment(fh, f.stat().st_size, ctype, f"{folder.name}-{what}")
+
     def _file(self, base: Path, rel: str) -> None:
         base = base.resolve()
         f = (base / rel).resolve()
@@ -150,12 +220,29 @@ class Handler(BaseHTTPRequestHandler):
             m = re.fullmatch(r"/api/racks/([^/]+)/inventory", path)
             if m:
                 return self.json(inventory_edit.read(self.app.profile(m.group(1)).inventory))
+            m = re.fullmatch(r"/api/racks/([^/]+)/presets", path)
+            if m:
+                return self.json(presets.list_presets(self.app.profile(m.group(1))))
+            m = re.fullmatch(r"/api/racks/([^/]+)/results/([^/]+)/zip", path)
+            if m:
+                return self._download_result(m.group(1), m.group(2), "zip")
+            m = re.fullmatch(r"/api/racks/([^/]+)/results/([^/]+)/file/([^/]+)", path)
+            if m:
+                return self._download_result(m.group(1), m.group(2), m.group(3))
             if path == "/api/runs":
                 return self.json(self.app.runs.list_runs((q.get("rack") or [None])[0]))
             m = re.fullmatch(r"/api/runs/([^/]+)", path)
             if m:
                 d = self.app.runs.get(m.group(1))
                 return self.json(d) if d else self.err(404, "no such run")
+            m = re.fullmatch(r"/api/runs/([^/]+)/log\.txt", path)
+            if m:
+                if not NAME_RX.match(m.group(1)):
+                    return self.err(404, "no such run")
+                lines, _ = self.app.runs.log_text(m.group(1))       # running: what is there so far (redacted)
+                body = "".join(ln + "\n" for ln in lines).encode()
+                return self._send(200, body, "text/plain; charset=utf-8",
+                                  {"Content-Disposition": f'attachment; filename="{m.group(1)}.log.txt"'})
             m = re.fullmatch(r"/api/runs/([^/]+)/log", path)
             if m:
                 lines, done = self.app.runs.log_text(m.group(1), int((q.get("from") or ["0"])[0]))
@@ -168,6 +255,8 @@ class Handler(BaseHTTPRequestHandler):
             return self.err(404, "not found")
         except (LookupError, KeyError) as e:
             return self.err(404, str(e))
+        except JobError as e:                  # e.g. an unreadable ui-presets.json
+            return self.err(500, str(e))
         except (BrokenPipeError, ConnectionResetError):
             return None
 
@@ -243,7 +332,17 @@ class Handler(BaseHTTPRequestHandler):
                     if m.group(2) == "check":
                         return self.json(inventory_edit.prepare(p.inventory, body))
                     return self.json(inventory_edit.save(p.inventory, body))
+            m = re.fullmatch(r"/api/racks/([^/]+)/presets(/delete)?", path)
+            if m:
+                p = self.app.profile(m.group(1))
+                if m.group(2):
+                    presets.delete(p, body.get("name"))
+                    return self.json({"deleted": presets.check_name(body.get("name"))})
+                return self.json(presets.save(p, body.get("name"), body.get("preset"),
+                                              overwrite=body.get("overwrite") is True), 201)
             return self.err(404, "not found")
+        except presets.PresetExists as e:
+            return self.err(409, str(e), exists=True)
         except inventory_edit.EditError as e:
             return self.err(400, e.errors)
         except (JobError, ValueError) as e:

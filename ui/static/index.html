@@ -20,6 +20,13 @@
 </nav>
 <main>
 <section id="tab-run" class="tab active">
+  <div class="row" id="preset-row">
+    <label class="inline">Load preset <select id="preset"><option value="">(no presets)</option></select></label>
+    <button type="button" id="preset-delete" title="delete the selected preset">Delete preset</button>
+    <button type="button" id="preset-save">Save as preset…</button>
+    <span id="formmsg" class="muted"></span>
+  </div>
+  <p class="muted small">Presets are saved per rack in <code>ui-presets.json</code> of the rack's results folder; the form you last used is remembered in this browser. The AFM password is never saved.</p>
   <form id="runform" autocomplete="off">
     <fieldset>
       <legend>What to run</legend>
@@ -80,7 +87,7 @@
     <label>AFM admin password <input type="password" id="rerun-pw" autocomplete="new-password"></label>
     <button id="rerun-go" class="primary">Re-run failed</button> <button id="rerun-cancel">Cancel</button>
   </div>
-  <table id="results"><thead><tr><th>Folder</th><th>Written</th><th>Cases</th><th>Health</th><th>Reports</th><th></th></tr></thead><tbody></tbody></table>
+  <table id="results"><thead><tr><th>Folder</th><th>Written</th><th>Cases</th><th>Health</th><th>Reports</th><th>Download</th><th></th></tr></thead><tbody></tbody></table>
 </section>
 
 <section id="tab-inventory" class="tab">

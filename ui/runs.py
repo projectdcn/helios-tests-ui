@@ -13,7 +13,7 @@ import time
 from pathlib import Path
 
 from .config import ROOT, RackProfile, inventory_rack_name
-from .runner import Job, JobError, NAME_RX, make_runner
+from .runner import Job, JobError, NAME_RX, clean_filters, make_runner
 
 REDACTED = "<REDACTED>"
 FINAL = ("finished", "failed", "stopped", "error", "cancelled")
@@ -24,8 +24,10 @@ def _now() -> str:
 
 
 class Run:
-    def __init__(self, rid: str, rack: str, job: Job, password: str | None, log_dir: Path):
+    def __init__(self, rid: str, rack: str, job: Job, password: str | None, log_dir: Path,
+                 filters: dict | None = None):
         self.id, self.rack, self.job = rid, rack, job
+        self.filters = dict(filters or {})          # test-plan pick of the form (for "Run again"), never a secret
         self._password = password or None           # memory only; dropped when the run ends
         self.has_password = bool(password)
         self.status = "queued"
@@ -41,7 +43,8 @@ class Run:
         self.meta_path = log_dir / f"{rid}.json"
 
     def as_dict(self) -> dict:
-        return {"id": self.id, "rack": self.rack, "job": self.job.as_dict(), "status": self.status,
+        return {"id": self.id, "rack": self.rack, "job": self.job.as_dict(), "filters": self.filters,
+                "status": self.status,
                 "created": self.created, "started": self.started, "ended": self.ended, "rc": self.rc,
                 "results": self.results, "verdict": self.verdict, "error": self.error,
                 "has_password": self.has_password, "lines": len(self.lines)}
@@ -70,9 +73,10 @@ class RunManager:
         if rack not in self.profiles:
             raise JobError(f"unknown rack {rack!r}")
         job = Job.from_request(req)
+        filters = clean_filters(req.get("filters"))
         p = self.profiles[rack]
         rid = f"{rack}-{time.strftime('%Y%m%d-%H%M%S')}-" + "".join(random.choices(string.ascii_lowercase, k=4))
-        run = Run(rid, rack, job, password, p.results_dir / "ui-runs")
+        run = Run(rid, rack, job, password, p.results_dir / "ui-runs", filters)
         with self.lock:
             self.runs[rid] = run
             self.queues[rack].append(run)

@@ -1,9 +1,11 @@
 "use strict";
 // helios-tests UI. Plain JS, no build step. The AFM password is read from the field when a run starts, sent once
-// in that request and the field is cleared; it is never stored in the page, localStorage or a cookie.
+// in that request and the field is cleared; it is never stored in the page, localStorage, a preset or a cookie.
 const $ = (s, el = document) => el.querySelector(s);
 const $$ = (s, el = document) => [...el.querySelectorAll(s)];
 let racks = [], rack = null, es = null, inv = null, invMode = "form", lastPreview = null, rerunBase = null, quarNode = null;
+let formRack = null, presetList = [];
+const enc = encodeURIComponent;
 
 function h(tag, attrs = {}, ...kids) {
   const e = document.createElement(tag);
@@ -25,7 +27,11 @@ async function api(method, url, body) {
   }
   const r = await fetch(url, opt);
   const d = await r.json().catch(() => ({}));
-  if (!r.ok) throw new Error((d.errors || [d.error || r.statusText]).join("\n"));
+  if (!r.ok) {
+    const e = new Error((d.errors || [d.error || r.statusText]).join("\n"));
+    e.status = r.status; e.data = d;
+    throw e;
+  }
   return d;
 }
 
@@ -58,14 +64,136 @@ function rackChanged() {
   $("#pwenv").textContent = rack.password_env;
   $("#known-row").hidden = !rack.known;
   $("#known-file").textContent = rack.known || "";
+  if (rack.name !== formRack) {        // the form of the rack picked: its last-used form, its presets
+    formRack = rack.name;
+    restoreForm();
+    loadPresets();
+  }
 }
 
 // ---------------------------------------------------------------- run form
 const form = $("#runform");
-form.addEventListener("change", () => {
+const FILTERS = ["level", "scope", "disruptive", "health", "origin", "status", "suite"];
+function kindChanged() {
   const kind = form.kind.value;
   $("#health-opts").hidden = kind !== "health";
   $("#case-opts").hidden = kind !== "pytest";
+}
+form.addEventListener("change", () => { kindChanged(); rememberForm(); });
+form.addEventListener("input", rememberForm);
+function formMsg(text, cls = "muted") { $("#formmsg").textContent = text; $("#formmsg").className = cls; }
+function filterState() {
+  const f = {};
+  for (const k of FILTERS) f[k] = form["s_" + k].value;
+  return f;
+}
+// what a run / preset of the current form contains (never the password)
+function formState() {
+  const kind = form.kind.value;
+  const s = { kind, pytest_args: form.pytest_args.value };
+  if (kind === "health") {
+    s.known = form.known.checked;
+    if (form.health_tc.value.trim()) s.tc = form.health_tc.value;
+  } else {
+    Object.assign(s, { tc: form.tc.value, marker: form.marker.value, paths: form.paths.value,
+      switches: form.switches.value, computes: form.computes.value, allow_disruptive: form.allow_disruptive.checked,
+      filters: filterState() });
+  }
+  return s;
+}
+// every field of the form (for the browser's last-used memory; never the password)
+function fullState() {
+  return { kind: form.kind.value, known: form.known.checked, health_tc: form.health_tc.value, tc: form.tc.value,
+    marker: form.marker.value, paths: form.paths.value, switches: form.switches.value, computes: form.computes.value,
+    allow_disruptive: form.allow_disruptive.checked, pytest_args: form.pytest_args.value, filters: filterState() };
+}
+const shq = a => /^[A-Za-z0-9_\/.,:=@%+-]+$/.test(a) ? a : "'" + a.replace(/'/g, "'\\''") + "'";
+// fill the form from a preset, a past run's job (lists) or fullState() (strings); the password field is cleared
+function fillForm(s) {
+  const str = (v, sep = ",") => Array.isArray(v) ? v.join(sep) : (v ?? "");
+  const kind = s.kind === "pytest" ? "pytest" : "health";
+  const full = "health_tc" in s;
+  form.kind.value = kind;
+  form.known.checked = s.known !== false;
+  form.health_tc.value = full ? str(s.health_tc) : (kind === "health" ? str(s.tc) : "");
+  form.tc.value = full || kind === "pytest" ? str(s.tc) : "";
+  form.marker.value = s.marker || "";
+  form.paths.value = str(s.paths, " ") || "tests";
+  form.switches.value = s.switches || "";
+  form.computes.value = s.computes || "";
+  form.allow_disruptive.checked = !!s.allow_disruptive;
+  form.pytest_args.value = Array.isArray(s.pytest_args) ? s.pytest_args.map(shq).join(" ") : (s.pytest_args || "");
+  const f = s.filters || {};
+  for (const k of FILTERS) form["s_" + k].value = f[k] || (k === "suite" ? "all" : "");
+  form.password.value = "";
+  $("#resolved").textContent = "";
+  kindChanged();
+}
+const lsKey = r => "helios-ui:runform:" + r;
+function rememberForm() {
+  if (!rack) return;
+  try { localStorage.setItem(lsKey(rack.name), JSON.stringify(fullState())); } catch (e) { /* storage off: fine */ }
+}
+function restoreForm() {
+  let s = null;
+  try { s = JSON.parse(localStorage.getItem(lsKey(rack.name)) || "null"); } catch (e) { s = null; }
+  if (s && typeof s === "object" && !Array.isArray(s)) { delete s.password; fillForm(s); }
+  else { form.reset(); kindChanged(); }
+  formMsg("");
+}
+// a preset or a past run's settings into the form (re-run of failed checks: the Results tab's re-run box)
+function applySettings(s, label) {
+  if (s.kind === "rerun") {
+    showTab("results");
+    askRerun(s.base_run);
+    return;
+  }
+  fillForm(s);
+  rememberForm();
+  showTab("run");
+  formMsg(`${label} loaded: check it, type the AFM password, then Start run`, "ok");
+}
+
+// ---------------------------------------------------------------- presets (per rack, on the server; no password)
+async function loadPresets(select = "") {
+  const sel = $("#preset");
+  try { presetList = await api("GET", `/api/racks/${enc(rack.name)}/presets`); }
+  catch (e) { presetList = []; formMsg("presets: " + e.message, "err"); }
+  sel.replaceChildren(h("option", { value: "" }, presetList.length ? "(choose a preset)" : "(no presets)"),
+    ...presetList.map(p => h("option", { value: p.name, title: "saved " + (p.saved || "") }, p.name)));
+  sel.value = select;
+}
+$("#preset").addEventListener("change", () => {
+  const p = presetList.find(x => x.name === $("#preset").value);
+  if (p) applySettings(p.settings, `Preset "${p.name}"`);
+});
+$("#preset-save").addEventListener("click", async () => {
+  const name = prompt(`Save the form as a preset of ${rack.title}.\nName (letters, digits, space, - _ . ; at most 60):`,
+    $("#preset").value || "");
+  if (name === null) return;
+  const body = { name: name.trim(), preset: formState() };
+  const url = `/api/racks/${enc(rack.name)}/presets`;
+  try {
+    let d;
+    try { d = await api("POST", url, body); }
+    catch (e) {
+      if (e.status !== 409) throw e;
+      if (!confirm(`A preset "${body.name}" exists for ${rack.title}. Overwrite it?`)) return;
+      d = await api("POST", url, { ...body, overwrite: true });
+    }
+    await loadPresets(d.name);
+    formMsg(`saved preset "${d.name}"`, "ok");
+  } catch (e) { formMsg(e.message, "err"); }
+});
+$("#preset-delete").addEventListener("click", async () => {
+  const name = $("#preset").value;
+  if (!name) { formMsg("choose a preset to delete first"); return; }
+  if (!confirm(`Delete preset "${name}" of ${rack.title}?`)) return;
+  try {
+    await api("POST", `/api/racks/${enc(rack.name)}/presets/delete`, { name });
+    await loadPresets();
+    formMsg(`deleted preset "${name}"`, "ok");
+  } catch (e) { formMsg(e.message, "err"); }
 });
 $("#resolve").addEventListener("click", async () => {
   $("#resolved").textContent = "reading the workbook…";
@@ -80,16 +208,9 @@ $("#resolve").addEventListener("click", async () => {
 });
 form.addEventListener("submit", async ev => {
   ev.preventDefault();
-  const kind = form.kind.value;
-  const req = { rack: rack.name, kind, pytest_args: form.pytest_args.value, password: form.password.value };
-  if (kind === "health") {
-    req.known = form.known.checked;
-    if (form.health_tc.value.trim()) req.tc = form.health_tc.value;
-  } else {
-    Object.assign(req, { tc: form.tc.value, marker: form.marker.value, paths: form.paths.value,
-      switches: form.switches.value, computes: form.computes.value, allow_disruptive: form.allow_disruptive.checked });
-    if (req.allow_disruptive && !confirm(`Run DISRUPTIVE cases on ${rack.title}?`)) return;
-  }
+  const req = { rack: rack.name, ...formState(), password: form.password.value };
+  if (req.allow_disruptive && !confirm(`Run DISRUPTIVE cases on ${rack.title}?`)) return;
+  rememberForm();
   form.password.value = "";
   $("#runmsg").textContent = "";
   try {
@@ -122,7 +243,19 @@ async function loadRuns() {
     h("td", { class: "v-" + (r.verdict || "") }, r.verdict || r.error || ""),
     h("td", {}, ...(r.results || []).map(n => [resultLinks(n), " "])),
     h("td", {}, h("button", { onclick: () => openLog(r.id) }, "Log"),
+      h("a", { class: "btn", href: `/api/runs/${enc(r.id)}/log.txt`, download: "",
+               title: "the log as a text file (a running run: what is there so far)" }, "Download log"),
+      h("button", { onclick: () => runAgain(r), title: "fill the Run form with this run's settings (not the password)" }, "Run again"),
       ["queued", "running"].includes(r.status) ? h("button", { onclick: () => stopRun(r.id) }, r.status === "queued" ? "Cancel" : "Stop") : null))));
+}
+function runAgain(r) {
+  if (!racks.find(x => x.name === r.rack)) {
+    alert(`Run ${r.id} was on rack "${r.rack}", which is no longer in ui/racks.yaml: nothing was filled.`);
+    return;
+  }
+  if (!r.job) { alert(`Run ${r.id} has no saved settings.`); return; }
+  if (r.rack !== rack.name) { $("#rack").value = r.rack; rackChanged(); }
+  applySettings({ ...r.job, filters: r.filters || {} }, `Settings of run ${r.id}`);
 }
 async function stopRun(id) {
   if (!confirm("Stop run " + id + "?")) return;
@@ -151,6 +284,7 @@ async function loadResults() {
   if (!rack) return;
   const rows = await api("GET", `/api/racks/${encodeURIComponent(rack.name)}/history`);
   const base = n => `/results/${encodeURIComponent(rack.name)}/${encodeURIComponent(n)}/`;
+  const dl = (n, what) => `/api/racks/${enc(rack.name)}/results/${enc(n)}/${what}`;
   $("#results tbody").replaceChildren(...rows.map(r => h("tr", {},
     h("td", {}, r.name, r.merged_from ? h("div", { class: "muted" }, "merged from " + r.merged_from.join(" + ")) : null),
     h("td", {}, r.mtime),
@@ -158,6 +292,10 @@ async function loadResults() {
     h("td", { class: r.health ? "v-" + r.health.verdict : "" }, r.health ? `${r.health.verdict} (${r.health.blockers} blocker, ${r.health.warnings} warning)` : ""),
     h("td", {}, ...r.reports.map(f => [h("a", { href: base(r.name) + f, target: "_blank" }, f), " "]),
       h("a", { href: base(r.name) + "tc_summary.csv", target: "_blank", class: "muted" }, "csv")),
+    h("td", {},
+      h("a", { class: "btn", href: dl(r.name, "zip"), download: "", title: "every file of the folder" }, "Download results (.zip)"),
+      ...["report.html", "health.html"].filter(f => r.reports.includes(f)).map(f =>
+        h("a", { class: "btn", href: dl(r.name, "file/" + f), download: "" }, f === "report.html" ? "Download report" : "Download health report"))),
     h("td", {},
       r.reports.includes("report.html") ? null : h("button", { onclick: () => buildReport(r.name) }, "Build report"),
       r.health && r.health.verdict !== "GO" ? h("button", { onclick: () => askRerun(r.name) }, "Re-run failed") : null))));
