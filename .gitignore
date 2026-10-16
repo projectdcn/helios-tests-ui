@@ -6,6 +6,8 @@ results/
 *.egg-info/
 # real rack inventories carry hostnames; keep them local
 inventory/*.local.yaml
+# dated inventory backups written by the UI's inventory editor
+inventory/*.bak-*
 .DS_Store
 # vendor tools copied from the lab (binaries, builds, AMD-internal sources) - never commit
 tools/RcclSmokeTest-*/

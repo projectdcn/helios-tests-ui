@@ -1,0 +1,130 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Helios Tests</title>
+<link rel="stylesheet" href="/static/app.css">
+</head>
+<body>
+<header>
+  <h1>Helios tests</h1>
+  <label>Rack <select id="rack"></select></label>
+  <span id="rackinfo" class="muted"></span>
+</header>
+<nav>
+  <button data-tab="run" class="active">Run</button>
+  <button data-tab="runs">Runs &amp; live log</button>
+  <button data-tab="results">Results</button>
+  <button data-tab="inventory">Inventory &amp; quarantine</button>
+</nav>
+<main>
+<section id="tab-run" class="tab active">
+  <form id="runform" autocomplete="off">
+    <fieldset>
+      <legend>What to run</legend>
+      <label><input type="radio" name="kind" value="health" checked> Rack health check (<code>tools/rack_health.py</code>, GO / NO-GO)</label>
+      <label><input type="radio" name="kind" value="pytest"> Selected test cases (pytest)</label>
+    </fieldset>
+    <fieldset id="health-opts">
+      <legend>Health check options</legend>
+      <label id="known-row"><input type="checkbox" name="known" checked> pass <code id="known-file"></code> as <code>--known</code></label>
+      <label>Limit to cases (optional, re-runs part of the check) <input name="health_tc" placeholder="HC-001,TC-BU-009"></label>
+    </fieldset>
+    <fieldset id="case-opts" hidden>
+      <legend>Cases</legend>
+      <label>Test case ids <textarea name="tc" rows="2" placeholder="TC-SWH-002, TC-AFM-001"></textarea></label>
+      <label>or a marker expression <input name="marker" placeholder="healthcheck   /   l1 and not disruptive"></label>
+      <details>
+        <summary>Pick from the test plan (tools/select_cases.py)</summary>
+        <div class="grid">
+          <label>Level <input name="s_level"></label>
+          <label>Scope <input name="s_scope" placeholder="Switch,Switch (AFM API)"></label>
+          <label>Disruptive <input name="s_disruptive" placeholder="Non-disruptive"></label>
+          <label>Health check <input name="s_health" placeholder="Blocker,Warning"></label>
+          <label>Origin <input name="s_origin"></label>
+          <label>Status <input name="s_status"></label>
+          <label>Suite <select name="s_suite"><option>all</option><option>afm</option><option>ssh</option></select></label>
+        </div>
+        <button type="button" id="resolve">Fill the test case ids</button> <span id="resolved" class="muted"></span>
+      </details>
+      <div class="grid">
+        <label>Test paths <input name="paths" value="tests"></label>
+        <label>Switches (subset) <input name="switches" placeholder="st1,st2"></label>
+        <label>Computes (subset) <input name="computes" placeholder="ct01,ct03"></label>
+      </div>
+      <label class="warn"><input type="checkbox" name="allow_disruptive"> allow disruptive cases (<code>--allow-disruptive</code>)</label>
+    </fieldset>
+    <fieldset>
+      <legend>Run</legend>
+      <label>Extra pytest arguments <input name="pytest_args" placeholder="--ignore tests/afm"></label>
+      <label>AFM admin password <input type="password" name="password" autocomplete="new-password" spellcheck="false">
+        <span class="muted">kept in memory for this run only, handed to the run through <code id="pwenv">HELIOS_AFM_PASSWORD</code>; empty = AFM cases skip</span></label>
+      <button type="submit" class="primary">Start run</button>
+      <span id="runmsg"></span>
+    </fieldset>
+  </form>
+</section>
+
+<section id="tab-runs" class="tab">
+  <div class="row"><button id="refresh-runs">Refresh</button> <span class="muted">One run at a time per rack; later ones wait in the queue.</span></div>
+  <table id="runs"><thead><tr><th>Run</th><th>Status</th><th>What</th><th>Started</th><th>Exit</th><th>Verdict</th><th>Results</th><th></th></tr></thead><tbody></tbody></table>
+  <h3 id="logtitle">Log</h3>
+  <pre id="log" class="log"></pre>
+</section>
+
+<section id="tab-results" class="tab">
+  <div class="row"><button id="refresh-results">Refresh</button> <span class="muted">Result folders of this rack (newest first).</span></div>
+  <div id="rerun-box" class="box" hidden>
+    Re-run what did not pass in <b id="rerun-name"></b> and judge the merged result.
+    <label>AFM admin password <input type="password" id="rerun-pw" autocomplete="new-password"></label>
+    <button id="rerun-go" class="primary">Re-run failed</button> <button id="rerun-cancel">Cancel</button>
+  </div>
+  <table id="results"><thead><tr><th>Folder</th><th>Written</th><th>Cases</th><th>Health</th><th>Reports</th><th></th></tr></thead><tbody></tbody></table>
+</section>
+
+<section id="tab-inventory" class="tab">
+  <p class="muted" id="invpath"></p>
+  <div id="invmsgs"></div>
+  <div class="row">
+    <button id="inv-mode-form" class="active">Form</button>
+    <button id="inv-mode-raw">Raw YAML (keeps comments)</button>
+    <button id="inv-reload">Reload</button>
+  </div>
+  <div id="inv-form">
+    <fieldset>
+      <legend>Rack</legend>
+      <div class="grid">
+        <label>Rack name <input id="f-rack"></label>
+        <label>AFM URL <input id="f-afm-url"></label>
+        <label>AFM user <input id="f-afm-user"></label>
+        <label>AFM password env var <input id="f-afm-pwenv" placeholder="HELIOS_AFM_PASSWORD"></label>
+        <label><input type="checkbox" id="f-afm-tls"> verify TLS</label>
+      </div>
+      <div class="grid2">
+        <label>transport <textarea id="f-transport" rows="4"></textarea></label>
+        <label>defaults <textarea id="f-defaults" rows="4"></textarea></label>
+      </div>
+    </fieldset>
+    <fieldset><legend>Switches</legend><table id="t-switches" class="edit"></table><button type="button" data-add="switches">+ switch</button></fieldset>
+    <fieldset><legend>Compute trays</legend><table id="t-computes" class="edit"></table><button type="button" data-add="computes">+ compute</button></fieldset>
+    <fieldset><legend>Thresholds</legend><textarea id="f-thresholds" rows="14"></textarea></fieldset>
+  </div>
+  <div id="inv-raw" hidden><textarea id="raw" rows="30" spellcheck="false"></textarea></div>
+  <div id="quar-box" class="box" hidden>
+    Quarantine <b id="quar-node"></b>: left out of every check; passing checks become PARTIAL.
+    <label>Reason (required) <input id="quar-reason"></label>
+    <label>Until (optional) <input type="date" id="quar-until"></label>
+    <button id="quar-preview" class="primary">Preview</button> <button id="quar-cancel">Cancel</button>
+  </div>
+  <div class="row">
+    <button id="inv-preview" class="primary">Preview changes</button>
+    <button id="inv-save" disabled>Save (dated backup first)</button>
+    <span id="savemsg"></span>
+  </div>
+  <div id="preview"></div>
+</section>
+</main>
+<script src="/static/app.js"></script>
+</body>
+</html>

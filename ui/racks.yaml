@@ -1,0 +1,35 @@
+# Rack profiles for the helios-tests UI (python -m ui). NO SECRETS HERE: the AFM password is typed in the browser
+# for each run, kept in memory for that run only and handed to the run's process through the environment variable the
+# inventory names (afm.auth.password_env, default HELIOS_AFM_PASSWORD). SSH logs in with your key / agent.
+#
+# Paths are relative to the repository root (~ expands). Inventories are git-ignored *.local.yaml files.
+racks:
+  mr3:
+    title: MR3 mini rack (direct)
+    runner: local                       # pytest / tools/rack_health.py run in this checkout
+    inventory: inventory/mr3.local.yaml
+    results_dir: results
+
+  g02-g17:
+    title: g02-g17 full rack (via jump host)
+    runner: ssh                         # every run: sync code + inventory to the jump host, run there, copy results back
+    # local copy of the jump host's inventory (~/helios/fullrack-jump-afm.yaml); edited here, pushed at each run's sync.
+    # Fetch it once:  scp -P 8059 tenant-hpe@165.204.38.103:helios/fullrack-jump-afm.yaml inventory/fullrack-jump-afm.local.yaml
+    inventory: inventory/fullrack-jump-afm.local.yaml
+    results_dir: results
+    known: testplan/health-known.yaml   # health runs pass --known (as ~/helios/run-health.sh does)
+    ssh:
+      host: 165.204.38.103
+      port: 8059
+      user: tenant-hpe
+      code_dir: ~/helios/helios-tests   # git archive <ref> is unpacked here (same as the manual copy)
+      python: ~/helios/venv/bin/python
+      inventory: ~/helios/fullrack-jump-afm.yaml
+      ref: HEAD                         # committed code only, like the manual 'git archive HEAD' copy
+      remote_html: false                # run-health.sh uses --no-html; the HTML is built here after the copy-back
+
+  selftest:
+    title: Simulated rack (selftest replay + fake AFM)
+    runner: local
+    inventory: selftest/inventory.yaml
+    results_dir: results

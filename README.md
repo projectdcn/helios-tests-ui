@@ -40,6 +40,8 @@ selftest/               replay inventory + canned outputs (make_replay.py); fake
 inventory/              example-fullrack.yaml (copy to *.local.yaml)
 testplan/manifest.yaml  all 542 plan cases, normalized (tools/import_testplan.py)
 tools/coverage.py       automated vs. total, per category
+ui/                     web UI (python -m ui): rack profiles (racks.yaml), runners (local / jump host),
+                        run queue + live log, inventory editor + quarantine, static page
 ```
 
 ## How to run
@@ -287,6 +289,34 @@ The table has one row per category:
 
 `--missing` also lists every case that has **no test yet**, with its ID, level
 and title.
+
+### 8. Web UI (runs, live log, reports, inventory, quarantine)
+
+```bash
+.venv/bin/python -m ui                 # http://127.0.0.1:8765/  (--port N, --config ui/racks.yaml)
+```
+
+- Standard library only (no extra packages); binds to 127.0.0.1. Rack profiles are in `ui/racks.yaml` (no secrets):
+  **mr3** runs pytest / `tools/rack_health.py` in this checkout with `inventory/mr3.local.yaml`; **g02-g17** runs on
+  the jump host: each run copies the committed code (`git archive HEAD`, workbooks left out) to
+  `~/helios/helios-tests`, pushes `inventory/fullrack-jump-afm.local.yaml` to `~/helios/fullrack-jump-afm.yaml`
+  (the jump host's previous copy is kept as `.bak-<date>` when it changes), runs there with `~/helios/venv`, streams the
+  output and copies the new results folders back into `results/`. Fetch the inventory copy once with
+  `scp -P 8059 tenant-hpe@165.204.38.103:helios/fullrack-jump-afm.yaml inventory/fullrack-jump-afm.local.yaml`.
+  **selftest** runs against the simulated rack.
+- Run tab: health check (with `--known` from the profile) or selected cases (TC ids, a marker expression such as
+  `healthcheck`, or a pick from the test plan via `tools/select_cases.py`), node subsets, `--allow-disruptive`.
+  One run at a time per rack; later runs queue. Stop / cancel from the Runs tab; the live log streams there.
+- The AFM password is typed per run, kept in memory for that run only and handed to the run through the variable the
+  inventory names (`afm.auth.password_env`); on the jump host it goes to the remote shell's stdin (`read -r`), never a
+  command line. Run logs show it as `<REDACTED>` if anything prints it.
+- Results tab: result folders, `health.html` / `report.html` (built here for jump-host runs), **Re-run failed** for a
+  health run that is not GO (`rack_health.py --rerun-failed`).
+- Inventory tab: form view (rack / AFM settings, switch and compute tables, thresholds) or raw YAML (keeps comments);
+  validated with the inventory loader, unique names / hosts / BMCs / slots, password values refused (use
+  `password_env` / `key_file`), diff preview, dated backup `<file>.bak-YYYYmmdd-HHMMSS` before each save. Per node
+  **Quarantine…** (reason required, optional until date) / **Lift** writes the `quarantine:` entry. For g02-g17 the
+  editor changes the local copy; the jump host gets it with the next run.
 
 ## Coverage (435 of 577 cases: 542 plan + 23 switch cases TC-SWH-037…059 + 12 health checks HC-000…011)
 

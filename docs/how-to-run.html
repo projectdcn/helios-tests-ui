@@ -116,6 +116,7 @@
     <a href="#results">Results</a>
     <a href="#report">HTML report</a>
     <a href="#health">Rack health</a>
+    <a href="#ui">Web UI</a>
     <a href="#coverage">Coverage</a>
   </nav>
 </header>
@@ -633,6 +634,21 @@ Not run: RAS power-cycle tests (disruptive)</pre></div>
   <p>Pass the cases after <code>--</code>; the verdict is judged on the cases that ran. Then merge the full run and the re-run (latest result per case) for the report:</p>
   <div class="cmd"><pre>ssh -t -p 8059 tenant-hpe@165.204.38.103 &#x27;bash ~/helios/run-health.sh -- --tc HC-001,TC-BU-009,...&#x27;</pre></div>
   <div class="cmd"><pre>.venv/bin/python tools/rack_health.py --merge results/&lt;full-run&gt; results/&lt;re-run&gt; --known testplan/health-known.yaml</pre></div>
+</section>
+
+<section id="ui">
+  <h2><span class="num">9b</span>Web UI: runs, live log, reports, inventory and quarantine</h2>
+  <p>A small web app on your Mac (standard library only, bound to 127.0.0.1) that starts runs on MR3 directly or on g02-g17 through the jump host, streams the log, lists the results and edits the inventories.</p>
+  <div class="cmd"><pre>.venv/bin/python -m ui</pre></div>
+  <p class="muted">Then open <code>http://127.0.0.1:8765/</code>. <code>--port</code> picks another port, <code>--config</code> another rack profile file. Ctrl-C stops the UI and any run it started.</p>
+  <ul>
+    <li><strong>Rack profiles</strong> (<code>ui/racks.yaml</code>, no secrets). <em>mr3</em>: runs in this checkout with <code>inventory/mr3.local.yaml</code>. <em>g02-g17</em>: for each run the UI copies the committed code (<code>git archive HEAD</code>, without the workbook) to <code>~/helios/helios-tests</code> on <code>tenant-hpe@165.204.38.103:8059</code>, pushes <code>inventory/fullrack-jump-afm.local.yaml</code> to <code>~/helios/fullrack-jump-afm.yaml</code> (keeping the old one as <code>.bak-&lt;date&gt;</code> when it changed), runs <code>tools/rack_health.py</code> or pytest there with <code>~/helios/venv</code>, and copies the new results folders back. Your SSH key logs in, over one multiplexed connection. Fetch the inventory copy once:
+      <div class="cmd"><pre>scp -P 8059 tenant-hpe@165.204.38.103:helios/fullrack-jump-afm.yaml inventory/fullrack-jump-afm.local.yaml</pre></div></li>
+    <li><strong>Run</strong>: the health check (passes <code>--known testplan/health-known.yaml</code> on g02-g17, like <code>run-health.sh</code>), or selected cases by TC id, marker expression (e.g. <code>healthcheck</code>) or a test-plan pick (<code>tools/select_cases.py</code> filters). One run at a time per rack; later ones queue. Stop or cancel from the Runs tab.</li>
+    <li><strong>AFM password</strong>: typed for each run, kept in memory for that run only, given to the run through the inventory's <code>afm.auth.password_env</code> variable (on the jump host through the remote shell's stdin, as <code>read -s</code> does). Never written to a file, a command line or the log.</li>
+    <li><strong>Results</strong>: every results folder of the rack with its health verdict, <code>health.html</code> / <code>report.html</code> (built on the Mac for jump-host runs), and <strong>Re-run failed</strong> (<code>--rerun-failed</code>) for a health run that is not GO.</li>
+    <li><strong>Inventory &amp; quarantine</strong>: a form (rack and AFM settings, switch and compute tables, thresholds) or the raw YAML (keeps comments). Saving validates with the inventory loader, checks unique names, hosts, BMCs and slots, refuses password values (use <code>password_env</code> or <code>key_file</code>), shows the diff, and keeps a dated backup <code>&lt;file&gt;.bak-YYYYmmdd-HHMMSS</code>. <em>Quarantine…</em> on a node (reason required, optional until date) writes its <code>quarantine:</code> entry (section 9a); <em>Lift</em> removes it. For g02-g17 this edits the local copy; the jump host gets it with the next run.</li>
+  </ul>
 </section>
 
 <section id="coverage">
