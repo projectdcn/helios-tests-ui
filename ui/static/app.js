@@ -45,6 +45,26 @@ function showTab(t) {
   if (t === "inventory") loadInventory();
 }
 
+// ---------------------------------------------------------------- case history (results/index.csv)
+const OUTCOME_CLASS = { passed: "ok", failed: "err", error: "err", partial: "warn", blocked: "warn", skipped: "muted" };
+$("#histform").addEventListener("submit", async ev => {
+  ev.preventDefault();
+  const tc = $("#histform").tc.value.trim();
+  const body = $("#history tbody");
+  body.replaceChildren();
+  $("#histmsg").textContent = "reading the index…";
+  try {
+    const d = await api("GET", `/api/cases/${enc(tc)}/history`);
+    $("#histmsg").textContent = `${d.rows.length} execution(s) of ${tc}`;
+    body.replaceChildren(...d.rows.map(r => h("tr", {},
+      h("td", { class: "mono" }, r.started), h("td", {}, r.rack), h("td", { class: "mono" }, r.run),
+      h("td", { class: OUTCOME_CLASS[r.outcome] || "" }, r.outcome), h("td", { class: "mono" }, r.test),
+      h("td", {}, r.message), h("td", {},
+        r.log_url ? h("a", { href: r.log_url, target: "_blank", rel: "noopener" }, "log") : "", " ",
+        r.report_url ? h("a", { href: r.report_url, target: "_blank", rel: "noopener" }, "report") : ""))));
+  } catch (e) { $("#histmsg").textContent = e.message; }
+});
+
 async function loadRacks() {
   racks = await api("GET", "/api/racks");
   const sel = $("#rack");

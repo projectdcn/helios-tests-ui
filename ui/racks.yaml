@@ -8,7 +8,7 @@ racks:
     title: MR3 mini rack (direct)
     runner: local                       # pytest / tools/rack_health.py run in this checkout
     inventory: inventory/mr3.local.yaml
-    results_dir: results
+    results_dir: ~/dev/helios-tests/results/runs/mr3   # the one results store (main checkout)
     # test plan for "test plan pick" (read only; same plan IDs as the full rack). git-ignored, lives in the main checkout
     workbook: ~/dev/helios-tests/testplan/full_rack_testplan.xlsx
 
@@ -18,7 +18,7 @@ racks:
     # local copy of the jump host's inventory (~/helios/fullrack-jump-afm.yaml); edited here, pushed at each run's sync.
     # Fetch it once:  scp -P 8059 tenant-hpe@165.204.38.103:helios/fullrack-jump-afm.yaml inventory/fullrack-jump-afm.local.yaml
     inventory: inventory/fullrack-jump-afm.local.yaml
-    results_dir: results
+    results_dir: ~/dev/helios-tests/results/runs/g02-g17   # the one results store (main checkout)
     known: testplan/health-known.yaml   # health runs pass --known (as ~/helios/run-health.sh does)
     workbook: ~/dev/helios-tests/testplan/full_rack_testplan.xlsx   # read only, for "test plan pick"
     ssh:
@@ -35,5 +35,5 @@ racks:
     title: Simulated rack (selftest replay + fake AFM)
     runner: local
     inventory: selftest/inventory.yaml
-    results_dir: results
+    results_dir: ~/dev/helios-tests/results/runs/selftest   # the one results store (main checkout)
     workbook: ~/dev/helios-tests/testplan/full_rack_testplan.xlsx

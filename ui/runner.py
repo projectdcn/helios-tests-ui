@@ -175,6 +175,18 @@ class Executor:
                                 stdout=subprocess.PIPE, stderr=subprocess.STDOUT, start_new_session=True)
 
 
+def index_runs(run_dirs, log=None) -> None:
+    """Add copied-back runs to results/index.csv (tools/results_index.py); local runs index themselves."""
+    try:
+        sys.path.insert(0, str(Path(ROOT, "tools")))
+        from results_index import update_run
+        for d in run_dirs:
+            update_run(d)
+    except Exception as e:  # noqa: BLE001 - the index must never fail a run
+        if log:
+            log(f"(results index not updated: {e})")
+
+
 def _result_dirs(results_dir: Path, rack: str) -> set[str]:
     if not results_dir.is_dir():
         return set()
@@ -371,6 +383,7 @@ class SshRunner(Runner):
         with tarfile.open(fileobj=io.BytesIO(r.stdout), mode="r:gz") as t:
             members = [m for m in t.getmembers() if m.name.split("/")[0] in names]
             t.extractall(dest, members=members, filter="data")
+        index_runs([dest / n for n in names], log)
 
     def execute(self, run_id, job, password, log):
         p = self.profile

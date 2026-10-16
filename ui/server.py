@@ -22,7 +22,7 @@ from urllib.parse import parse_qs, unquote, urlparse
 
 from . import inventory_edit, plan, presets
 from .config import ROOT, load_config
-from .runner import JobError, NAME_RX
+from .runner import JobError, NAME_RX, TC_RX
 from .runs import RunManager, build_report, history
 
 STATIC = Path(__file__).resolve().parent / "static"
@@ -104,6 +104,24 @@ def select_cases(filters: dict, profile) -> list[str]:
     if r.returncode != 0:
         raise JobError("select_cases: " + (r.stderr or r.stdout)[-400:])
     return [t for t in r.stdout.strip().split(",") if t]
+
+
+def case_history(app, tc: str) -> dict:
+    """{index, rows} for one plan id across every rack: results/index.csv lives in the results root shared by the
+    profiles (<root>/runs/<rack>/)."""
+    if not TC_RX.match(tc):
+        raise JobError(f"not a test case id: {tc!r}")
+    roots = {p.results_dir.parent.parent for p in app.profiles.values() if p.results_dir.parent.name == "runs"}
+    sys.path.insert(0, str(Path(ROOT, "tools")))
+    import results_index
+    rows = [r for root in sorted(roots) for r in results_index.history(tc, root)]
+    rows.sort(key=lambda r: r["started"], reverse=True)
+    known = set(app.profiles)
+    for r in rows:      # link only into racks this UI serves (the /results/<rack>/<run>/... route)
+        r["log_url"] = (f"/results/{r['rack']}/{r['run']}/{r['log'].split('/', 3)[3]}"
+                        if r["rack"] in known and r["log"].count("/") >= 3 else "")
+        r["report_url"] = f"/results/{r['rack']}/{r['run']}/report.html" if r["rack"] in known else ""
+    return {"index": [str(Path(r) / "index.csv") for r in sorted(roots)], "rows": rows}
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -214,6 +232,9 @@ class Handler(BaseHTTPRequestHandler):
                 return self._file(p.results_dir / m.group(2), m.group(3))
             if path == "/api/racks":
                 return self.json([{**p.as_dict(), **self.app.runs.busy(n)} for n, p in self.app.profiles.items()])
+            m = re.fullmatch(r"/api/cases/([^/]+)/history", path)
+            if m:                      # every run of one case, from results/index.csv (tools/results_index.py)
+                return self.json(case_history(self.app, m.group(1)))
             m = re.fullmatch(r"/api/racks/([^/]+)/history", path)
             if m:
                 return self.json(history(self.app.profile(m.group(1))))

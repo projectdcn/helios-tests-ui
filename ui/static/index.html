@@ -17,6 +17,7 @@
   <button data-tab="runs">Runs &amp; live log</button>
   <button data-tab="results">Results</button>
   <button data-tab="inventory">Inventory &amp; quarantine</button>
+  <button data-tab="history">Case history</button>
 </nav>
 <main>
 <section id="tab-run" class="tab active">
@@ -107,6 +108,15 @@
     <button id="rerun-go" class="primary">Re-run failed</button> <button id="rerun-cancel">Cancel</button>
   </div>
   <table id="results"><thead><tr><th>Folder</th><th>Written</th><th>Cases</th><th>Health</th><th>Reports</th><th>Download</th><th></th></tr></thead><tbody></tbody></table>
+</section>
+
+<section id="tab-history" class="tab">
+  <form id="histform" class="row" autocomplete="off">
+    <label>Test case id <input name="tc" placeholder="TC-AFM-001" size="18" required></label>
+    <button type="submit" class="primary">Show history</button>
+    <span id="histmsg" class="muted">Every run of one case on every rack, newest first (from <code>results/index.csv</code>).</span>
+  </form>
+  <table id="history"><thead><tr><th>Started (UTC)</th><th>Rack</th><th>Run</th><th>Result</th><th>Test</th><th>Message</th><th></th></tr></thead><tbody></tbody></table>
 </section>
 
 <section id="tab-inventory" class="tab">
