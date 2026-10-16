@@ -223,12 +223,12 @@ def rack_validated(run_dirs: list[Path]) -> set[str]:
     return out
 
 
-def automation_values(validated: set[str]) -> dict[str, str]:
-    """Automaton(Yes/No/Inprogress): Yes = automated and run on a rack (any result, including Skipped); Inprogress =
-    automated, never run on a rack; No = not automated."""
+def automation_values(validated: set[str] | None = None) -> dict[str, str]:
+    """Automaton(Yes/No): Yes = a test exists for the case, No = not automated. Whether it ran on a rack is the status
+    column (blank = not run yet). (Until 15 Oct 2026 'Inprogress' meant automated but never run on a rack; read as Yes.)
+    ``validated`` is accepted for compatibility and ignored."""
     auto = automated()
-    cases = load_cases()
-    return {c["id"]: ("Yes" if c["id"] in validated else "Inprogress") if c["id"] in auto else "No" for c in cases}
+    return {c["id"]: "Yes" if c["id"] in auto else "No" for c in load_cases()}
 
 
 # not automated: a title that names one of these actions changes rack state (estimate, marked "(est.)")
@@ -325,8 +325,8 @@ def main() -> int:
     ap.add_argument("--dry-run", action="store_true")
     ap.add_argument("--summary", action="store_true", help="print counts per access class and exit")
     ap.add_argument("--automation", nargs="*", type=Path, metavar="RUN_DIR",
-                    help="also rewrite column D (Automaton Yes/No/Inprogress) from the code; Yes = run on a rack (any "
-                         "result, Skipped included) in one of these result folders (e.g. results/g02-g17-*)")
+                    help="also rewrite column D (Automaton Yes/No) from the code: Yes = a test exists, No = not "
+                         "automated (run folders, if given, are ignored - the status column says what ran)")
     a = ap.parse_args()
     access = table()
     if a.summary or not a.workbooks:

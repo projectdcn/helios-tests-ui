@@ -487,7 +487,7 @@ defaults:
   <p><code>tools/access_needed.py</code> adds an <strong>Access needed</strong> column to the workbook: column I on Testcases, column H on mortaro. It says what each case needs to run: AFM API, switch SSH, compute SSH, datapath traffic, BMC/PDU, a special rack or server, or manual work. Automated cases are classified from the code; the rest from the plan category and title, and values inferred from a title only are marked "(est.)". Close the workbook in Excel first.</p>
   <div class="cmd"><pre>.venv/bin/python tools/access_needed.py testplan/full_rack_testplan.xlsx</pre></div>
   <div class="cmd"><pre>.venv/bin/python tools/access_needed.py --summary</pre></div>
-  <p>To also rewrite the Automation column (D) from the code, add <code>--automation</code> with the rack result folders. <strong>Yes</strong> means automated and run on a rack (any result, including Skipped), <strong>Inprogress</strong> means automated but never run on a rack, and <strong>No</strong> means not automated.</p>
+  <p>To also rewrite the Automation column (D) from the code, add <code>--automation</code>: <strong>Yes</strong> = a test exists, <strong>No</strong> = not automated.</p>
   <div class="cmd"><pre>.venv/bin/python tools/access_needed.py testplan/full_rack_testplan.xlsx --automation results/mr3-2026101*</pre></div>
   <h3>Record the results in the test-plan workbook</h3>
   <p><code>tools/update_testplan.py</code> writes the verdicts of one or more runs into the Testcases sheet: Execution Status (F), SW Version (G) and Execution Notes (H), and fills an empty Scope (J). Only rows of the plan IDs that ran are changed. New notes go above the row's earlier notes, which are kept under "Earlier:"; a rerun with the same <code>--label</code> replaces its own previous note. Close the workbook in Excel first; the tool refuses while Excel's <code>~$</code> lock file exists. It saves a timestamped backup next to the workbook before writing.</p>
@@ -512,7 +512,7 @@ defaults:
   <table>
     <thead><tr><th>Column</th><th>Meaning</th></tr></thead>
     <tbody>
-      <tr><td>D Automation</td><td><strong>Yes</strong> = automated and run on a rack (any result, Skipped included); <strong>Inprogress</strong> = automated, never run on a rack; <strong>No</strong> = not automated.</td></tr>
+      <tr><td>D Automation</td><td><strong>Yes</strong> = a test exists for the case; <strong>No</strong> = not automated. Whether it has run on this rack is the status column (blank = not run yet). Until 15 Oct the value <strong>Inprogress</strong> meant automated but never run on a rack; those rows are now Yes.</td></tr>
       <tr><td>F Execution Status</td><td>PASS, FAIL, PARTIAL (passed on every reachable tray / every tray the pre-flight kept), Pending (blocked or environment), Skipped, or <strong>N/A</strong> (set by hand when the check does not apply to the platform, e.g. PSU cases on busbar-fed QFX5252 switches, optics on backplane links, MCH cases on a non-MCH rack).</td></tr>
       <tr><td>I Access needed</td><td>What a run needs (<code>tools/access_needed.py</code>).</td></tr>
       <tr><td>J Scope</td><td>Where the case runs: Switch, Compute, Switch + Compute, or Switch (AFM API) (the controller runs on the switch trays).</td></tr>
