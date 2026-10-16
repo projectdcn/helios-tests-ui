@@ -70,13 +70,13 @@ def _workers(inventory, key: str, n: int, default: bool) -> int:
 
 # ------------------------------------------------------------------ L2 ping
 
-def _l2_ping_afmctl(computes, inventory, checks: Checks) -> int:
+def _l2_ping_afmctl(computes, inventory, checks: Checks, evidence: list | None = None) -> int:
     """L2 ping driven by afmctl discovery (no per-rack IDs to maintain): accelerator IDs from
     `afmctl show device --json`, ports = LINK_UP on both ends from `afmctl show port -b <bdf> --json`.
     Pairs (``l2ping.pairs``): ring = next GPU on the same tray + same-index GPU on the next tray (both
     directions across trays), as the full-rack suite does; full = every GPU pair. Pings are serial per
     source tray (afmctl ping is not re-entrant per host) and parallel across trays."""
-    from .afmctl import Afmctl
+    from .afmctl import Afmctl, ping_evidence
 
     timeout = float(inventory.cmd("l2ping.timeout_s", 200))
     mode = inventory.cmd("l2ping.pairs", "ring")
@@ -124,12 +124,15 @@ def _l2_ping_afmctl(computes, inventory, checks: Checks) -> int:
                 fails.append(f"{tag}: only {len(common)} LINK_UP port(s) in common")
                 continue
             res, r = a.ping(d.bdf, dd.accel_id, common, timeout=timeout)
+            n = len(fails)
             if r.rc == 124:
                 fails.append(f"{tag}: exceeded {timeout:.0f}s")
             elif res.total is None:
                 fails.append(f"{tag}: no 'IFoE Request' summary{' (host busy)' if res.busy else ''}: {r.tail(200)!r}")
             elif not res.ok:
                 fails.append(f"{tag}: {res.request_fail}/{res.total} port(s) failed {res.failed_ports or ''}".rstrip())
+            if evidence is not None and len(fails) > n:
+                evidence.append(ping_evidence(tag, r))
         return fails
 
     for name, fails, exc in fan_out(run, names):
@@ -140,10 +143,11 @@ def _l2_ping_afmctl(computes, inventory, checks: Checks) -> int:
     return sum(len(v) for v in jobs.values())
 
 
-def l2_ping(computes, inventory, checks: Checks) -> int:
-    """Within each tray (every GPU pair) and across trays (ring/all, both directions). Returns ping count."""
+def l2_ping(computes, inventory, checks: Checks, evidence: list | None = None) -> int:
+    """Within each tray (every GPU pair) and across trays (ring/all, both directions). Returns ping count.
+    ``evidence`` (afmctl mode): each failed ping's command, exit code and full output is appended to it."""
     if inventory.cmd("l2ping.mode") == "afmctl":
-        return _l2_ping_afmctl(computes, inventory, checks)
+        return _l2_ping_afmctl(computes, inventory, checks, evidence)
     tmpl = template(inventory, "l2ping.cmd")
     ok_re = inventory.cmd("l2ping.success_regex")
     timeout = float(inventory.cmd("l2ping.timeout_s", 30))

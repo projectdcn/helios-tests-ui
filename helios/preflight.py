@@ -55,6 +55,7 @@ def _drop_rates(switch, window: float) -> dict[tuple[str | None, str], float]:
 class Assessment:
     excluded: dict[str, str] = field(default_factory=dict)    # tray -> reason it was left out
     problems: list[str] = field(default_factory=list)          # blocking (rack-wide, or too few trays left)
+    evidence: list[dict] = field(default_factory=list)         # failed probe pings: command, rc, afmctl output
 
     @property
     def ok(self) -> bool:
@@ -165,7 +166,7 @@ def assess(rack, computes, inventory, tools=(), min_computes: int = 1) -> Assess
 
     healthy = [c for c in computes if c.name not in out.excluded]
     if th("ping_probe", True) and healthy:
-        for name, msg in _ping_probe(healthy, float(th("ping_timeout_s", 200))):
+        for name, msg in _ping_probe(healthy, float(th("ping_timeout_s", 200)), out.evidence):
             out.excluded.setdefault(name, f"ping probe: {msg}")
 
     window, max_rate = float(th("window_s", 5)), float(th("max_rate_pps", 100))
@@ -199,8 +200,10 @@ def run(rack, computes, inventory) -> list[str]:
     return a.problems + [m for m in a.excluded.values() if m not in a.problems]
 
 
-def _ping_probe(computes, timeout: float) -> list[tuple[str, str]]:
-    """One in-tray L2 ping per GPU (ring: GPU i -> GPU i+1) over all LINK_UP ports on both ends."""
+def _ping_probe(computes, timeout: float, evidence: list | None = None) -> list[tuple[str, str]]:
+    """One in-tray L2 ping per GPU (ring: GPU i -> GPU i+1) over all LINK_UP ports on both ends. Each failed
+    ping's command and afmctl output is appended to ``evidence``."""
+    from .afmctl import ping_evidence
 
     def one(c):
         a = Afmctl(c, timeout=60)
@@ -216,6 +219,8 @@ def _ping_probe(computes, timeout: float) -> list[tuple[str, str]]:
                 fails.append(f"{c.name}/{d.bdf} -> acc {dst.accel_id}: no LINK_UP port in common")
                 continue
             res, r = a.ping(d.bdf, dst.accel_id, common, timeout=timeout)
+            if evidence is not None and (res.total is None or not res.ok):
+                evidence.append(ping_evidence(f"[probe] {c.name}/{d.bdf} -> acc {dst.accel_id}", r))
             if res.total is None:
                 fails.append(f"{c.name}/{d.bdf} -> acc {dst.accel_id}: no ping summary (rc={r.rc})")
             elif not res.ok:

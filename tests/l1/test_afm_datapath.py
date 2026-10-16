@@ -16,7 +16,10 @@ pytestmark = pytest.mark.l1
 
 @pytest.mark.tc("TC-AFM-001")
 def test_l2_ping_within_and_across_computes(datapath_ready, computes, inventory, checks, record_property):
-    record_property("pings", datapath.l2_ping(computes, inventory, checks))
+    evidence: list[dict] = []
+    record_property("pings", datapath.l2_ping(computes, inventory, checks, evidence))
+    if evidence:            # each failed ping: exact command, host, time, rc and afmctl's full output
+        record_property("ping_evidence", evidence[:40])
     checks.assert_all()
 
 
