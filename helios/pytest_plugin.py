@@ -7,7 +7,7 @@ import logging
 import sys
 import os
 import time
-from collections import defaultdict
+from collections import defaultdict, deque
 from pathlib import Path
 
 import pytest
@@ -176,26 +176,39 @@ def checks():
 
 # ----------------------------------------------------------------- results
 
-ITEM_LOG_LIMIT = 600_000  # chars per test log kept for the report
+ITEM_LOG_LIMIT = 600_000  # chars per test log kept for the report: its first and its last half
 
 
 class _ItemLog(logging.Handler):
-    """Collects the helios.cmd command trace (commands, outputs, rc, timings) of one test item."""
+    """Collects the helios.cmd command trace (commands, outputs, rc, timings) of one test item. Over ITEM_LOG_LIMIT it
+    keeps the start and the END and drops the middle: g02-g17 17 Oct, 20 of 33 disruptive logs were cut while the
+    pre-checks read the switch ports, before the test's own shuts and AFM calls (the evidence)."""
 
     def __init__(self):
         super().__init__(logging.DEBUG)
         self.setFormatter(logging.Formatter("%(asctime)s.%(msecs)03d %(levelname)-7s %(message)s", "%H:%M:%S"))
         self.lines: list[str] = []
         self.size = 0
+        self.tail: deque[str] = deque()
+        self.tail_size = self.dropped = 0
 
     def emit(self, record):
-        if self.size > ITEM_LOG_LIMIT:
-            return
         text = self.format(record)
-        self.lines.append(text)
-        self.size += len(text)
-        if self.size > ITEM_LOG_LIMIT:
-            self.lines.append(f"... [log truncated at {ITEM_LOG_LIMIT:,} chars; full trace in --log-file]")
+        if not self.tail and self.size + len(text) <= ITEM_LOG_LIMIT // 2:
+            self.lines.append(text)
+            self.size += len(text)
+            return
+        self.tail.append(text)
+        self.tail_size += len(text)
+        while self.tail_size > ITEM_LOG_LIMIT // 2 and len(self.tail) > 1:
+            old = self.tail.popleft()
+            self.tail_size -= len(old)
+            self.dropped += len(old)
+
+    def text(self) -> str:
+        cut = [f"... [{self.dropped:,} chars dropped here: the log keeps its first and last {ITEM_LOG_LIMIT // 2:,} "
+               f"chars; full trace in --log-file]"] if self.dropped else []
+        return "\n".join(self.lines + cut + list(self.tail))
 
 
 @pytest.hookimpl(hookwrapper=True)
@@ -214,7 +227,7 @@ def pytest_runtest_protocol(item, nextitem):
             yield
     finally:
         cmd_log.removeHandler(handler)
-        cfg.__dict__.setdefault("_helios_item_logs", {})[item.nodeid] = (started, "\n".join(handler.lines))
+        cfg.__dict__.setdefault("_helios_item_logs", {})[item.nodeid] = (started, handler.text())
 
 
 def _describe(item) -> tuple[str, str, str]:
