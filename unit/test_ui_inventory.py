@@ -153,3 +153,18 @@ def load_inventory_text(inv, text):
     f = inv.with_name("check.yaml")
     f.write_text(text)
     return load_inventory(f)
+
+
+def test_new_rack_without_inventory_file(tmp_path):
+    """Starting from scratch (17 Oct): no inventory file yet - the editor got no form (so the switch / compute
+    tables had no column headers) and Save failed. Now: an empty form, and Save creates the file (no backup)."""
+    f = tmp_path / "inventories" / "new.local.yaml"
+    d = ie.read(f)
+    assert d["exists"] is False and d["text"] == "" and d["sha"] == ie.sha("")
+    assert d["form"]["switches"] == [] and d["form"]["computes"] == []
+    form = {**d["form"], "rack": "new", "switches": [{"name": "st1", "host": "10.0.0.1"}],
+            "computes": [{"name": "ct01", "host": "10.0.0.11", "slot": "0"}]}
+    res = ie.save(f, {"form": form, "sha": d["sha"]})
+    assert res["saved"] is True and res["backup"] is None and f.is_file()
+    assert [s.name for s in load_inventory(f).switches] == ["st1"]
+    assert list(f.parent.glob("*.bak-*")) == []

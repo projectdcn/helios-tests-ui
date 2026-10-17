@@ -330,9 +330,15 @@ def set_quarantine(text: str, node: str, enabled: bool, reason: str = "", until:
 
 # ------------------------------------------------------------------ read / save
 
+def _current(path: Path) -> str:
+    """The file's text; "" when it does not exist yet (a new rack: the editor creates it on Save)."""
+    return path.read_text() if path.is_file() else ""
+
+
 def read(path: Path) -> dict:
-    if not path.is_file():
-        return {"path": str(path), "exists": False}
+    if not path.is_file():   # starting from scratch: an empty form (with its column headers), saved as a new file
+        return {"path": str(path), "exists": False, "text": "", "sha": sha(""), "errors": [], "warnings": [],
+                "form": to_form({})}
     text = path.read_text()
     errors, warnings, data = validate(text, path)
     out = {"path": str(path), "exists": True, "text": text, "sha": sha(text), "errors": errors, "warnings": warnings}
@@ -357,7 +363,9 @@ def _slotless_quarantined(text: str) -> set[str]:
 def prepare(path: Path, req: dict) -> dict:
     """New text from {text} (raw YAML) or {form}, or a quarantine toggle {quarantine: {node, enabled, reason,
     until}}; returns {text, diff, errors, warnings, comments_kept}."""
-    old = path.read_text()
+    old = _current(path)
+    if not old:
+        path.parent.mkdir(parents=True, exist_ok=True)   # validate() loads a copy next to where the file will be
     kept = True
     if "quarantine" in req:
         qr = req["quarantine"] or {}
@@ -385,22 +393,28 @@ def prepare(path: Path, req: dict) -> dict:
 
 def save(path: Path, req: dict) -> dict:
     """Validate, then write a dated backup (<file>.bak-YYYYmmdd-HHMMSS) and the new file. ``sha`` must match the
-    file as it was loaded (someone else may have changed it)."""
-    current = path.read_text()
+    file as it was loaded (someone else may have changed it). A file that does not exist yet is created (no
+    backup)."""
+    existed = path.is_file()
+    current = _current(path)
     if req.get("sha") and req["sha"] != sha(current):
         raise EditError(["the file changed since it was loaded - reload and redo the edit"])
     res = prepare(path, req)
     if res["errors"]:
         raise EditError(res["errors"])
-    if res["text"] == current:
+    if existed and res["text"] == current:
         return {**res, "saved": False, "backup": None}
-    backup = path.with_name(f"{path.name}.bak-{time.strftime('%Y%m%d-%H%M%S')}")
-    n = 1
-    while backup.exists():
-        backup = path.with_name(f"{path.name}.bak-{time.strftime('%Y%m%d-%H%M%S')}-{n}")
-        n += 1
-    backup.write_text(current)
+    backup = None
+    if existed:
+        backup = path.with_name(f"{path.name}.bak-{time.strftime('%Y%m%d-%H%M%S')}")
+        n = 1
+        while backup.exists():
+            backup = path.with_name(f"{path.name}.bak-{time.strftime('%Y%m%d-%H%M%S')}-{n}")
+            n += 1
+        backup.write_text(current)
+    else:
+        path.parent.mkdir(parents=True, exist_ok=True)
     tmp = path.with_name(f".{path.name}.ui-tmp")
     tmp.write_text(res["text"])
     os.replace(tmp, path)
-    return {**res, "saved": True, "backup": str(backup), "sha": sha(res["text"])}
+    return {**res, "saved": True, "backup": str(backup) if backup else None, "sha": sha(res["text"])}

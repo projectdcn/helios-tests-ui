@@ -642,7 +642,8 @@ Next: copy what the racks need (nothing secret is copied by this installer):
     $PREFIX/data/testplan/full_rack_testplan.xlsx           (test-plan workbook)
     SSH keys in ~/.ssh of $(id -un): the jump host (tenant-hpe@165.204.38.103 -p 8059) and the MR3 nodes, usable
     without a prompt (the service has no ssh-agent). Profiles: $PREFIX/config/racks.yaml
-There is no macOS Keychain on Linux: type the AFM password in the Run form for each run.
+AFM password: type it in the Run form; 'Remember' saves it per rack in ~/.config/helios-ui/secrets.json of
+    $(id -un) (mode 600, clear text: as safe as that account; \$HELIOS_UI_SECRETS in config/ui.env moves it).
 EOF
 fi
 print_access

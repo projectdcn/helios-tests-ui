@@ -5,7 +5,7 @@
 const $ = (s, el = document) => el.querySelector(s);
 const $$ = (s, el = document) => [...el.querySelectorAll(s)];
 let racks = [], rack = null, es = null, inv = null, invMode = "form", lastPreview = null, rerunBase = null, quarNode = null;
-let formRack = null, presetList = [], pwSaved = false;
+let formRack = null, presetList = [], pwSaved = false, pwStore = "macOS Keychain";
 const enc = encodeURIComponent;
 
 function h(tag, attrs = {}, ...kids) {
@@ -246,7 +246,8 @@ $("#default-reset").addEventListener("click", async () => {
   } catch (e) { formMsg(e.message, "err"); }
 });
 
-// ---------------------------------------------------------------- AFM password in the macOS Keychain (opt-in)
+// ---------------------------------------------------------------- AFM password saved on the UI server (opt-in)
+// macOS: the Keychain; Linux: a 0600 password file (d.store names which)
 async function loadPwStatus() {
   const r = rack.name;
   $("#pw-rack").textContent = rack.title;
@@ -256,18 +257,20 @@ async function loadPwStatus() {
   if (!rack || rack.name !== r) return;
   pwSaved = !!d.saved;
   const st = $("#pwstatus");
-  if (!d.available) { st.textContent = d.note || d.error || "macOS Keychain not available: type the password for each run"; st.className = "muted"; }
+  pwStore = d.store || "macOS Keychain";
+  $("#pw-store").textContent = pwStore.startsWith("password file") ? "on the UI server" : "in macOS Keychain";
+  if (!d.available) { st.textContent = d.note || d.error || "no password store on the UI server: type the password for each run"; st.className = "muted"; }
   else if (d.error) { st.textContent = d.error; st.className = "err"; }
-  else { st.textContent = pwSaved ? "saved in Keychain" : "not saved"; st.className = pwSaved ? "ok" : "muted"; }
-  st.title = d.account ? `Keychain item: service helios-ui, account ${d.account}` : "";
+  else { st.textContent = pwSaved ? `saved (${pwStore})` : "not saved"; st.className = pwSaved ? "ok" : "muted"; }
+  st.title = d.account ? `${pwStore}, account ${d.account}` : "";
   form.remember_pw.disabled = !d.available;
   $("#pw-forget").disabled = !pwSaved;
 }
 $("#pw-forget").addEventListener("click", async () => {
-  if (!confirm(`Delete the AFM password of ${rack.title} from the macOS Keychain?`)) return;
+  if (!confirm(`Delete the AFM password of ${rack.title} from the ${pwStore}?`)) return;
   try {
     const d = await api("POST", `/api/racks/${enc(rack.name)}/password/delete`, {});
-    formMsg(d.deleted ? `AFM password of ${rack.title} deleted from the Keychain` : "no password was saved", "ok");
+    formMsg(d.deleted ? `AFM password of ${rack.title} deleted from the ${pwStore}` : "no password was saved", "ok");
   } catch (e) { formMsg(e.message, "err"); }
   loadPwStatus();
 });
@@ -672,8 +675,9 @@ async function loadInventory() {
   $("#quar-box").hidden = true;
   inv = await api("GET", `/api/racks/${encodeURIComponent(rack.name)}/inventory`);
   $("#invpath").textContent = inv.path + (rack.runner === "ssh" ? " — local copy; pushed to the jump host only when a run syncs" : "");
-  if (!inv.exists) { $("#invmsgs").replaceChildren(h("div", { class: "err" }, "inventory file not found")); return; }
-  $("#invmsgs").replaceChildren(msgs(inv.errors, inv.warnings));
+  // no file yet (a new rack): the empty form still gets its column headers; Preview + Save creates the file
+  $("#invmsgs").replaceChildren(inv.exists ? msgs(inv.errors, inv.warnings)
+    : h("div", { class: "warn" }, "! inventory file not found: fill in the form (or raw YAML), Preview, then Save to create it"));
   $("#raw").value = inv.text;
   const f = inv.form || {};
   $("#f-rack").value = f.rack || "";
@@ -740,7 +744,7 @@ $("#inv-save").addEventListener("click", async () => {
   try {
     const d = await api("POST", `/api/racks/${encodeURIComponent(rack.name)}/inventory/save`, { ...lastPreview, sha: inv.sha });
     await loadInventory();
-    $("#savemsg").textContent = d.saved ? `saved; backup ${d.backup}` : "no change";
+    $("#savemsg").textContent = d.saved ? (d.backup ? `saved; backup ${d.backup}` : "saved (new file)") : "no change";
     for (const n of $$("#preview .unsaved")) n.remove();
     $("#inv-save").classList.remove("primary");
   } catch (e) { $("#savemsg").textContent = e.message; $("#savemsg").className = "err"; }

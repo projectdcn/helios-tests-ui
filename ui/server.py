@@ -77,6 +77,11 @@ class App:
         # python -m ui passes the real one; an App built without one (tests) has no Keychain
         self.keychain = keychain if keychain is not None else Keychain(enabled=False)
 
+    @property
+    def store_label(self) -> str:
+        """Where a remembered AFM password goes: the macOS Keychain or the password file (Linux)."""
+        return getattr(self.keychain, "label", "macOS Keychain")
+
     def keychain_account(self, rack: str) -> str:
         p = self.profile(rack)
         return account(p.name, afm_username(p.inventory))
@@ -87,7 +92,8 @@ class App:
             acct = self.keychain_account(rack)
         except KeychainError as e:
             return {"saved": False, "available": False, "account": None, "error": str(e)}
-        out = {"saved": False, "available": self.keychain.available(), "account": acct}
+        out = {"saved": False, "available": self.keychain.available(), "account": acct,
+               "store": self.store_label}
         if not out["available"]:
             out["note"] = self.keychain.unavailable_reason()
         if out["available"]:
@@ -116,17 +122,17 @@ class App:
                     try:
                         self.keychain.save(self.keychain_account(rack), password)
                         kc["saved"] = True
-                        notes.append("AFM password saved in the macOS Keychain")
+                        notes.append(f"AFM password saved in the {self.store_label}")
                     except KeychainError as e:
                         kc["error"] = str(e)
-                        notes.append(f"AFM password NOT saved in the Keychain: {e}")
+                        notes.append(f"AFM password NOT saved in the {self.store_label}: {e}")
             elif self.keychain.available():
                 try:
                     password = self.keychain.get(self.keychain_account(rack))
                     source = "keychain" if password else None
                 except KeychainError as e:
                     kc["error"] = str(e)
-                    notes.append(f"no AFM password typed and the Keychain could not be read: {e}")
+                    notes.append(f"no AFM password typed and the {self.store_label} could not be read: {e}")
             run = self.runs.submit(rack, body, password, source, notes)
         finally:
             del password
@@ -425,7 +431,7 @@ class Handler(BaseHTTPRequestHandler):
                 run, kc = self.app.start_run(body)
                 return self.json({**self.app.runs.get(run.id), "keychain": kc}, 201)
             m = re.fullmatch(r"/api/racks/([^/]+)/password(/delete)?", path)
-            if m:                                  # macOS Keychain: save / forget; the value is never sent back
+            if m:                                  # Keychain / password file: save / forget; never sent back
                 rack = m.group(1)
                 acct = self.app.keychain_account(rack)
                 if m.group(2):
@@ -474,8 +480,6 @@ class Handler(BaseHTTPRequestHandler):
             m = re.fullmatch(r"/api/racks/([^/]+)/inventory/(check|save)", path)
             if m:
                 p = self.app.profile(m.group(1))
-                if not p.inventory.is_file():
-                    return self.err(404, f"inventory not found: {p.inventory}")
                 with self.app.edit_lock:
                     if m.group(2) == "check":
                         return self.json(inventory_edit.prepare(p.inventory, body))

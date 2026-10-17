@@ -16,7 +16,7 @@ import yaml
 
 from ui import keychain as kcmod
 from ui.config import RackProfile
-from ui.keychain import Keychain, KeychainError
+from ui.keychain import FileSecrets, Keychain, KeychainError
 from ui.runner import Executor
 from ui.server import App, make_server
 
@@ -226,7 +226,8 @@ def _nowhere(root: Path, *secrets: str) -> None:
 def test_password_api_never_returns_the_value(ui):
     c, _, results, fake = ui
     st, d = c.j("GET", "/api/racks/rack-a/password")
-    assert st == 200 and d == {"saved": False, "available": True, "account": "rack-a:admin"}
+    assert st == 200 and d == {"saved": False, "available": True, "account": "rack-a:admin",
+        "store": "macOS Keychain"}
     st, raw = c.req("POST", "/api/racks/rack-a/password", {"password": SAVED})
     assert st == 200 and SAVED.encode() not in raw and json.loads(raw)["saved"] is True
     assert fake.store == {("helios-ui", "rack-a:admin"): SAVED}
@@ -234,7 +235,8 @@ def test_password_api_never_returns_the_value(ui):
     assert st == 200 and SAVED.encode() not in raw and SAVED.encode().hex().encode() not in raw
     assert json.loads(raw)["saved"] is True
     assert not any(a[-1] == "-w" for a, _ in fake.calls)          # status never even reads the secret
-    assert c.j("GET", "/api/racks/rack-b/password")[1] == {"saved": False, "available": True, "account": "rack-b:ops"}
+    assert c.j("GET", "/api/racks/rack-b/password")[1] == {"saved": False, "available": True, "account": "rack-b:ops",
+        "store": "macOS Keychain"}
     st, d = c.j("POST", "/api/racks/rack-a/password", {"password": "café"})
     assert st == 400 and "printable ASCII" in d["error"]
     st, d = c.j("POST", "/api/racks/rack-a/password/delete", {})
@@ -308,7 +310,7 @@ def test_keychain_trouble_never_stops_a_run(ui):
     st, r = c.j("POST", "/api/runs", {"rack": "rack-a", "kind": "health", "password": TYPED, "remember_password": True})
     assert st == 201 and "save failed" in r["keychain"]["error"]
     log = (c.wait(r["id"]), c.log(r["id"]))[1]
-    assert "AFM password NOT saved in the Keychain" in log and "given (memory only)" in log and TYPED not in log
+    assert "AFM password NOT saved in the macOS Keychain" in log and "given (memory only)" in log and TYPED not in log
     st, r = c.j("POST", "/api/runs", {"rack": "rack-a", "kind": "health"})
     assert st == 201 and "read failed" in r["keychain"]["error"] and r["has_password"] is False
     log = (c.wait(r["id"]), c.log(r["id"]))[1]
@@ -336,6 +338,67 @@ def test_no_keychain_in_app_by_default(tmp_path):
         assert "given (memory only)" in log and TYPED not in log
         st, r = c.j("POST", "/api/runs", {"rack": "rack-a", "kind": "health"})
         assert st == 201 and r["keychain"] == {} and r["has_password"] is False
+    finally:
+        app.shutdown()
+        srv.shutdown()
+        srv.server_close()
+    _nowhere(results, TYPED)
+
+
+# ------------------------------------------------------------------ Linux UI server: the password file
+# g02-g17 17 Oct: the UI installed on a Linux server greyed out "Remember" (no macOS Keychain) - nothing saved.
+
+def test_password_store_falls_back_to_file_without_keychain(tmp_path, monkeypatch):
+    monkeypatch.setattr(kcmod.sys, "platform", "linux")
+    st = kcmod.password_store({"HELIOS_UI_SECRETS": str(tmp_path / "s.json")})
+    assert isinstance(st, FileSecrets) and st.path == tmp_path / "s.json" and st.available()
+    assert kcmod.default_secrets_path({"XDG_CONFIG_HOME": "/x"}) == Path("/x/helios-ui/secrets.json")
+
+
+def test_file_secrets_save_get_delete_mode_600(tmp_path):
+    f = tmp_path / "cfg" / "helios-ui" / "secrets.json"
+    st = FileSecrets(f)
+    assert st.get("mr3:admin") is None and st.has("mr3:admin") is False and st.delete("mr3:admin") is False
+    st.save("mr3:admin", SAVED)
+    st.save("g02-g17:admin", TYPED)
+    assert (f.stat().st_mode & 0o777) == 0o600 and (f.parent.stat().st_mode & 0o777) == 0o700
+    assert st.get("mr3:admin") == SAVED and FileSecrets(f).has("g02-g17:admin")
+    assert st.delete("mr3:admin") is True and st.get("mr3:admin") is None and st.get("g02-g17:admin") == TYPED
+    with pytest.raises(KeychainError, match="printable ASCII"):
+        st.save("mr3:admin", "café")
+    with pytest.raises(KeychainError, match="bad account"):
+        st.save("m r3", SAVED)
+
+
+def test_file_secrets_refuses_a_file_others_can_read(tmp_path):
+    f = tmp_path / "secrets.json"
+    st = FileSecrets(f)
+    st.save("mr3:admin", SAVED)
+    f.chmod(0o644)
+    with pytest.raises(KeychainError, match="chmod 600") as e:
+        st.get("mr3:admin")
+    assert SAVED not in str(e.value)
+
+
+def test_remember_on_a_linux_ui_server(tmp_path):
+    """Remember + Start run saves to the password file; the next run with the field empty uses it."""
+    results, f = tmp_path / "results", tmp_path / "home" / "secrets.json"
+    app = App(profiles={"rack-a": _profile(tmp_path, "rack-a", results)}, executor=HashExecutor(),
+              keychain=FileSecrets(f))
+    srv = _serve(app)
+    try:
+        c = Client(srv.server_address[1])
+        d = c.j("GET", "/api/racks/rack-a/password")[1]
+        assert d["available"] is True and d["saved"] is False and d["store"] == f"password file {f}"
+        st, r = c.j("POST", "/api/runs", {"rack": "rack-a", "kind": "health", "password": TYPED,
+                                          "remember_password": True})
+        assert st == 201 and r["keychain"] == {"saved": True}
+        assert "saved in the password file" in (c.wait(r["id"]), c.log(r["id"]))[1]
+        assert c.j("GET", "/api/racks/rack-a/password")[1]["saved"] is True
+        st, r = c.j("POST", "/api/runs", {"rack": "rack-a", "kind": "health"})
+        assert st == 201 and r["has_password"] is True
+        st, d = c.j("POST", "/api/racks/rack-a/password/delete", {})
+        assert d["deleted"] is True and d["saved"] is False and json.loads(f.read_text()) == {}
     finally:
         app.shutdown()
         srv.shutdown()

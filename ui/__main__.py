@@ -9,7 +9,7 @@ import socket
 import sys
 from pathlib import Path
 
-from .keychain import Keychain
+from .keychain import password_store
 from .server import App, host_names, is_loopback, make_server
 from .version import version
 
@@ -51,7 +51,7 @@ def urls(host: str, port: int) -> list[str]:
 
 def main(argv=None) -> int:
     a = parse_args(argv)
-    app = App(a.config, keychain=Keychain())
+    app = App(a.config, keychain=password_store())
     try:
         srv = make_server(app, a.port, a.host)
     except OSError as e:

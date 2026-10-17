@@ -1,5 +1,6 @@
-"""The AFM password in the macOS login Keychain (opt-in, per rack): service ``helios-ui``, account
-``<rack>:<AFM username>``, through /usr/bin/security.
+"""The AFM password saved on the UI server (opt-in, per rack), account ``<rack>:<AFM username>``: in the macOS
+login Keychain (service ``helios-ui``, through /usr/bin/security), or - on Linux and any other UI server without
+it - in a password file only the UI's user can read (:class:`FileSecrets`).
 
 The password never goes on a command line (``ps`` shows every process's argv): it is saved with ``security -i``
 (interactive mode) and the ``add-generic-password`` command written to its STDIN, the password given as
@@ -10,9 +11,13 @@ read-back is then exact. Whether a password is saved is checked without reading 
 """
 from __future__ import annotations
 
+import json
+import os
 import re
+import stat
 import subprocess
 import sys
+import threading
 from pathlib import Path
 
 from .runner import JobError
@@ -44,7 +49,7 @@ def check_password(pw) -> str:
     if not isinstance(pw, str) or not pw:
         raise KeychainError("no password to save")
     if not PASSWORD_RX.match(pw):
-        raise KeychainError("the Keychain option takes passwords of printable ASCII characters (space to ~, at most "
+        raise KeychainError("saving takes passwords of printable ASCII characters (space to ~, at most "
                             "256); type this one for each run instead")
     return pw
 
@@ -52,6 +57,8 @@ def check_password(pw) -> str:
 class Keychain:
     """``run(argv, stdin) -> (rc, stdout, stderr)`` is injectable (tests never touch the real Keychain).
     ``enabled=False``: no Keychain at all (the default of an App built without one, e.g. in tests)."""
+
+    label = "macOS Keychain"
 
     def __init__(self, run=None, service: str = SERVICE, security: str = SECURITY, enabled: bool = True):
         self._run, self.enabled = run, enabled
@@ -118,3 +125,97 @@ class Keychain:
         if rc != 0:
             raise self._fail("delete", rc, err)
         return True
+
+
+def default_secrets_path(environ=None) -> Path:
+    """$HELIOS_UI_SECRETS, else $XDG_CONFIG_HOME/helios-ui/secrets.json (~/.config/...): outside the install
+    prefix, so an upgrade or reinstall keeps the saved passwords."""
+    env = os.environ if environ is None else environ
+    if (env.get("HELIOS_UI_SECRETS") or "").strip():
+        return Path(env["HELIOS_UI_SECRETS"].strip()).expanduser()
+    base = (env.get("XDG_CONFIG_HOME") or "").strip() or str(Path.home() / ".config")
+    return Path(base) / "helios-ui" / "secrets.json"
+
+
+class FileSecrets:
+    """The Keychain's stand-in on a UI server without one (Linux): ``{account: password}`` in one JSON file, mode
+    0600 in a 0700 folder, written atomically. The password is in clear text on that disk - as safe as the UI user's
+    account; a file other users can read is refused (fix with chmod 600). Same interface as :class:`Keychain`."""
+
+    enabled = True
+
+    def __init__(self, path: Path):
+        self.path = Path(path)
+        self._lock = threading.Lock()
+
+    @property
+    def label(self) -> str:
+        return f"password file {self.path}"
+
+    def available(self) -> bool:
+        return True
+
+    def unavailable_reason(self) -> str | None:
+        return None
+
+    def _load(self) -> dict:
+        try:
+            st = self.path.stat()
+        except FileNotFoundError:
+            return {}
+        except OSError as e:
+            raise KeychainError(f"{self.path}: {e.strerror}") from None
+        if st.st_mode & 0o077:
+            raise KeychainError(f"{self.path} can be read by other users (mode {stat.filemode(st.st_mode)}): "
+                                f"chmod 600 {self.path}")
+        try:
+            data = json.loads(self.path.read_text() or "{}")
+        except (OSError, ValueError) as e:
+            raise KeychainError(f"{self.path}: unreadable ({type(e).__name__})") from None
+        if not isinstance(data, dict):
+            raise KeychainError(f"{self.path}: not a JSON object")
+        return data
+
+    def _write(self, data: dict) -> None:
+        try:
+            self.path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+            tmp = self.path.with_name(f".{self.path.name}.tmp")
+            fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+            with os.fdopen(fd, "w") as f:
+                os.fchmod(f.fileno(), 0o600)    # an old tmp with a looser mode keeps it through O_CREAT
+                json.dump(data, f, indent=1, sort_keys=True)
+            os.replace(tmp, self.path)
+        except OSError as e:
+            raise KeychainError(f"saving {self.path} failed: {e.strerror}") from None
+
+    def save(self, acct: str, password: str) -> None:
+        if not ACCOUNT_RX.match(acct):
+            raise KeychainError(f"bad account {acct!r}")
+        pw = check_password(password)
+        with self._lock:
+            data = self._load()
+            data[acct] = pw
+            self._write(data)
+
+    def get(self, acct: str) -> str | None:
+        with self._lock:
+            pw = self._load().get(acct)
+        return pw if isinstance(pw, str) and pw else None
+
+    def has(self, acct: str) -> bool:
+        return self.get(acct) is not None
+
+    def delete(self, acct: str) -> bool:
+        with self._lock:
+            data = self._load()
+            if acct not in data:
+                return False
+            del data[acct]
+            self._write(data)
+        return True
+
+
+def password_store(environ=None):
+    """The macOS Keychain where there is one, else the password file."""
+    kc = Keychain()
+    return kc if kc.available() else FileSecrets(default_secrets_path(environ))
