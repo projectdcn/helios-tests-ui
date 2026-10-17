@@ -29,7 +29,27 @@ def _members(ops) -> dict:
 
 
 def _all_started(ops) -> bool:
-    return conditions_ok(ops.afm.cluster()) and all(v == "started" for v in _members(ops).values())
+    """Quorum healthy and every member started; an unreachable API (a controller being restarted - possibly the one
+    serving afm.url) counts as "not yet", so the wait rides the restart out instead of crashing."""
+    try:
+        return conditions_ok(ops.afm.cluster()) and all(v == "started" for v in _members(ops).values())
+    except Exception:  # noqa: BLE001 - connection refused / reset while a controller restarts
+        return False
+
+
+def _non_leader(ops) -> str:
+    """A non-leader controller that does not serve afm.url (skip when there is none)."""
+    leader, api = ops.leader_ip(), _api_ip(ops)
+    m = next((m for m in ops.quorum_ips() if m not in (leader, api)), None)
+    if m is None:
+        pytest.skip(f"no non-leader controller other than the API address {api} (leader {leader})")
+    return m
+
+
+def _api_ip(ops) -> str:
+    """The controller address the tests talk to (afm.url) - restarting it cuts the test's own connection."""
+    from urllib.parse import urlparse
+    return urlparse(ops.afm.base).hostname or ""
 
 
 def _crud_works(ops, uniq) -> tuple[bool, str]:
@@ -76,7 +96,7 @@ def test_cluster_tolerates_single_node_failure(ops, afm_ready, uniq, checks, rec
     API reads and writes keep working, agents stay connected."""
     _need(ops, 3)
     leader = ops.leader_ip()
-    victim = next(m for m in ops.quorum_ips() if m != leader)
+    victim = _non_leader(ops)                  # not the controller serving afm.url (its API would go away)
     sw = ops.ssh_by_ip(victim)
     try:
         ops.controller_action(sw, "stop")
@@ -98,7 +118,7 @@ def test_failed_node_rejoins(ops, afm_ready, checks, record_property):
     """A controller node that was down (stopped for thresholds.afm.node_down_s, 60 s) rejoins: started again,
     cluster healthy, and its container is serving (StartedAt advanced)."""
     _need(ops, 2)
-    victim = next(m for m in ops.quorum_ips() if m != ops.leader_ip())
+    victim = _non_leader(ops)
     sw = ops.ssh_by_ip(victim)
     before = ops.controller_state(sw)
     try:
@@ -106,7 +126,7 @@ def test_failed_node_rejoins(ops, afm_ready, checks, record_property):
         time.sleep(float(ops.th("node_down_s", 60)) * float(ops.th("time_scale", 1)))
     finally:
         ops.controller_action(sw, "start")
-    ok = ops.wait(lambda: _members(ops).get(victim) == "started" and conditions_ok(ops.afm.cluster()), 300, 10)
+    ok = ops.wait(lambda: _all_started(ops) and _members(ops).get(victim) == "started", 300, 10)
     after = ops.controller_state(sw)
     record_property("container", {"before": before, "after": after})
     checks.check(ok, f"{victim} did not rejoin: {_members(ops)}")
@@ -119,7 +139,7 @@ def test_failed_node_rejoins(ops, afm_ready, checks, record_property):
 def test_controller_logs_after_restart(ops, afm_ready, checks, record_property):
     """After docker restart afm-controller, the controller writes fresh log files under
     /opt/amd/afm/controller/logs (switch clock, so runner skew does not matter)."""
-    ip = next((m for m in ops.quorum_ips() if m != ops.leader_ip()), ops.leader_ip())
+    ip = _non_leader(ops)
     sw = ops.ssh_by_ip(ip)
     t0 = ops.epoch(sw)
     ops.restart_controller(sw)
@@ -169,7 +189,14 @@ def test_watch_survives_nonleader_restart(ops, afm_ready, uniq, cleanup, checks,
     w = ops.afm.watch()
     w.subscribe("monitoring/AlertPolicy")
     w.collect(min(wait, 5))
-    victim = next(m for m in ops.quorum_ips() if m != ops.leader_ip())
+    # a non-leader that does not serve afm.url: restarting the one we talk to closes the stream by itself (g02-g17
+    # 17 Oct: st1 = 10.255.4.71 = afm.url was picked, the API went away for ~60 s and the next tests errored)
+    leader, api = ops.leader_ip(), _api_ip(ops)
+    victim = next((m for m in ops.quorum_ips() if m not in (leader, api)), None)
+    record_property("leader_api_victim", {"leader": leader, "api": api, "victim": victim})
+    if victim is None:
+        w.close()
+        pytest.skip(f"no non-leader controller other than the API address {api} (leader {leader})")
     ops.restart_controller(ops.ssh_by_ip(victim))
     ops.wait(lambda: _all_started(ops), 300, 10)
     name = uniq("ap")
