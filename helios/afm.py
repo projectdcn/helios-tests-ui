@@ -354,7 +354,9 @@ def ev_names(events: list[dict], etype: str | None = None, kind: str | None = No
 
 def wait_for(fn: Callable[[], Any], timeout: float, interval: float = 5, what: str = "") -> Any:
     """Poll ``fn`` until truthy; returns its last value (falsy on timeout)."""
+    from .progress import WaitReporter
     end = time.monotonic() + timeout
+    rep = WaitReporter(what or getattr(fn, "__name__", "condition"), timeout)
     while True:
         v = fn()
         if v or time.monotonic() >= end:
@@ -362,6 +364,7 @@ def wait_for(fn: Callable[[], Any], timeout: float, interval: float = 5, what: s
                 log.debug("AFM wait: %s not reached in %ss", what or fn, timeout)
             return v
         time.sleep(max(0.0, min(interval, end - time.monotonic())))
+        rep.tick()
 
 
 def conditions_ok(obj: dict, ctype: str = "healthy") -> bool:

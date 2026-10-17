@@ -7,9 +7,11 @@ from typing import Callable, TypeVar
 T = TypeVar("T")
 
 
-def wait_until(fn: Callable[[], T], timeout: float, interval: float = 5.0) -> tuple[bool, T | None]:
+def wait_until(fn: Callable[[], T], timeout: float, interval: float = 5.0, what: str = "") -> tuple[bool, T | None]:
     """Call ``fn`` until it returns truthy or ``timeout`` elapses. Exceptions count as "not yet".
-    Returns (succeeded, last value)."""
+    Returns (succeeded, last value). Logs 'waiting: <what> ...' every 30 s (helios.progress)."""
+    from .progress import WaitReporter
+    rep = WaitReporter(what or getattr(fn, "__name__", "condition"), timeout)
     deadline = time.monotonic() + timeout
     last: T | None = None
     while True:
@@ -22,6 +24,7 @@ def wait_until(fn: Callable[[], T], timeout: float, interval: float = 5.0) -> tu
         if time.monotonic() >= deadline:
             return False, last
         time.sleep(interval)
+        rep.tick()
 
 
 def wait_for_ssh(node, timeout: float, interval: float = 10.0, down_first: float = 0.0) -> bool:
@@ -34,5 +37,5 @@ def wait_for_ssh(node, timeout: float, interval: float = 10.0, down_first: float
         node.t.reset()
         return node.run("true", timeout=15).ok
 
-    ok, _ = wait_until(probe, timeout, interval)
+    ok, _ = wait_until(probe, timeout, interval, what=f"{getattr(node, 'name', 'node')} answers SSH")
     return ok

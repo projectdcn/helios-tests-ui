@@ -208,8 +208,12 @@ def pytest_runtest_protocol(item, nextitem):
     cmd_log = logging.getLogger("helios.cmd")
     cmd_log.addHandler(handler)
     started = time.strftime("%Y-%m-%d %H:%M:%S UTC", time.gmtime())   # one clock for runs from the Mac and the jump host
+    from .progress import Heartbeat, log as progress
+    tc = next((m.args[0] for m in item.iter_markers("tc")), "")
+    progress.info("start %s%s", item.nodeid, f" [{tc}]" if tc else "")
     try:
-        yield
+        with Heartbeat(item.nodeid):
+            yield
     finally:
         cmd_log.removeHandler(handler)
         cfg.__dict__.setdefault("_helios_item_logs", {})[item.nodeid] = (started, "\n".join(handler.lines))
