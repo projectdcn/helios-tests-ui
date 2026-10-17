@@ -327,9 +327,13 @@ def test_switch_decommission_readmit_with_port_down(ops, afm_ready, links, check
     ns, port, cab = _pick(ops, sw)
     links.shut(sw, ns, port)
     try:
-        for action, body in (("DrainSwitchNode", {}), ("DecommissionSwitchNode", {})):
-            r = ops.afm.raw("POST", f"{CLUSTER}/switchnodes/{name}/{action}", body)
-            checks.check(r.status_code == 200, f"{action} -> HTTP {r.status_code}")
+        r = ops.afm.raw("POST", f"{CLUSTER}/switchnodes/{name}/DrainSwitchNode", {})
+        checks.check(r.status_code == 200, f"DrainSwitchNode -> HTTP {r.status_code}")
+        # Decommission is only allowed once the switch IS drained (g02-g17 17 Oct 21:49: sent right after the Drain ->
+        # 412 'decommission is not allowed for switch node in admission phase admitted', then DELETE 412 'drained')
+        checks.check(ops.wait_switch_phase(name, "drained", 900), f"{name} {ops.switch_phase(name)}, expected drained")
+        r = ops.afm.raw("POST", f"{CLUSTER}/switchnodes/{name}/DecommissionSwitchNode", {})
+        checks.check(r.status_code == 200, f"DecommissionSwitchNode -> HTTP {r.status_code}")
         checks.check(ops.wait_switch_phase(name, "decommissioned", 300), f"{name} {ops.switch_phase(name)}")
         r = ops.afm.raw("DELETE", f"{CLUSTER}/switchnodes/{name}")
         checks.check(r.status_code in (200, 204), f"DELETE -> HTTP {r.status_code}")
