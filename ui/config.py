@@ -90,6 +90,16 @@ def password_env(inventory: Path) -> str:
     return str(auth.get("password_env") or "HELIOS_AFM_PASSWORD")
 
 
+def afm_username(inventory: Path) -> str:
+    """AFM user of the inventory (afm.auth.username, default admin): part of the Keychain account name."""
+    try:
+        data = yaml.safe_load(inventory.read_text()) or {}
+    except (OSError, yaml.YAMLError):
+        return "admin"
+    auth = ((data.get("afm") or {}).get("auth") or {}) if isinstance(data, dict) else {}
+    return str(auth.get("username") or "admin")
+
+
 def inventory_rack_name(inventory: Path) -> str:
     try:
         data = yaml.safe_load(inventory.read_text()) or {}

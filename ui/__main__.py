@@ -5,6 +5,7 @@ import argparse
 import sys
 from pathlib import Path
 
+from .keychain import Keychain
 from .server import App, make_server
 
 
@@ -13,7 +14,7 @@ def main(argv=None) -> int:
     ap.add_argument("--port", type=int, default=8765)
     ap.add_argument("--config", type=Path, help="rack profiles (default ui/racks.yaml)")
     a = ap.parse_args(argv)
-    app = App(a.config)
+    app = App(a.config, keychain=Keychain())
     srv = make_server(app, a.port)
     print(f"helios-tests UI on http://127.0.0.1:{srv.server_address[1]}/  (Ctrl-C stops it; runs in progress are "
           "stopped with it)", flush=True)

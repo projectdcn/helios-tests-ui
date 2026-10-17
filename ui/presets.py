@@ -60,7 +60,7 @@ def _read(f: Path) -> dict:
 
 def _write(f: Path, d: dict) -> None:
     f.parent.mkdir(parents=True, exist_ok=True)
-    fd, tmp = tempfile.mkstemp(prefix=".ui-presets-", suffix=".tmp", dir=f.parent)
+    fd, tmp = tempfile.mkstemp(prefix=f".{f.stem}-", suffix=".tmp", dir=f.parent)
     try:
         with os.fdopen(fd, "w") as fh:
             json.dump(d, fh, indent=1, sort_keys=True)

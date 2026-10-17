@@ -20,8 +20,9 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, unquote, urlparse
 
-from . import inventory_edit, plan, presets
-from .config import ROOT, load_config
+from . import defaults, inventory_edit, plan, presets
+from .config import ROOT, afm_username, load_config
+from .keychain import Keychain, KeychainError, account
 from .runner import JobError, NAME_RX, TC_RX
 from .runs import RunManager, build_report, history
 
@@ -65,10 +66,65 @@ def zip_folder(folder: Path, fh) -> int:
 
 
 class App:
-    def __init__(self, config: Path | None = None, executor=None, profiles=None):
+    def __init__(self, config: Path | None = None, executor=None, profiles=None, keychain: Keychain | None = None):
         self.profiles = profiles if profiles is not None else load_config(config)
         self.runs = RunManager(self.profiles, executor)
         self.edit_lock = threading.Lock()
+        # python -m ui passes the real one; an App built without one (tests) has no Keychain
+        self.keychain = keychain if keychain is not None else Keychain(enabled=False)
+
+    def keychain_account(self, rack: str) -> str:
+        p = self.profile(rack)
+        return account(p.name, afm_username(p.inventory))
+
+    def password_status(self, rack: str) -> dict:
+        """{saved, available, account[, error]}: never the password itself."""
+        try:
+            acct = self.keychain_account(rack)
+        except KeychainError as e:
+            return {"saved": False, "available": False, "account": None, "error": str(e)}
+        out = {"saved": False, "available": self.keychain.available(), "account": acct}
+        if out["available"]:
+            try:
+                out["saved"] = self.keychain.has(acct)
+            except KeychainError as e:
+                out["error"] = str(e)
+        return out
+
+    def start_run(self, body: dict):
+        """POST /api/runs: a typed password wins (saved to the Keychain first when ``remember_password``); an empty
+        one falls back to the rack's Keychain password. Keychain trouble never stops the run: it is noted in the
+        log header and in the response (``keychain``)."""
+        rack = str(body.get("rack") or "")
+        if rack not in self.profiles:
+            raise JobError(f"unknown rack {rack!r}")
+        password = body.pop("password", None) or None
+        remember = body.pop("remember_password", None) is True
+        source, notes, kc = None, [], {}
+        if password is not None and not isinstance(password, str):
+            raise JobError("password must be text")
+        try:
+            if password:
+                source = "typed"
+                if remember:
+                    try:
+                        self.keychain.save(self.keychain_account(rack), password)
+                        kc["saved"] = True
+                        notes.append("AFM password saved in the macOS Keychain")
+                    except KeychainError as e:
+                        kc["error"] = str(e)
+                        notes.append(f"AFM password NOT saved in the Keychain: {e}")
+            elif self.keychain.available():
+                try:
+                    password = self.keychain.get(self.keychain_account(rack))
+                    source = "keychain" if password else None
+                except KeychainError as e:
+                    kc["error"] = str(e)
+                    notes.append(f"no AFM password typed and the Keychain could not be read: {e}")
+            run = self.runs.submit(rack, body, password, source, notes)
+        finally:
+            del password
+        return run, kc
 
     def shutdown(self) -> None:
         """Stop every queued / running run (local runs are in their own process group)."""
@@ -244,6 +300,12 @@ class Handler(BaseHTTPRequestHandler):
             m = re.fullmatch(r"/api/racks/([^/]+)/presets", path)
             if m:
                 return self.json(presets.list_presets(self.app.profile(m.group(1))))
+            m = re.fullmatch(r"/api/racks/([^/]+)/defaults", path)
+            if m:
+                return self.json(defaults.get(self.app.profile(m.group(1))))
+            m = re.fullmatch(r"/api/racks/([^/]+)/password", path)
+            if m:                                  # {saved: bool, ...}: NEVER the password
+                return self.json(self.app.password_status(m.group(1)))
             m = re.fullmatch(r"/api/racks/([^/]+)/plan", path)
             if m:
                 p = self.app.profile(m.group(1))
@@ -333,10 +395,24 @@ class Handler(BaseHTTPRequestHandler):
         try:
             body = self._body()
             if path == "/api/runs":
-                password = body.pop("password", None) or None
-                run = self.app.runs.submit(str(body.get("rack") or ""), body, password)
-                del password
-                return self.json(self.app.runs.get(run.id), 201)
+                run, kc = self.app.start_run(body)
+                return self.json({**self.app.runs.get(run.id), "keychain": kc}, 201)
+            m = re.fullmatch(r"/api/racks/([^/]+)/password(/delete)?", path)
+            if m:                                  # macOS Keychain: save / forget; the value is never sent back
+                rack = m.group(1)
+                acct = self.app.keychain_account(rack)
+                if m.group(2):
+                    return self.json({"deleted": self.app.keychain.delete(acct), **self.app.password_status(rack)})
+                pw = body.pop("password", None)
+                self.app.keychain.save(acct, pw)
+                del pw
+                return self.json(self.app.password_status(rack))
+            m = re.fullmatch(r"/api/racks/([^/]+)/defaults(/delete)?", path)
+            if m:
+                p = self.app.profile(m.group(1))
+                if m.group(2):
+                    return self.json({"deleted": defaults.delete(p)})
+                return self.json(defaults.save(p, body.get("settings")), 201)
             m = re.fullmatch(r"/api/runs/([^/]+)/stop", path)
             if m:
                 return self.json(self.app.runs.stop(m.group(1)).as_dict())

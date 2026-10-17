@@ -25,9 +25,11 @@
     <label class="inline">Load preset <select id="preset"><option value="">(no presets)</option></select></label>
     <button type="button" id="preset-delete" title="delete the selected preset">Delete preset</button>
     <button type="button" id="preset-save">Save as preset…</button>
+    <button type="button" id="default-save" title="this form is what the Run tab shows for this rack from now on (not the password)">Save as default</button>
+    <button type="button" id="default-reset" title="back to the original form (health check, --known, no ids, no filters); can also delete the saved default">Reset to default</button>
     <span id="formmsg" class="muted"></span>
   </div>
-  <p class="muted small">Presets are saved per rack in <code>ui-presets.json</code> of the rack's results folder; the form you last used is remembered in this browser. The AFM password is never saved.</p>
+  <p class="muted small">Presets and the rack's default form are saved per rack in <code>ui-presets.json</code> / <code>ui-defaults.json</code> of the rack's results folder; the form you last used is remembered in this browser. The form opens with the saved default if there is one, else the form last used in this browser, else the original form. The AFM password is in none of them (it can be kept in the macOS Keychain, below).</p>
   <form id="runform" autocomplete="off">
     <fieldset>
       <legend>What to run</legend>
@@ -86,7 +88,12 @@
       <legend>Run</legend>
       <label>Extra pytest arguments <input name="pytest_args" placeholder="--ignore tests/afm"></label>
       <label>AFM admin password <input type="password" name="password" autocomplete="new-password" spellcheck="false">
-        <span class="muted">kept in memory for this run only, handed to the run through <code id="pwenv">HELIOS_AFM_PASSWORD</code>; empty = AFM cases skip</span></label>
+        <span class="muted">kept in memory for this run only, handed to the run through <code id="pwenv">HELIOS_AFM_PASSWORD</code>; empty = the password saved in the Keychain for this rack, if any, else AFM cases skip</span></label>
+      <div class="row" id="pw-row">
+        <label class="inline"><input type="checkbox" name="remember_pw"> Remember in macOS Keychain for <b id="pw-rack"></b></label>
+        <button type="button" id="pw-forget" title="delete this rack's AFM password from the macOS Keychain">Forget saved password</button>
+        <span id="pwstatus" class="muted" role="status" aria-live="polite"></span>
+      </div>
       <button type="submit" class="primary">Start run</button>
       <span id="runmsg"></span>
     </fieldset>
@@ -104,7 +111,8 @@
   <div class="row"><button id="refresh-results">Refresh</button> <span class="muted">Result folders of this rack (newest first).</span></div>
   <div id="rerun-box" class="box" hidden>
     Re-run what did not pass in <b id="rerun-name"></b> and judge the merged result.
-    <label>AFM admin password <input type="password" id="rerun-pw" autocomplete="new-password"></label>
+    <label>AFM admin password <input type="password" id="rerun-pw" autocomplete="new-password">
+      <span class="muted">empty = the password saved in the macOS Keychain for this rack, if any</span></label>
     <button id="rerun-go" class="primary">Re-run failed</button> <button id="rerun-cancel">Cancel</button>
   </div>
   <table id="results"><thead><tr><th>Folder</th><th>Written</th><th>Cases</th><th>Health</th><th>Reports</th><th>Download</th><th></th></tr></thead><tbody></tbody></table>

@@ -1,10 +1,11 @@
 "use strict";
 // helios-tests UI. Plain JS, no build step. The AFM password is read from the field when a run starts, sent once
-// in that request and the field is cleared; it is never stored in the page, localStorage, a preset or a cookie.
+// in that request and the field is cleared; it is never stored in the page, localStorage, a preset, the rack's
+// saved default or a cookie. Opt-in, the server keeps it in the macOS Keychain (the page only learns saved / not).
 const $ = (s, el = document) => el.querySelector(s);
 const $$ = (s, el = document) => [...el.querySelectorAll(s)];
 let racks = [], rack = null, es = null, inv = null, invMode = "form", lastPreview = null, rerunBase = null, quarNode = null;
-let formRack = null, presetList = [];
+let formRack = null, presetList = [], pwSaved = false;
 const enc = encodeURIComponent;
 
 function h(tag, attrs = {}, ...kids) {
@@ -88,6 +89,7 @@ function rackChanged() {
     formRack = rack.name;
     restoreForm();
     loadPresets();
+    loadPwStatus();
     loadPlan();
   }
 }
@@ -95,6 +97,9 @@ function rackChanged() {
 // ---------------------------------------------------------------- run form
 const form = $("#runform");
 const FILTERS = ["level", "scope", "disruptive", "health", "origin", "status", "suite"];
+// THE original state of the Run form (what a fresh page shows; "Reset to default" goes back to it). fullState() shape.
+const ORIGINAL_FORM = Object.freeze({ kind: "health", known: true, health_tc: "", tc: "", marker: "", paths: "tests",
+  switches: "", computes: "", allow_disruptive: false, pytest_args: "", filters: Object.freeze({}) });
 function kindChanged() {
   const kind = form.kind.value;
   $("#health-opts").hidden = kind !== "health";
@@ -147,6 +152,7 @@ function fillForm(s) {
   const f = s.filters || {};
   for (const k of FILTERS) form["s_" + k].value = f[k] || (k === "suite" ? "all" : "");
   form.password.value = "";
+  form.remember_pw.checked = false;
   kindChanged();
   pickerRestore();
 }
@@ -155,18 +161,77 @@ function rememberForm() {
   if (!rack) return;
   try { localStorage.setItem(lsKey(rack.name), JSON.stringify(fullState())); } catch (e) { /* storage off: fine */ }
 }
-function restoreForm() {
+// the form a rack opens with: its saved default (server) if there is one, else the form last used in this browser,
+// else ORIGINAL_FORM. The browser's / original form is shown at once and replaced when a saved default arrives.
+async function restoreForm() {
+  const r = rack.name;
   let s = null;
-  try { s = JSON.parse(localStorage.getItem(lsKey(rack.name)) || "null"); } catch (e) { s = null; }
+  try { s = JSON.parse(localStorage.getItem(lsKey(r)) || "null"); } catch (e) { s = null; }
   if (s && typeof s === "object" && !Array.isArray(s)) { delete s.password; fillForm(s); }
-  else {
-    form.reset();
-    for (const k of PICK_COLS) form["s_" + k].value = "";     // hidden inputs keep their value across reset()
-    kindChanged();
-    pickerRestore();
-  }
+  else fillForm(ORIGINAL_FORM);
   formMsg("");
+  try {
+    const d = await api("GET", `/api/racks/${enc(r)}/defaults`);
+    if (!rack || rack.name !== r || !d.settings) return;
+    fillForm(d.settings);
+    formMsg(`saved default of ${rack.title} loaded (saved ${d.saved})`);
+  } catch (e) { if (rack && rack.name === r) formMsg("saved default: " + e.message, "err"); }
 }
+$("#default-save").addEventListener("click", async () => {
+  if (!confirm(`Save this form as the default of ${rack.title}? The Run tab opens with it from now on (not the password).`)) return;
+  try {
+    const d = await api("POST", `/api/racks/${enc(rack.name)}/defaults`, { settings: formState() });
+    formMsg(`saved as the default of ${rack.title} (${d.saved})`, "ok");
+  } catch (e) { formMsg(e.message, "err"); }
+});
+// back to ORIGINAL_FORM; offers to delete the rack's saved default and this browser's remembered form too (so the
+// next load is the original as well). Presets are never touched.
+$("#default-reset").addEventListener("click", async () => {
+  const r = rack.name, title = rack.title;
+  fillForm(ORIGINAL_FORM);
+  let hasDef = false, hasLs = false;
+  try { hasDef = !!(await api("GET", `/api/racks/${enc(r)}/defaults`)).settings; } catch (e) { hasDef = false; }
+  try { hasLs = localStorage.getItem(lsKey(r)) !== null; } catch (e) { hasLs = false; }
+  if (!hasDef && !hasLs) { formMsg("form reset to the original state", "ok"); return; }
+  const what = [hasDef ? `the saved default of ${title}` : "", hasLs ? "the form remembered in this browser" : ""]
+    .filter(Boolean).join(" and ");
+  if (!confirm(`The form is back to its original state.\n\nAlso delete ${what}, so the Run tab opens with the original `
+               + "form next time too? (Presets are kept.)")) {
+    formMsg(`form reset to the original state; ${what} kept`, "ok");
+    return;
+  }
+  try {
+    if (hasDef) await api("POST", `/api/racks/${enc(r)}/defaults/delete`, {});
+    try { localStorage.removeItem(lsKey(r)); } catch (e) { /* storage off: nothing remembered */ }
+    formMsg(`form reset to the original state; deleted ${what}`, "ok");
+  } catch (e) { formMsg(e.message, "err"); }
+});
+
+// ---------------------------------------------------------------- AFM password in the macOS Keychain (opt-in)
+async function loadPwStatus() {
+  const r = rack.name;
+  $("#pw-rack").textContent = rack.title;
+  let d;
+  try { d = await api("GET", `/api/racks/${enc(r)}/password`); }
+  catch (e) { d = { saved: false, available: false, error: e.message }; }
+  if (!rack || rack.name !== r) return;
+  pwSaved = !!d.saved;
+  const st = $("#pwstatus");
+  if (!d.available) { st.textContent = d.error || "macOS Keychain not available: type the password for each run"; st.className = "muted"; }
+  else if (d.error) { st.textContent = d.error; st.className = "err"; }
+  else { st.textContent = pwSaved ? "saved in Keychain" : "not saved"; st.className = pwSaved ? "ok" : "muted"; }
+  st.title = d.account ? `Keychain item: service helios-ui, account ${d.account}` : "";
+  form.remember_pw.disabled = !d.available;
+  $("#pw-forget").disabled = !pwSaved;
+}
+$("#pw-forget").addEventListener("click", async () => {
+  if (!confirm(`Delete the AFM password of ${rack.title} from the macOS Keychain?`)) return;
+  try {
+    const d = await api("POST", `/api/racks/${enc(rack.name)}/password/delete`, {});
+    formMsg(d.deleted ? `AFM password of ${rack.title} deleted from the Keychain` : "no password was saved", "ok");
+  } catch (e) { formMsg(e.message, "err"); }
+  loadPwStatus();
+});
 // a preset or a past run's settings into the form (re-run of failed checks: the Results tab's re-run box)
 function applySettings(s, label) {
   if (s.kind === "rerun") {
@@ -396,14 +461,22 @@ $("#resolve").addEventListener("click", async () => {      // manual refresh: re
 });
 form.addEventListener("submit", async ev => {
   ev.preventDefault();
-  const req = { rack: rack.name, ...formState(), password: form.password.value };
+  const req = { rack: rack.name, ...formState(), password: form.password.value,
+                remember_password: form.remember_pw.checked && !!form.password.value };
+  if (form.remember_pw.checked && !req.password && !confirm("\"Remember in macOS Keychain\" is ticked but no password "
+      + "is typed: nothing will be saved. Start anyway" + (pwSaved ? " (with the saved password)?" : "?"))) return;
   if (req.allow_disruptive && !confirm(`Run DISRUPTIVE cases on ${rack.title}?`)) return;
   rememberForm();
   form.password.value = "";
-  $("#runmsg").textContent = "";
+  $("#runmsg").textContent = ""; $("#runmsg").className = "";
   try {
     const run = await api("POST", "/api/runs", req);
-    $("#runmsg").textContent = run.status === "queued" && run.queue_position > 1 ? `queued (#${run.queue_position})` : "started";
+    const kc = run.keychain || {};
+    $("#runmsg").textContent = (run.status === "queued" && run.queue_position > 1 ? `queued (#${run.queue_position})` : "started")
+      + (kc.saved ? "; password saved in the Keychain" : "") + (kc.error ? "; Keychain: " + kc.error : "");
+    if (kc.error) $("#runmsg").className = "warn";
+    form.remember_pw.checked = false;
+    loadPwStatus();
     showTab("runs");
     openLog(run.id);
   } catch (e) { $("#runmsg").textContent = e.message; $("#runmsg").className = "err"; }

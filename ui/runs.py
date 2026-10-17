@@ -42,11 +42,14 @@ def _now() -> str:
 
 class Run:
     def __init__(self, rid: str, rack: str, job: Job, password: str | None, log_dir: Path,
-                 filters: dict | None = None):
+                 filters: dict | None = None, password_source: str | None = None, notes: list[str] | None = None):
         self.id, self.rack, self.job = rid, rack, job
         self.filters = dict(filters or {})          # test-plan pick of the form (for "Run again"), never a secret
         self._password = password or None           # memory only; dropped when the run ends
         self.has_password = bool(password)
+        # "typed" | "keychain" (never the value); notes: header lines of the log (e.g. a Keychain save that failed)
+        self.password_source = (password_source or "typed") if password else None
+        self.notes = list(notes or [])
         self.status = "queued"
         self.created, self.started, self.ended = _now(), None, None
         self.rc: int | None = None
@@ -64,7 +67,8 @@ class Run:
                 "status": self.status,
                 "created": self.created, "started": self.started, "ended": self.ended, "rc": self.rc,
                 "results": self.results, "verdict": self.verdict, "error": self.error,
-                "has_password": self.has_password, "lines": len(self.lines)}
+                "has_password": self.has_password, "password_source": self.password_source,
+                "lines": len(self.lines)}
 
     def save(self) -> None:
         self.meta_path.parent.mkdir(parents=True, exist_ok=True)
@@ -86,14 +90,15 @@ class RunManager:
         self.lock = threading.Lock()
 
     # ------------------------------------------------------------- queue
-    def submit(self, rack: str, req: dict, password: str | None = None) -> Run:
+    def submit(self, rack: str, req: dict, password: str | None = None, password_source: str | None = None,
+               notes: list[str] | None = None) -> Run:
         if rack not in self.profiles:
             raise JobError(f"unknown rack {rack!r}")
         job = Job.from_request(req)
         filters = clean_filters(req.get("filters"))
         p = self.profiles[rack]
         rid = f"{rack}-{time.strftime('%Y%m%d-%H%M%S')}-" + "".join(random.choices(string.ascii_lowercase, k=4))
-        run = Run(rid, rack, job, password, p.results_dir / "ui-runs", filters)
+        run = Run(rid, rack, job, password, p.results_dir / "ui-runs", filters, password_source, notes)
         with self.lock:
             self.runs[rid] = run
             self.queues[rack].append(run)
@@ -141,8 +146,11 @@ class RunManager:
         with open(run.log_path, "w") as fh:
             log = lambda line: self._log(run, fh, line)   # noqa: E731
             try:
+                pw = {"typed": "given (memory only)", "keychain": "from macOS Keychain (memory only)"}
                 log(f"# run {run.id} on {run.rack} ({self.profiles[run.rack].runner}); "
-                    f"AFM password {'given (memory only)' if run.has_password else 'not given'}")
+                    f"AFM password {pw.get(run.password_source, 'not given')}")
+                for note in run.notes:
+                    log(f"# {note}")
                 rc, new = runner.execute(run.id, run.job, run._password, log)
                 run.rc, run.results = rc, new
                 self._post(run, log)
