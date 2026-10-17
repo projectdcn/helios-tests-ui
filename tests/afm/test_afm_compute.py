@@ -331,7 +331,10 @@ def test_afmctl_state_after_reconfigure(ops, afm_ready, checks, record_property)
 @pytest.mark.disruptive
 @pytest.mark.tc("TC-NA-049")
 def test_reconfigure_only_when_healthy(ops, afm_ready, checks, record_property):
-    """Reconfigure is accepted on a healthy compute (200) and rejected (4xx) while its node agent is paused."""
+    """Reconfigure is accepted on a healthy compute (200) and, while its node agent is paused, accepted too (200) as
+    the AMD afm sheet's compute-reconfigure-rejected-unhealthy case says ('accepted (200) on an unhealthy compute but
+    has no effect while the agent is stopped'); after the resume the compute is healthy. The Testcases line ('allowed
+    only when compute node is healthy') reads the other way - plan conflict raised 17 Oct (same as TC-AFM-RC-017)."""
     _need_sideband(ops)
     name, tray = _target(ops)
     _reconfigure_and_check(ops, name, tray, checks)
@@ -342,7 +345,7 @@ def test_reconfigure_only_when_healthy(ops, afm_ready, checks, record_property):
         ops.wait(lambda: not conditions_ok(ops.compute(name)), float(ops.th("agent_down_detect_s", 600)), 20)
         r = ops.reconfigure(name)
         record_property("unhealthy_reconfigure", f"HTTP {r.status_code} {r.text[:150]}")
-        checks.check(400 <= r.status_code < 500, f"Reconfigure on unhealthy {name} -> HTTP {r.status_code}")
+        checks.check(r.status_code == 200, f"Reconfigure on unhealthy {name} -> HTTP {r.status_code}, afm sheet expects 200")
     finally:
         sw2, pid2 = ops.slot_host(slot)
         ops.signal_sb_agent(sw2 or sw, pid2 or pid, "CONT")

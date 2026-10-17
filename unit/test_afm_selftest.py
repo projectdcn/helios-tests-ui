@@ -72,7 +72,7 @@ LIFECYCLE_FAULTS = [
     ("no_healthy_event", {"TC-AFM-007"}),
     ("decom_with_agent_down_ok", {"TC-AFM-032"}),
     ("reconfig_decom_ok", {"TC-AFM-RC-019", "TC-AFM-RC-020"}),
-    ("unhealthy_reconf_ok", {"TC-AFM-RC-017"}),
+    ("unhealthy_reconf_rejected", {"TC-AFM-RC-017"}),   # plan: accepted (200)
     ("planes_no_drop", {"TC-AFM-023", "TC-AFM-026"}),
     # fabric links (tests/afm/test_afm_links.py)
     ("coupled_ports", {"TC-AFM-011"}),           # full rack: shutting one port also dropped a neighbour
@@ -162,7 +162,7 @@ LIFECYCLE_FAULTS = [
     ("cp_disrupted_by_fabric_change", {"TC-TRG-009"}),
     ("no_compute_port_events", {"TC-AFM-009"}),
     ("no_compute_port_events", {"TC-E2E-092"}),
-    ("unhealthy_reconf_ok", {"TC-NA-049"}),
+    ("unhealthy_reconf_rejected", {"TC-NA-049"}),
     ("sigstop_ignored", {"TC-NA-024"}),
     ("admission_reconfigure_500", {"TC-NA-050"}),
     ("reconfigure_500", {"TC-NA-040"}),

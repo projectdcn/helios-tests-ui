@@ -529,7 +529,9 @@ class Handler(BaseHTTPRequestHandler):
         if op == "Reconfigure":
             if ph != "admitted" and "reconfig_decom_ok" not in st.f:
                 return self._err(412, f"reconfigure compute tray is not allowed: compute node {name} is {ph} (decommissioned)")
-            if (slot in sim.stopped or sim.slot_host(slot) is None) and "unhealthy_reconf_ok" not in st.f:
+            # the plan (TC-AFM-RC-017) expects Reconfigure on an unhealthy compute to be accepted (g02-g17 17 Oct: 200);
+            # the 412 seen on 12 Oct is the injected fault
+            if (slot in sim.stopped or sim.slot_host(slot) is None) and "unhealthy_reconf_rejected" in st.f:
                 return self._err(412, f"reconfigure compute tray is not allowed: compute node {name} does not have scaleup info")
             if time.monotonic() - sim.reconf_at.get(name, -99) < 1:
                 return self._err(412, f"reconfigure of {name} already in progress")

@@ -552,8 +552,9 @@ def test_reconfigure_then_remove_from_vpod(ops, afm_ready, checks, record_proper
 
 @pytest.mark.tc("TC-AFM-RC-017")
 def test_reconfigure_unhealthy_compute(ops, afm_ready, checks, record_property):
-    """sb-node-agent SIGSTOPped until AFM marks the compute unhealthy: Reconfigure is rejected (full rack: 412
-    'does not have scaleup info'); after SIGCONT the compute is healthy again."""
+    """sb-node-agent SIGSTOPped until AFM marks the compute unhealthy: Reconfigure is accepted (200, as the plan
+    expects); after SIGCONT the compute is healthy again. g02-g17: 12 Oct AFM answered 412 'does not have scaleup
+    info' and the test was bent to expect 4xx; 17 Oct AFM answered 200 = the plan's expectation."""
     _need_sideband(ops)
     name = ops.pick_compute()
     slot = ops.compute(name)["spec"]["slot-id"]
@@ -564,7 +565,8 @@ def test_reconfigure_unhealthy_compute(ops, afm_ready, checks, record_property):
                      f"{name} never went unhealthy")
         r = ops.reconfigure(name)  # retries the 'already in progress' 412 guard; a real rejection is final
         record_property("reconfigure", f"HTTP {r.status_code} {r.text[:200]}")
-        checks.check(400 <= r.status_code < 500, f"Reconfigure on unhealthy {name} -> HTTP {r.status_code}, expected 4xx")
+        checks.check(r.status_code == 200, f"Reconfigure on unhealthy {name} -> HTTP {r.status_code} {r.text[:160]}, "
+                                           "plan expects 200")
     finally:
         sw2, pid2 = ops.slot_host(slot)
         ops.signal_sb_agent(sw2 or sw, pid2 or pid, "CONT")
