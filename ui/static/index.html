@@ -102,7 +102,7 @@
 
 <section id="tab-runs" class="tab">
   <div class="row"><button id="refresh-runs">Refresh</button> <span class="muted">One run at a time per rack; later ones wait in the queue.</span></div>
-  <table id="runs"><thead><tr><th>Run</th><th>Status</th><th>What</th><th>Started</th><th>Exit</th><th>Verdict</th><th>Results</th><th></th></tr></thead><tbody></tbody></table>
+  <div class="scroll" id="runs-scroll"><table id="runs"><thead><tr><th>Run</th><th>Status</th><th>What</th><th>Started</th><th>Exit</th><th>Verdict</th><th>Results</th><th></th></tr></thead><tbody></tbody></table></div>
   <h3 id="logtitle">Log</h3>
   <pre id="log" class="log"></pre>
 </section>
@@ -115,7 +115,7 @@
       <span class="muted">empty = the password saved in the macOS Keychain for this rack, if any</span></label>
     <button id="rerun-go" class="primary">Re-run failed</button> <button id="rerun-cancel">Cancel</button>
   </div>
-  <table id="results"><thead><tr><th>Folder</th><th>Written</th><th>Cases</th><th>Health</th><th>Reports</th><th>Download</th><th></th></tr></thead><tbody></tbody></table>
+  <div class="scroll" id="results-scroll"><table id="results"><thead><tr><th>Folder</th><th>Written</th><th>Cases</th><th>Health</th><th>Reports</th><th>Download</th><th></th></tr></thead><tbody></tbody></table></div>
 </section>
 
 <section id="tab-history" class="tab">
@@ -124,7 +124,7 @@
     <button type="submit" class="primary">Show history</button>
     <span id="histmsg" class="muted">Every run of one case on every rack, newest first (from <code>results/index.csv</code>).</span>
   </form>
-  <table id="history"><thead><tr><th>Started (UTC)</th><th>Rack</th><th>Run</th><th>Result</th><th>Test</th><th>Message</th><th></th></tr></thead><tbody></tbody></table>
+  <div class="scroll" id="history-scroll"><table id="history"><thead><tr><th>Started (UTC)</th><th>Rack</th><th>Run</th><th>Result</th><th>Test</th><th>Message</th><th></th></tr></thead><tbody></tbody></table></div>
 </section>
 
 <section id="tab-inventory" class="tab">

@@ -76,3 +76,9 @@ fieldset { min-width: 0; }
 #cases thead th { position: sticky; top: 0; background: var(--panel); z-index: 1; }
 #cases td:nth-child(3) { min-width: 180px; }
 #cases td:nth-child(2) { white-space: nowrap; }
+
+/* long lists scroll inside their own box (headers stay visible) instead of growing the page */
+.scroll { max-height: 45vh; overflow: auto; border: 1px solid var(--line); border-radius: 6px; margin: 6px 0; }
+.scroll table { margin: 0; }
+.scroll thead th { position: sticky; top: 0; background: var(--panel); z-index: 1; box-shadow: 0 1px 0 var(--line); }
+#runs-scroll { max-height: 38vh; }
