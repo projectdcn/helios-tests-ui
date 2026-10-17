@@ -492,12 +492,18 @@ function what(job) {
 function resultLinks(name) {
   return h("a", { href: `/results/${encodeURIComponent(rack.name)}/${encodeURIComponent(name)}/` + "tc_summary.csv", target: "_blank" }, name);
 }
+function elapsed(started) {          // "2026-10-16 20:42:03" (the UI host's local time) -> "running 2m10s"
+  const t = new Date(started.replace(" ", "T"));
+  const s = Math.max(0, Math.round((Date.now() - t.getTime()) / 1000));
+  return `running ${Math.floor(s / 60)}m${String(s % 60).padStart(2, "0")}s`;
+}
 async function loadRuns() {
   if (!rack) return;
   const runs = await api("GET", "/api/runs?rack=" + encodeURIComponent(rack.name));
   $("#runs tbody").replaceChildren(...runs.map(r => h("tr", {},
     h("td", {}, r.id),
-    h("td", { class: "st-" + r.status }, r.status + (r.status === "queued" && r.queue_position ? ` #${r.queue_position}` : "")),
+    h("td", { class: "st-" + r.status }, r.status + (r.status === "queued" && r.queue_position ? ` #${r.queue_position}` : ""),
+      r.status === "running" && r.started ? h("div", { class: "muted" }, `${elapsed(r.started)}${r.current ? " · " + r.current.split("::").pop() : ""}`) : null),
     h("td", {}, what(r.job)),
     h("td", {}, r.started || r.created),
     h("td", {}, r.rc ?? ""),

@@ -58,6 +58,7 @@ class Run:
         self.error: str | None = None
         self.stop_requested = False
         self.lines: list[str] = []
+        self.current: str | None = None          # the test running now (from helios.progress "start <nodeid>")
         self.cond = threading.Condition()
         self.log_path = log_dir / f"{rid}.log"
         self.meta_path = log_dir / f"{rid}.json"
@@ -68,7 +69,7 @@ class Run:
                 "created": self.created, "started": self.started, "ended": self.ended, "rc": self.rc,
                 "results": self.results, "verdict": self.verdict, "error": self.error,
                 "has_password": self.has_password, "password_source": self.password_source,
-                "lines": len(self.lines)}
+                "lines": len(self.lines), "current": self.current if self.status == "running" else None}
 
     def save(self) -> None:
         self.meta_path.parent.mkdir(parents=True, exist_ok=True)
@@ -132,6 +133,9 @@ class RunManager:
 
     def _log(self, run: Run, fh, line: str) -> None:
         line = redact(line, (run._password, *(v for k, v in os.environ.items() if SECRET_NAME.search(k))))
+        m = re.search(r"\bstart (\S+::\S+)", line)
+        if m:
+            run.current = m.group(1)
         fh.write(line + "\n")
         fh.flush()
         with run.cond:

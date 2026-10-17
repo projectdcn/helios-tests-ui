@@ -16,6 +16,7 @@ import subprocess
 import sys
 import tarfile
 import threading
+import time
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -193,9 +194,36 @@ def _result_dirs(results_dir: Path, rack: str) -> set[str]:
     return {p.name for p in results_dir.iterdir() if p.is_dir() and p.name.startswith(f"{rack}-")}
 
 
-def _stream(proc, log) -> int:
-    for raw in proc.stdout:
-        log(raw.decode("utf-8", "replace").rstrip("\n"))
+PARTIAL_AFTER_S = 1.0     # text without a line ending yet (pytest's "path::test " before PASSED) is shown after this
+
+
+def _stream(proc, log, partial_after: float = PARTIAL_AFTER_S) -> int:
+    """Hand the process output to ``log`` line by line; a partial line still waiting for its end is handed over
+    after ``partial_after`` s, so a running test is visible (the rest of that line follows as its own line)."""
+    try:
+        fd = proc.stdout.fileno()
+    except (AttributeError, OSError, ValueError):       # fakes / iterables: line by line
+        for raw in proc.stdout:
+            log(raw.decode("utf-8", "replace").rstrip("\n"))
+        return proc.wait()
+    import select
+    buf, last = b"", time.monotonic()
+    while True:
+        ready, _, _ = select.select([fd], [], [], 0.25)
+        if ready:
+            chunk = os.read(fd, 65536)
+            if not chunk:
+                break
+            buf += chunk
+            last = time.monotonic()
+            *lines, buf = buf.split(b"\n")
+            for line in lines:
+                log(line.decode("utf-8", "replace").rstrip("\r"))
+        elif buf and time.monotonic() - last >= partial_after:
+            log(buf.decode("utf-8", "replace").rstrip("\r"))
+            buf = b""
+    if buf:
+        log(buf.decode("utf-8", "replace").rstrip("\r"))
     return proc.wait()
 
 
