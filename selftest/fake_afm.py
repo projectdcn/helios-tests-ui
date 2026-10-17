@@ -424,7 +424,8 @@ class Handler(BaseHTTPRequestHandler):
             return self._err(404, "Object get failed: object not found")
         if method == "PUT":
             o = coll[name]
-            o["spec"] = (body or {}).get("spec") or o["spec"]
+            if not (kind == "FailoverPolicy" and "policy_edit_ignored" in st.f):   # 200, but the edit is lost
+                o["spec"] = (body or {}).get("spec") or o["spec"]
             o["meta"]["mod-time"] = now()
             o["meta"]["resource-version"] = str(next(st.rv))
             st.record(user, "Update", kind, name, path)
@@ -583,6 +584,7 @@ class Handler(BaseHTTPRequestHandler):
                 sim.failed_evt.clear()
             if op == "ReconfigureDataFabric":
                 sim.ack.setdefault(name, set()).update(sim.failed_links(st.objs, coll[name]))
+                sim.back.pop(name, None)
                 if "no_reconfigure_event" not in st.f:
                     sim.vpod_event("vpod_status_change", name, "status changed to reconfiguredatafabric")
             return self._send(200, coll[name])

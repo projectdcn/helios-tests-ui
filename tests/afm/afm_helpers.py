@@ -72,6 +72,21 @@ def _fix_manual(ops, vpod):
         ops.afm.raw("POST", f"{CLUSTER}/vpods/{vpod}/ReconfigureDataFabric", {})
 
 
+def _reconfigure_after_restore(ops, checks, vpod, base, threshold: float):
+    """Manual policy, port back up: wait (threshold + 60 s) for AFM to ask again (needdatafabricreconfiguration) and
+    answer with ReconfigureDataFabric - plan TC-AFM-016: 'bring interface back up, manually reconfigure again to
+    online'. Returns at once if the planes are back without it. g02-g17 17 Oct (TC-AFM-016/041, TC-E2E-146/052):
+    AFM asked ~20 s after the port was up (36,36,35); the old immediate _fix_manual saw 'degraded', did nothing,
+    and _restored waited 900 s on a vPOD that was waiting for the user."""
+    def asked_or_back():
+        st = ops.vpod_state(vpod)
+        return st == "needdatafabricreconfiguration" or (st in TERMINAL and (ops.planes(vpod)[1] or 0) >= (base[1] or 0))
+    ops.wait(asked_or_back, threshold + 60, 2)
+    if ops.vpod_state(vpod) == "needdatafabricreconfiguration":
+        r = ops.afm.raw("POST", f"{CLUSTER}/vpods/{vpod}/ReconfigureDataFabric", {})
+        checks.check(r.status_code == 200, f"ReconfigureDataFabric after the link came back -> HTTP {r.status_code}")
+
+
 def _user_vpod_ctx(ops, uniq, cleanup, policy_spec):
     sysv = ops.system_vpod_name()
     names = [c["meta"]["name"] for c in sorted(ops.afm.computes(), key=lambda c: c["spec"].get("slot-id", 0))

@@ -21,8 +21,8 @@ FP = f"{CLUSTER}/failoverpolicies"
 pytestmark = [pytest.mark.l2, pytest.mark.disruptive]
 
 
-from afm_helpers import (_baseline, _fix_manual, _pick, _restored, _scale, _target_switch,  # noqa: E402
-                         _user_vpod_ctx, _user_vpod_restore)
+from afm_helpers import (_baseline, _pick, _reconfigure_after_restore, _restored, _scale,  # noqa: E402
+                         _target_switch, _user_vpod_ctx, _user_vpod_restore)
 
 
 # ============================================================ flap / prolonged down
@@ -133,7 +133,7 @@ def test_vpod_auto_reconfigure_on_link_down(ops, afm_ready, links, checks, recor
     checks.assert_all()
 
 
-def _manual_flow(ops, links, checks, record_property, uniq, cleanup, threshold: int, edit_to_auto=False):
+def _manual_flow(ops, links, checks, record_property, uniq, cleanup, threshold: int):
     sysv, user, pol, names, moved = _user_vpod_ctx(
         ops, uniq, cleanup, {"datafabric-reconfig": "manual", "link-fail-threshold": threshold})
     try:
@@ -153,16 +153,12 @@ def _manual_flow(ops, links, checks, record_property, uniq, cleanup, threshold: 
         time.sleep(hold)  # must not reconfigure on its own
         checks.check(ops.vpod_state(user) == "needdatafabricreconfiguration",
                      f"{user} left needdatafabricreconfiguration without user action ({ops.vpod_state(user)})")
-        if edit_to_auto:
-            p = ops.afm.get(f"{FP}/{pol}")
-            ops.afm.put(f"{FP}/{pol}", {"meta": p["meta"], "spec": {**p["spec"], "datafabric-reconfig": "automatic"}})
-        else:
-            r = ops.afm.raw("POST", f"{CLUSTER}/vpods/{user}/ReconfigureDataFabric", {})
-            checks.check(r.status_code == 200, f"ReconfigureDataFabric -> HTTP {r.status_code}")
+        r = ops.afm.raw("POST", f"{CLUSTER}/vpods/{user}/ReconfigureDataFabric", {})
+        checks.check(r.status_code == 200, f"ReconfigureDataFabric -> HTTP {r.status_code}")
         ok = wait_for(lambda: ops.vpod_state(user) == "degraded", 300 * _scale(ops) + 5, 5)
-        checks.check(ok, f"{user} {ops.vpod_state(user)} after {'policy edit to automatic' if edit_to_auto else 'ReconfigureDataFabric'}, expected degraded")
+        checks.check(ok, f"{user} {ops.vpod_state(user)} after ReconfigureDataFabric, expected degraded")
         links.restore(sw, ns, port, checks)
-        _fix_manual(ops, user)
+        _reconfigure_after_restore(ops, checks, user, base, threshold)
         _restored(ops, checks, user, base)
     finally:
         links.restore_all()
@@ -188,9 +184,38 @@ def test_manual_failover_link_fail_timer(ops, afm_ready, links, uniq, cleanup, c
 
 @pytest.mark.tc("TC-AFM-042")
 def test_edit_failover_policy_manual_to_automatic(ops, afm_ready, links, uniq, cleanup, checks, record_property):
-    """Manual policy waiting in needdatafabricreconfiguration; editing the policy to automatic makes AFM
-    reconfigure (degraded) without ReconfigureDataFabric."""
-    _manual_flow(ops, links, checks, record_property, uniq, cleanup, threshold=10, edit_to_auto=True)
+    """Plan order: a manual policy with a 300 s timer is edited to automatic with a 10 s timer, THEN a link goes
+    down: AFM reconfigures on its own within 10 s + 60 s (degraded with a plane less, never
+    needdatafabricreconfiguration) - proves the edit took effect; port back -> baseline restored.
+    g02-g17 17 Oct: the old flow edited the policy while the vPOD already waited in needdatafabricreconfiguration
+    (not the plan's order); AFM then stayed waiting 300 s (reported to AMD as a question)."""
+    sysv, user, pol, names, moved = _user_vpod_ctx(
+        ops, uniq, cleanup, {"datafabric-reconfig": "manual", "link-fail-threshold": 300})
+    try:
+        checks.check(ops.wait_vpod(user) in TERMINAL, f"{user} not online/degraded")
+        base = _baseline(ops, user, record_property)
+        p = ops.afm.get(f"{FP}/{pol}")
+        ops.afm.put(f"{FP}/{pol}", {"meta": p["meta"], "spec": {**p["spec"], "datafabric-reconfig": "automatic",
+                                                                "link-fail-threshold": 10}})
+        checks.check(ops.link_fail_threshold(user) == 10, f"{pol}: link-fail-threshold {ops.link_fail_threshold(user)} after the edit")
+        slots = {ops.compute(n)["spec"]["slot-id"] for n in names}
+        name, sw = _target_switch(ops)
+        ns, port, cab = _pick(ops, sw, slots=slots)
+        states, t0 = set(), time.monotonic()
+        links.shut(sw, ns, port)
+        ok = wait_for(lambda: (states.add(ops.vpod_state(user)) or ops.vpod_state(user)) == "degraded"
+                      and (ops.planes(user)[1] or 0) < (base[1] or 0), (10 + 60) * _scale(ops), 2)
+        record_property("degraded_after_s", round((time.monotonic() - t0) / _scale(ops), 1))
+        record_property("states_seen", sorted(s for s in states if s))
+        checks.check(ok, f"{user} {ops.vpod_state(user)} planes {ops.planes(user)}: not reconfigured within 70 s of the "
+                         f"link going down after the edit to automatic / 10 s")
+        checks.check("needdatafabricreconfiguration" not in states, "still waited for manual action after the edit")
+        links.restore(sw, ns, port, checks)
+        _restored(ops, checks, user, base)
+    finally:
+        links.restore_all()
+        _user_vpod_restore(ops, sysv, user, moved)
+    checks.check(ops.wait_vpod(sysv) in TERMINAL, f"{sysv} not online/degraded after restore")
     checks.assert_all()
 
 

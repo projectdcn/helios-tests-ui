@@ -16,8 +16,8 @@ from concurrent.futures import ThreadPoolExecutor
 
 import pytest
 
-from afm_helpers import (_baseline, _fix_manual, _restored, _scale, _user_vpod_ctx,  # noqa: E402
-                         _user_vpod_restore)
+from afm_helpers import (_baseline, _reconfigure_after_restore, _restored, _scale,  # noqa: E402
+                         _user_vpod_ctx, _user_vpod_restore)
 from helios.afm import CLUSTER
 from helios.afm_ops import TERMINAL
 
@@ -343,13 +343,18 @@ def _manual_hold(ops, links, checks, record_property, uniq, cleanup, hold_s: flo
                 break
             time.sleep(min(10 * _scale(ops) + 0.05, max(0.05, end - time.monotonic())))
         record_property("planes", {"baseline": base, "waiting": planes_waiting})
-        checks.check(planes_waiting[1] == base[1], f"planes changed before user action: {base} -> {planes_waiting}")
+        # available planes may drop by the failed link(s) - AFM noticing the failure, not a reconfiguration (that is
+        # the state held above + reprogram_df only after ReconfigureDataFabric). g02-g17 17 Oct: (36,36,36) ->
+        # (36,35,18) while waiting, 36 -> 35 failed the old 'unchanged' check; effective 18 is reported to AMD.
+        checks.check(base[1] - len(sel) <= planes_waiting[1] <= base[1],
+                     f"available planes changed by more than the {len(sel)} failed link(s) before user action: "
+                     f"{base} -> {planes_waiting}")
         r = ops.afm.raw("POST", f"{VP}/{user}/ReconfigureDataFabric", {})
         checks.check(r.status_code == 200, f"ReconfigureDataFabric -> HTTP {r.status_code}")
         checks.check(ops.wait(lambda: ops.vpod_state(user) == "degraded", 300, 5),
                      f"{user} {ops.vpod_state(user)} after ReconfigureDataFabric")
         _restore(links, checks, sel)
-        _fix_manual(ops, user)
+        _reconfigure_after_restore(ops, checks, user, base, 10)
         _restored(ops, checks, user, base)
     finally:
         links.restore_all()

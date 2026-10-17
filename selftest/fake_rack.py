@@ -97,6 +97,7 @@ class Sim:
         self.user_vlans: dict[int, set[int]] = {}
         self.readmit_at: dict[int, float] = {}
         self.ack: dict[str, set] = {}          # vPOD -> failed links acknowledged by ReconfigureDataFabric
+        self.back: dict[str, dict] = {}        # manual vPOD -> {acknowledged link that came back: since} (asks again)
         self.n_ct = n_computes
         self.homed: dict[int, int] = {}       # slot -> switch it was re-homed to (fault no_rebalance keeps it)
         self.flaps = 0
@@ -363,9 +364,15 @@ class Sim:
                         if gi["index"] == g_:
                             gi["ports"][pid]["oper-state"] = "PortFailed"
             acked = self.ack.setdefault(name, set())
+            back = self.back.setdefault(name, {})
+            if manual:   # g02-g17 17 Oct: a link back up -> needdatafabricreconfiguration again after ~the threshold
+                for k in acked - set(failed):
+                    back.setdefault(k, time.monotonic())
+            th = float((pol.get("spec") or {}).get("link-fail-threshold", 10)) * float(self.time_scale)
+            asked = [k for k, t in back.items() if time.monotonic() - t >= th]
             acked &= set(failed)
-            counted = [k for k in failed if (not manual) or k in acked]
-            pending = manual and any(k not in acked for k in failed) and "manual_auto" not in self.f
+            counted = [k for k in failed if (not manual) or k in acked] + [k for k in back if k not in asked]
+            pending = manual and (any(k not in acked for k in failed) or asked) and "manual_auto" not in self.f
             avail = max(0, self.planes - (BASELINE_DOWN if sysv else 0) - lost - len(counted))
             if self.zero_reads.get(name):
                 self.zero_reads[name] -= 1

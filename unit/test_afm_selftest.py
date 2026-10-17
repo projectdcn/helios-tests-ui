@@ -77,7 +77,8 @@ LIFECYCLE_FAULTS = [
     # fabric links (tests/afm/test_afm_links.py)
     ("coupled_ports", {"TC-AFM-011"}),           # full rack: shutting one port also dropped a neighbour
     ("coupled_ports", {"TC-AFM-012"}),
-    ("manual_auto", {"TC-AFM-016", "TC-AFM-041", "TC-AFM-042"}),   # manual policy reconfigures on its own
+    ("manual_auto", {"TC-AFM-016", "TC-AFM-041"}),   # manual policy reconfigures on its own
+    ("policy_edit_ignored", {"TC-AFM-042"}),     # manual -> automatic / 10 s edit accepted but not applied
     ("timer_ignored", {"TC-AFM-040"}),           # PortFailed before link-fail-threshold
     ("no_reconcile", {"TC-AFM-017"}),            # link change during agent outage never learnt
     ("flap_counts_as_failure", {"TC-AFM-011"}),  # a flap shorter than the timer still marked failed
