@@ -9,6 +9,7 @@ header must name this server (loopback, or its host names / addresses when bound
 """
 from __future__ import annotations
 
+import getpass
 import hashlib
 import hmac
 import json
@@ -204,6 +205,19 @@ OPEN_PATHS = {"/", "/index.html", "/api/version", "/api/login", "/api/logout"}  
 MIN_TOKEN = 16
 
 
+def login_hint() -> dict:
+    """What the login page shows (never the token): this server, who runs the UI (HELIOS_UI_ADMIN, else the OS user)
+    and the command that prints the token on the server (an installed UI: <prefix>/bin/helios-ui token)."""
+    try:
+        user = getpass.getuser()
+    except Exception:  # noqa: BLE001
+        user = ""
+    helper = ROOT.parent / "bin" / "helios-ui"
+    return {"server": socket.gethostname().split(".")[0],
+            "admin": (os.environ.get("HELIOS_UI_ADMIN") or "").strip() or user,
+            "token_cmd": f"{helper} token" if helper.is_file() else "grep HELIOS_UI_TOKEN <prefix>/config/ui.env"}
+
+
 def auth_cookie_value(token: str) -> str:
     return hmac.new(token.encode(), b"helios-ui-login-v1", hashlib.sha256).hexdigest()
 
@@ -368,7 +382,8 @@ class Handler(BaseHTTPRequestHandler):
             if path == "/api/version":             # installer health check; no secrets
                 bi = build_info() or {}
                 return self.json({"version": version(), "commit": bi.get("commit"), "built": bi.get("built"),
-                                  "root": str(ROOT), "auth": bool(self.token)})
+                                  "root": str(ROOT), "auth": bool(self.token),
+                                  **(login_hint() if self.token else {})})
             if path == "/api/racks":
                 return self.json([{**p.as_dict(), **self.app.runs.busy(n)} for n, p in self.app.profiles.items()])
             m = re.fullmatch(r"/api/cases/([^/]+)/history", path)

@@ -270,6 +270,7 @@ def test_install_dry_run_changes_nothing(tmp_path):
     assert "listen: 0.0.0.0:18799" in out and "-m ui --host 0.0.0.0 --port 18799" in out
     assert "Open:   http://" in out and ":18799/" in out and "WARNING: the UI has NO login" not in out
     assert "generate an access token" in out and "Access token (each browser logs in with it once" in out
+    assert "helios-ui token    new one" in out and "token [new]" in out      # the helper's token command
     assert "INSTALLED_HOST=0.0.0.0" in out and "INSTALLED_PORT=18799" in out
     r = _sh([str(b / "install.sh"), "--dry-run", "--online", "--no-systemd", "--python", sys.executable,
              "--prefix", str(prefix), "--port", "18799", "--host", "127.0.0.1"])

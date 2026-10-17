@@ -53,7 +53,14 @@ $("#login-box").addEventListener("submit", async ev => {
   catch (e) { $("#login-msg").textContent = e.message; $("#login-msg").className = "err"; $("#login-box").token.focus(); }
 });
 $("#logout").addEventListener("click", async () => { await api("POST", "/api/logout", {}).catch(() => {}); location.reload(); });
-api("GET", "/api/version").then(v => { $("#logout").hidden = !v.auth; }).catch(() => {});
+api("GET", "/api/version").then(v => {
+  $("#logout").hidden = !v.auth;
+  if (v.auth && v.server) {   // which UI this is and who to ask; the token itself is never sent to the page
+    $("#login-msg").textContent = `Ask ${v.admin || "the admin"} (runs the UI on ${v.server}) for the token. ` +
+      "This browser stays logged in for 30 days.";
+    $("#login-hint").textContent = `On ${v.server} it is printed by: ${v.token_cmd}`;
+  }
+}).catch(() => {});
 
 // ---------------------------------------------------------------- tabs / rack
 $$("nav button").forEach(b => b.addEventListener("click", () => showTab(b.dataset.tab)));

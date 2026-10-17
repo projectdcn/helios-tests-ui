@@ -97,3 +97,28 @@ def test_short_token_refused(tmp_path, monkeypatch, capsys):
         make_server(app, 0, token="short")
     monkeypatch.setenv("HELIOS_UI_TOKEN", "short")
     assert uimain.main(["--port", "0"]) == 2 and "at least 16" in capsys.readouterr().err
+
+
+def test_login_page_says_which_server_and_who_to_ask(served, monkeypatch):
+    """The login page names the server, who runs the UI and the command that prints the token - never the token."""
+    c = served
+    monkeypatch.setenv("HELIOS_UI_ADMIN", "Lab admin / #helios-lab")
+    st, raw = c.req("GET", "/api/version")
+    d = json.loads(raw)
+    assert st == 200 and d["server"] and d["admin"] == "Lab admin / #helios-lab"
+    assert d["token_cmd"].endswith("token") or "HELIOS_UI_TOKEN" in d["token_cmd"]
+    assert TOKEN.encode() not in raw
+    monkeypatch.delenv("HELIOS_UI_ADMIN")
+    assert c.j("GET", "/api/version")[1]["admin"]                 # the OS user running the UI
+
+
+def test_no_login_hint_without_a_token(tmp_path):
+    app = App(profiles={}, executor=HashExecutor())
+    srv = make_server(app, 0)
+    threading.Thread(target=srv.serve_forever, daemon=True).start()
+    try:
+        d = Client(srv.server_address[1]).j("GET", "/api/version")[1]
+        assert d["auth"] is False and "server" not in d and "admin" not in d
+    finally:
+        srv.shutdown()
+        srv.server_close()

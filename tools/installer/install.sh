@@ -268,7 +268,9 @@ EOF
 write_helper() {
     write_file "$PREFIX/bin/helios-ui" 755 <<EOF
 #!/usr/bin/env bash
-# helios-ui {start|stop|restart|status|logs} - the helios-tests UI of $PREFIX (written by install.sh)
+# helios-ui {start|stop|restart|status|logs|token [new]} - the helios-tests UI of $PREFIX (written by install.sh)
+#   token       print the UI access token (give it to the people who use the UI)
+#   token new   a new random token, then restart: every browser has to log in again with the new one
 set -euo pipefail
 PREFIX=$PREFIX
 UNIT=$UNIT
@@ -276,6 +278,43 @@ UNIT=$UNIT
 PIDF="\$PREFIX/logs/helios-ui.pid"
 LOG="\$PREFIX/logs/helios-ui.log"
 CMD=\${1:-status}
+ENVF="\$PREFIX/config/ui.env"
+if [ "\$CMD" = token ]; then
+    case "\${2:-show}" in
+        show)
+            if tok=\$(grep '^HELIOS_UI_TOKEN=' "\$ENVF" 2>/dev/null | tail -n 1 | cut -d= -f2-) && [ -n "\$tok" ]; then
+                echo "\$tok"
+            else
+                echo "no access token set in \$ENVF (the UI has no login): \$0 token new creates one" >&2; exit 1
+            fi ;;
+        new)
+            "\$PREFIX/venv/bin/python" - "\$ENVF" <<'PYEOF'
+import os, re, secrets, sys
+f = sys.argv[1]
+try:
+    text = open(f).read()
+except FileNotFoundError:
+    text = ""
+tok = secrets.token_urlsafe(24)
+line = "HELIOS_UI_TOKEN=" + tok
+if re.search(r"^HELIOS_UI_TOKEN=.*$", text, re.M):
+    text = re.sub(r"^HELIOS_UI_TOKEN=.*$", line, text, flags=re.M)
+else:
+    text += ("" if not text or text.endswith("\n") else "\n") + \
+        "# access token of the UI (each browser logs in with it once; change it to end every login)\n" + line + "\n"
+fd = os.open(f + ".tmp", os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+with os.fdopen(fd, "w") as fh:
+    fh.write(text)
+os.replace(f + ".tmp", f)
+os.chmod(f, 0o600)
+PYEOF
+            "\$0" restart >/dev/null || echo "WARNING: restart failed - run \$0 restart (the old token works until then)" >&2
+            echo "new access token (every browser logs in again with it):"
+            "\$0" token ;;
+        *) echo "usage: \$0 token [new]" >&2; exit 2 ;;
+    esac
+    exit 0
+fi
 if [ "\$INSTALLED_MODE" = systemd ]; then
     case "\$CMD" in
         start|stop|restart|status) exec systemctl --user "\$CMD" "\$UNIT" ;;
@@ -310,11 +349,11 @@ else
             if running; then echo "helios-ui running (pid \$(cat "\$PIDF")) on \${INSTALLED_HOST:-0.0.0.0}:\$INSTALLED_PORT"
             else echo "helios-ui not running"; exit 3; fi ;;
         logs) exec tail -n 200 -F "\$LOG" ;;
-        *) echo "usage: \$0 {start|stop|restart|status|logs}" >&2; exit 2 ;;
+        *) echo "usage: \$0 {start|stop|restart|status|logs|token [new]}" >&2; exit 2 ;;
     esac
     exit 0
 fi
-echo "usage: \$0 {start|stop|restart|status|logs}" >&2
+echo "usage: \$0 {start|stop|restart|status|logs|token [new]}" >&2
 exit 2
 EOF
 }
@@ -424,9 +463,9 @@ print_access() {
         if [ -n "$TOKEN_NEW" ]; then
             say "Access token (each browser logs in with it once; give it to the team):"
             say "    $TOKEN_NEW"
-            say "  it is HELIOS_UI_TOKEN in $PREFIX/config/ui.env (change it + restart to end every login)"
+            say "  show it again: $PREFIX/bin/helios-ui token    new one (ends every login): $PREFIX/bin/helios-ui token new"
         elif grep -q '^HELIOS_UI_TOKEN=' "$PREFIX/config/ui.env" 2>/dev/null; then
-            say "Access token: unchanged (grep HELIOS_UI_TOKEN $PREFIX/config/ui.env)"
+            say "Access token: unchanged (show it: $PREFIX/bin/helios-ui token)"
         else
             say "WARNING: the UI has NO login. Anyone who can reach $host:$PORT can start runs on the racks (including"
             say "disruptive ones) and read every result. Install again without --no-token for an access token,"
@@ -436,7 +475,7 @@ print_access() {
         firewall_advice
     fi
     say ""
-    say "Manage it:   $PREFIX/bin/helios-ui {start|stop|restart|status|logs}"
+    say "Manage it:   $PREFIX/bin/helios-ui {start|stop|restart|status|logs|token [new]}"
     say "Upgrade:     run install.sh of a newer bundle (config/ and data/ are kept; so are --host and --port)"
     say "Roll back:   $PREFIX/bin/install.sh --rollback"
     say "Uninstall:   $PREFIX/bin/uninstall.sh   (keeps config/ and data/; --purge removes everything)"
@@ -632,7 +671,7 @@ elif [ "$DRY" = 1 ]; then
 else
     TOKEN_NEW=$("$PREFIX/venv/bin/python" -c 'import secrets; print(secrets.token_urlsafe(24))')
     ( umask 077; [ -f "$ENVF" ] || : > "$ENVF"
-      printf '# access token of the UI (each browser logs in with it once; change it to end every login)\nHELIOS_UI_TOKEN=%s\n' "$TOKEN_NEW" >> "$ENVF" )
+      printf '# access token of the UI (each browser logs in with it once): show it with bin/helios-ui token,\n# a new one (ends every login) with bin/helios-ui token new\nHELIOS_UI_TOKEN=%s\n# who to ask for it, shown on the login page (default: the user running the UI)\n# HELIOS_UI_ADMIN=Name / team channel\n' "$TOKEN_NEW" >> "$ENVF" )
     chmod 600 "$ENVF"
     say "generated an access token -> $ENVF (HELIOS_UI_TOKEN, mode 600)"
 fi

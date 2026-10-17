@@ -90,4 +90,5 @@ fieldset { min-width: 0; }
 .unsaved { margin: 6px 0; padding: 6px 10px; border-left: 3px solid var(--warn, #b45309); background: rgba(180, 83, 9, .08); }
 #login-box:not([hidden]) { display: flex; gap: 12px; flex-wrap: wrap; align-items: center; margin: 16px; }
 #logout { margin-left: auto; }
+#login-hint { flex-basis: 100%; font-family: ui-monospace, Menlo, monospace; }
 [hidden] { display: none !important; }      /* the hidden attribute wins over display rules (nav, flex boxes) */

@@ -17,8 +17,9 @@
   <b>This UI needs its access token.</b>
   <label>Access token <input type="password" name="token" autocomplete="current-password" required></label>
   <button type="submit" class="primary">Log in</button>
-  <span id="login-msg" class="muted" role="status" aria-live="polite">Ask whoever installed the UI (it is
-    HELIOS_UI_TOKEN in ~/helios-ui/config/ui.env on the server). This browser stays logged in for 30 days.</span>
+  <span id="login-msg" class="muted" role="status" aria-live="polite">Ask whoever runs this UI for the token.
+    This browser stays logged in for 30 days.</span>
+  <span id="login-hint" class="muted small"></span>
 </form>
 <nav>
   <button data-tab="run" class="active">Run</button>
