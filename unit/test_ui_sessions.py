@@ -251,3 +251,10 @@ def test_session_folder_is_not_a_new_run_result(tmp_path):
     (tmp_path / "selftest-20261016-100000").mkdir()
     (tmp_path / "selftest-session-20261016-100000").mkdir()
     assert _result_dirs(tmp_path, "selftest") == {"selftest-20261016-100000"}
+
+
+def test_the_suggested_default_name_is_accepted():
+    """The page suggests '16 Oct 21:58'; that name (with ':') must pass the same check the server applies."""
+    from ui.sessions import check_name, default_name
+    assert check_name(default_name()) == default_name()
+    assert check_name("16 Oct 21:58") == "16 Oct 21:58"

@@ -31,7 +31,7 @@ from .config import ROOT, RackProfile
 from .runner import JobError
 
 FILE = "ui-sessions.json"
-SESSION_NAME_RX = re.compile(r"^[A-Za-z0-9 _.-]{1,60}$")
+SESSION_NAME_RX = re.compile(r"^[A-Za-z0-9 _.:-]{1,60}$")   # ":" for the default "16 Oct 21:58"
 MARK = "-session-"
 _lock = threading.RLock()
 
@@ -51,7 +51,7 @@ def is_session(name: str) -> bool:
 def check_name(name) -> str:
     n = name.strip() if isinstance(name, str) else ""
     if not n or not SESSION_NAME_RX.match(n):
-        raise JobError("session name: 1-60 letters, digits, spaces, '-', '_' or '.'")
+        raise JobError("session name: 1-60 letters, digits, spaces, '-', '_', '.' or ':'")
     return n
 
 

@@ -98,7 +98,7 @@ function rackChanged() {
 
 // ---------------------------------------------------------------- sessions (per rack, ui-sessions.json)
 let sessData = null;
-const SESSION_NAME = /^[A-Za-z0-9 _.-]{1,60}$/;
+const SESSION_NAME = /^[A-Za-z0-9 _.:-]{1,60}$/;
 function sessMsg(text, cls = "muted") { $("#sess-msg").textContent = text; $("#sess-msg").className = cls; }
 async function loadSession() {
   if (!rack) return;
@@ -122,10 +122,10 @@ function dateName() {
 }
 $("#sess-new").addEventListener("click", async () => {
   let name = prompt(`New session of ${rack.title}: the next runs of this rack are consolidated in it.\n`
-    + "Name (letters, digits, space, - _ . ; at most 60):", dateName());
+    + "Name (letters, digits, space, - _ . : ; at most 60):", dateName());
   if (name === null) return;
   name = name.trim();
-  if (!SESSION_NAME.test(name)) { sessMsg("session name: 1-60 letters, digits, spaces, '-', '_' or '.'", "err"); return; }
+  if (!SESSION_NAME.test(name)) { sessMsg("session name: 1-60 letters, digits, spaces, '-', '_', '.' or ':'", "err"); return; }
   try {
     const d = await api("POST", `/api/racks/${enc(rack.name)}/sessions`, { name });
     sessMsg(`new session "${d.name}" started`, "ok");
