@@ -103,19 +103,47 @@ def _api_answers(afm, inventory, when: str) -> None:
                     pytrace=False)
 
 
+def _settled_health(afm, inventory, skip, give_wait: bool) -> list[str]:
+    """rack_health, and when it reports problems, wait up to thresholds.afm.preflight_settle_s (600 s) for them to
+    clear: right after a controller restart AFM reports the cluster "not healthy" for a while (g02-g17 17 Oct 13:21:
+    TC-AR-003 passed, its post-check saw 'node 10.255.4.7x is not healthy' on all three controllers and the next 12
+    AFM tests were BLOCKED in the same second). ``give_wait`` False: no wait (the previous gate already waited the
+    full time and the rack did not recover - do not spend 10 min per test on a broken rack)."""
+    from helios.afm import wait_for
+    p = rack_health(afm, skip)
+    if not p or not give_wait:
+        return p
+    k = float(inventory.th("afm.time_scale", 1) or 1)
+    settle = float(inventory.th("afm.preflight_settle_s", 600) or 0) * k
+    if settle <= 0:
+        return p
+    last = [p]
+
+    def clear():
+        last[0] = rack_health(afm, skip)
+        return not last[0]
+    wait_for(clear, settle, max(0.05, 30 * k), "AFM rack healthy (settling)")
+    return last[0]
+
+
 @pytest.fixture
-def afm_ready(afm, inventory):
+def afm_ready(afm, inventory, request):
     """Rack-health gate for state-changing AFM tests: BLOCKED when AFM is not healthy before the test;
-    the post-test health is checked too (failure = the test left the rack broken)."""
+    the post-test health is checked too (failure = the test left the rack broken). Both give a just-disturbed rack
+    thresholds.afm.preflight_settle_s to settle; after a gate that waited in vain, the next gates do not wait again
+    until the rack has been seen healthy."""
     skip = inventory.is_quarantined_afm          # quarantined nodes do not block
+    cfg = request.config
     _api_answers(afm, inventory, "before")
-    before = rack_health(afm, skip)
+    before = _settled_health(afm, inventory, skip, not getattr(cfg, "_helios_afm_unsettled", False))
+    cfg._helios_afm_unsettled = bool(before)
     if before:
         pytest.fail("AFM pre-flight failed - rack not healthy, not starting:\n"
                     + "\n".join(f"  - {p}" for p in before), pytrace=False)
     yield
     _api_answers(afm, inventory, "after")
-    after = rack_health(afm, skip)
+    after = _settled_health(afm, inventory, skip, True)
+    cfg._helios_afm_unsettled = bool(after)
     if after:
         pytest.fail("AFM rack not healthy after the test:\n" + "\n".join(f"  - {p}" for p in after), pytrace=False)
 
