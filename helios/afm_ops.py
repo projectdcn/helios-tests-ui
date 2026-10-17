@@ -602,20 +602,41 @@ class AfmOps:
         return {d.bdf: d.config_phase for d in self.afmctl(tray).devices()}
 
     # ================================================================ events
+    # g02-g17 17 Oct: AFM ignores sort-by / sort-order=desc / page-size (not in its API: it documents sort-order
+    # by-creation-time-reverse, from, max-results) and lists every event by NAME (a uuid). controller_now() took
+    # the first one = a random old event (15:31:52 at 16:11:39), so older events counted as new (TC-E2E-055
+    # 'link_failed after 0.3s' = the 15:34 link_failed of the same port, TC-E2E-132). Never rely on server order.
+    EVENTS = "/events/v1/events?sort-order=by-creation-time-reverse"
+
+    @staticmethod
+    def event_time(e: dict) -> str:
+        """creation-time as a sortable key (fraction padded to 9 digits: '.4Z' must sort after '.39168224Z')."""
+        t = (e.get("meta") or {}).get("creation-time") or ""
+        head, dot, frac = t.rstrip("Z").partition(".")
+        return f"{head}.{frac:0<9}" if t else ""
+
+    def events_newest_first(self) -> list[dict]:
+        return sorted(self.afm.items(self.EVENTS), key=self.event_time, reverse=True)
+
     def events(self, etype: str | None = None, since: str | None = None, page: int = 300) -> list[dict]:
-        q = f"/events/v1/events?sort-by=meta.creation-time&sort-order=desc&page-size={page}"
-        evs = self.afm.items(q)
+        """The newest ``page`` events (sorted here), of ``etype``, strictly newer than ``since`` (controller_now())."""
+        since_k = self.event_time({"meta": {"creation-time": since}}) if since else ""
         out = []
-        for e in evs:
+        for e in self.events_newest_first()[:page]:
             t = e.get("type") or (e.get("spec") or {}).get("event-type") or (e.get("spec") or {}).get("type")
             if etype and t != etype:
                 continue
-            if since and ((e.get("meta") or {}).get("creation-time") or "") <= since:  # strictly newer
+            if since and self.event_time(e) <= since_k:  # strictly newer
                 continue
             out.append(e)
         return out
 
     def controller_now(self) -> str:
         """Controller-side 'now' for event filters: newest event's creation-time (runner clock may be skewed)."""
-        evs = self.afm.items("/events/v1/events?sort-by=meta.creation-time&sort-order=desc&page-size=1")
+        evs = self.events_newest_first()
         return ((evs[0].get("meta") or {}).get("creation-time") if evs else "") or ""
+
+    @staticmethod
+    def mentions(e: dict, needle: str) -> bool:
+        """``needle`` (a port / node name) appears in the event as a whole token: Ethernet35 is not Ethernet354."""
+        return re.search(rf"(?<![\w-]){re.escape(needle)}(?![\w-])", json.dumps(e)) is not None

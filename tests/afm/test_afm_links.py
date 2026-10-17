@@ -86,7 +86,7 @@ def _prolonged(ops, links, checks, record_property, asics):
     extra = ops.oper_down(sw) - before_down - {(ns, p) for ns, p, _ in picks}
     checks.check(not extra, f"shutting {[p for _, p, _ in picks]} also took down {sorted(extra)} (coupled ports)")
     evs = ops.wait(lambda: [e for e in ops.events("link_down", since)
-                            if any(p in str(e) for _, p, _ in picks)], 60, 10)
+                            if any(ops.mentions(e, p) for _, p, _ in picks)], 60, 10)
     checks.check(evs, "no link_down event for the shut port(s)")
     for ns, port, _ in picks:
         links.restore(sw, ns, port, checks)
@@ -247,7 +247,7 @@ def test_link_down_reconciliation(ops, afm_ready, links, checks, record_property
     t = ops.link_fail_threshold(sysv) * _scale(ops) + 120 * _scale(ops)
     ok = wait_for(lambda: (ops.planes(sysv)[1] or 0) < (base[1] or 0), t, 5)
     checks.check(ok, f"planes {ops.planes(sysv)} never dropped below baseline {base}: link-down not reconciled")
-    checks.check(ops.wait(lambda: [e for e in ops.events("link_down", since) if port in str(e)], 60, 10),
+    checks.check(ops.wait(lambda: [e for e in ops.events("link_down", since) if ops.mentions(e, port)], 60, 10),
                  f"no link_down event for {port} after reconciliation")
     links.restore(sw, ns, port, checks)
     _restored(ops, checks, sysv, base)

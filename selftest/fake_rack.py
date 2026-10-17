@@ -37,6 +37,18 @@ def _obj(kind, name, spec, status):
                      "mod-time": now(), "generation-id": "1"}, "spec": spec, "status": status}
 
 
+def _selects(reqs, ev: dict) -> bool:
+    """AFM fields selector: requirements are ANDed and 'a selector with no Requirements does not select anything'."""
+    if not reqs:
+        return False
+    for r in reqs:
+        v, vals, op = str(ev.get(r.get("key"), "")), [str(x) for x in r.get("values") or []], r.get("operator", "equals")
+        ok = {"equals": v in vals[:1], "notequals": v not in vals[:1], "in": v in vals, "notin": v not in vals}.get(op, False)
+        if not ok:
+            return False
+    return True
+
+
 def mch_used(mask: str = MCH_MASK) -> set[int]:
     return {2 * s + b for s, d in enumerate(mask) for b, bits in ((0, 0x3), (1, 0xC)) if int(d, 16) & bits}
 
@@ -280,13 +292,15 @@ class Sim:
         return out
 
     def event(self, etype, msg):
-        self.events.append({"kind": "Event", "meta": {"name": str(uuidlib.uuid4()), "creation-time": now(),
-                                                       "mod-time": now()}, "type": etype, "message": msg})
+        sev = "warn" if etype in ("link_down", "link_failed", "ifoe_netport_link_down", "switchnode_unreachable") else "info"
+        ev = {"kind": "Event", "meta": {"name": str(uuidlib.uuid4()), "creation-time": now(), "mod-time": now()},
+              "severity": sev, "type": etype, "message": msg}
+        self.events.append(ev)
         if "no_alerts" in self.f:
             return
         for pol in list(self.st.objs["AlertPolicy"].values()):
             sp = pol.get("spec") or {}
-            if sp.get("enable") and sp.get("resource", "Event") == "Event":
+            if sp.get("enable") and sp.get("resource", "Event") == "Event" and _selects(sp.get("requirements"), ev):
                 self.st.alerts.append({"kind": "Alert", "meta": {"name": str(uuidlib.uuid4()), "creation-time": now()},
                                        "spec": {"alert-policy-id": pol["meta"]["name"], "state": "open"},
                                        "status": {"severity": sp.get("severity", "info"), "message": msg,

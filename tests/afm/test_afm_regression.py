@@ -341,19 +341,28 @@ def test_switch_drain_reprograms_gpus(ops, afm_ready, checks, record_property):
 
 # ------------------------------------------------------------------ alerts / events
 
+def _flap(ops, links, checks, sw, ns, port):
+    """Shut a port, wait until it is oper down (a 0.3 s admin flap may never be seen by the switch agent), restore."""
+    links.shut(sw, ns, port)
+    checks.check(ops.wait_oper(sw, ns, port, "down", 60), f"{sw.name} {ns} {port} never went oper down")
+    links.restore(sw, ns, port, checks)
+
+
 @pytest.mark.l3
 @pytest.mark.tc("TC-CTL-098")
 def test_alerts_from_alert_policy(ops, afm_ready, uniq, cleanup, links, checks, record_property):
-    """An enabled event-based alert policy (thresholds.afm.alert_policy_spec, default resource Event /
-    severity info) raises an alert referencing it when an event happens (a switch port flap)."""
+    """An enabled event-based alert policy (thresholds.afm.alert_policy_spec, default resource Event, severity info,
+    requirement event severity == warn - a link_down is 'warn') raises an alert referencing it when a switch port
+    goes down (held until oper down, then restored). g02-g17 17 Oct: the policy had no requirements - AFM API: 'a
+    selector with no Requirements does not select anything' - so no alert could come (alerts stayed at 236)."""
     name = uniq("ap")
-    spec = ops.th("alert_policy_spec", {"resource": "Event", "enable": True, "severity": "info"})
+    spec = ops.th("alert_policy_spec", {"resource": "Event", "enable": True, "severity": "info",
+                                        "requirements": [{"key": "severity", "operator": "equals", "values": ["warn"]}]})
     cleanup(f"{MONITORING}/alertPolicies/{name}")
     ops.afm.post(f"{MONITORING}/alertPolicies", {"meta": {"name": name}, "spec": spec})
     slot = ops.compute(ops.pick_compute())["spec"]["slot-id"]
     sw, ns, port, _ = ops.gpu_links(slot)[0]
-    links.shut(sw, ns, port)
-    links.restore(sw, ns, port, checks)
+    _flap(ops, links, checks, sw, ns, port)
     got = ops.wait(lambda: [a for a in ops.afm.items(f"{MONITORING}/alerts") if name in json.dumps(a)], 300, 10)
     record_property("alerts", len(got or []))
     checks.check(got, f"no alert referencing policy {name} after a link flap")
@@ -363,13 +372,14 @@ def test_alerts_from_alert_policy(ops, afm_ready, uniq, cleanup, links, checks, 
 @pytest.mark.l3
 @pytest.mark.tc("TC-EVT-021")
 def test_status_change_events(ops, afm_ready, uniq, links, checks, record_property):
-    """GPU, switch and vPOD status changes each raise events: link_down/link_up for a port, switchnode_unreachable
-    + switchnode_healthy for an agent outage, vpod_* for a vPOD create/delete."""
+    """GPU, switch and vPOD status changes each raise events: link_down/link_up for a port (held until oper down),
+    switchnode_unreachable + switchnode_healthy for an agent outage, vpod_* for a vPOD create/delete.
+    g02-g17 17 Oct: 'no link_down / link_up event' was the check's own bug - it kept ONE event per type
+    ({type: event}), so only the last link_down of the whole list was looked at."""
     since = ops.controller_now()
     slot = ops.compute(ops.pick_compute())["spec"]["slot-id"]
     sw, ns, port, _ = ops.gpu_links(slot)[0]
-    links.shut(sw, ns, port)
-    links.restore(sw, ns, port, checks)
+    _flap(ops, links, checks, sw, ns, port)
     t = ops.pick_switch(controller=None if len(ops.afm.switches()) == 1 else False)
     name, ssw = t["meta"]["name"], ops.ssh_switch(t)
     try:
@@ -391,13 +401,15 @@ def test_status_change_events(ops, afm_ready, uniq, links, checks, record_proper
 
     def have():
         evs = ops.events(None, since, page=1000)
-        types = {(e.get("type") or ""): json.dumps(e) for e in evs}
+
+        def seen(match, needle):
+            return any(match(e.get("type") or "") and ops.mentions(e, needle) for e in evs)
         return {
-            "link_down": any(t == "link_down" and port in b for t, b in types.items()),
-            "link_up": any(t == "link_up" and port in b for t, b in types.items()),
-            "switchnode_unreachable": any(t == "switchnode_unreachable" and name in b for t, b in types.items()),
-            "switchnode_healthy": any(t == "switchnode_healthy" and name in b for t, b in types.items()),
-            "vpod": any(t.startswith("vpod_") and user in b for t, b in types.items()),
+            "link_down": seen(lambda t: t == "link_down", port),
+            "link_up": seen(lambda t: t == "link_up", port),
+            "switchnode_unreachable": seen(lambda t: t == "switchnode_unreachable", name),
+            "switchnode_healthy": seen(lambda t: t == "switchnode_healthy", name),
+            "vpod": seen(lambda t: t.startswith("vpod_"), user),
         }
     ops.wait(lambda: all(have().values()), 240, 10)
     got = have()

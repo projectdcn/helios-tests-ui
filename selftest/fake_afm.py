@@ -101,8 +101,9 @@ class State:
                                                              {"datafabric-reconfig": "automatic",
                                                               "link-fail-threshold": 10})},
             "SyslogExport": {},
-            "AlertPolicy": {"default-event-based-alerts": obj("AlertPolicy", "default-event-based-alerts",
-                                                              {"resource": "Event", "enable": True})},
+            "AlertPolicy": {"default-event-based-alerts": obj("AlertPolicy", "default-event-based-alerts", {   # as g02-g17
+                "resource": "Event", "severity": "critical", "enable": True,
+                "requirements": [{"key": "severity", "operator": "equals", "values": ["critical"]}]})},
         }
         # health-check faults (tests/afm/test_afm_health.py)
         if "leftover_test_objects" in faults:     # an aborted run left its objects behind
@@ -325,8 +326,10 @@ class Handler(BaseHTTPRequestHandler):
                 st.sim.events[:0] = [{"kind": "Event", "meta": {"name": f"old-{k}", "creation-time": old,
                                                                 "mod-time": old}, "type": "old", "message": "old"}
                                      for k in range(16050)]
-            evs = sorted(st.sim.events, key=lambda e: e["meta"]["creation-time"], reverse=True)
-            return self._send(200, {"kind": "EventList", "items": evs[: int((qs.get("page-size") or [1000])[0])]})
+            # as the real AFM (g02-g17 17 Oct): every event, by name (a uuid) - sort-by / sort-order=desc / page-size
+            # are not part of its API and are ignored, so a client must not take items[0] as the newest
+            evs = sorted(st.sim.events, key=lambda e: e["meta"]["name"])
+            return self._send(200, {"kind": "EventList", "items": evs})
         if path.startswith("/audit/v1/events"):
             if self._deny(user, "monitoring", "AuditEvent", "read"):
                 return

@@ -66,10 +66,10 @@ def _gpu_with_stations(ops, slot, n_stations, both_ports=0):
 
 
 def _events_for(ops, etype, since, needles) -> set[str]:
-    """Which of ``needles`` appear in an event of ``etype`` newer than ``since``."""
+    """Which of ``needles`` appear (as a whole name: Ethernet35 is not Ethernet354) in an event of ``etype`` newer
+    than ``since``."""
     evs = ops.events(etype, since)
-    blob = [json.dumps(e) for e in evs]
-    return {n for n in needles if any(n in b for b in blob)}
+    return {n for n in needles if any(ops.mentions(e, n) for e in evs)}
 
 
 def _run_failure(ops, links, checks, record_property, sel, vpod=None, sequential=False):
