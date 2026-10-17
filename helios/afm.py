@@ -352,16 +352,32 @@ def ev_names(events: list[dict], etype: str | None = None, kind: str | None = No
             if (etype is None or e.get("type") == etype) and (kind is None or e.get("kind") == kind)]
 
 
+def transient(e: BaseException) -> bool:
+    """An error that means "the API is not answering right now" (a controller restarting / failing over): HTTP 5xx
+    or no connection. 4xx and everything else are real errors."""
+    return (isinstance(e, AfmError) and e.status >= 500) or isinstance(e, requests.RequestException)
+
+
 def wait_for(fn: Callable[[], Any], timeout: float, interval: float = 5, what: str = "") -> Any:
-    """Poll ``fn`` until truthy; returns its last value (falsy on timeout)."""
+    """Poll ``fn`` until truthy; returns its last value (falsy on timeout). A transient API error (``transient``:
+    HTTP 5xx, connection refused / reset / timeout) counts as "not yet", so a wait rides out a controller restart -
+    g02-g17 17 Oct: TC-CTL-074 stopped the leader, the API answered 503 for ~10 s and the wait for the new leader
+    crashed on the first one. The last such error is logged when the wait times out."""
     from .progress import WaitReporter
     end = time.monotonic() + timeout
     rep = WaitReporter(what or getattr(fn, "__name__", "condition"), timeout)
+    last_err = None
     while True:
-        v = fn()
+        try:
+            v = fn()
+        except Exception as e:  # noqa: BLE001 - only transient API errors are swallowed, see transient()
+            if not transient(e):
+                raise
+            v, last_err = None, e
         if v or time.monotonic() >= end:
             if not v:
-                log.debug("AFM wait: %s not reached in %ss", what or fn, timeout)
+                log.debug("AFM wait: %s not reached in %ss%s", what or fn, timeout,
+                          f" (last API error: {str(last_err)[:300]})" if last_err else "")
             return v
         time.sleep(max(0.0, min(interval, end - time.monotonic())))
         rep.tick()

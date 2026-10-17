@@ -69,3 +69,29 @@ def test_write_after_started_gives_up():
     props = {}
     assert tc._write_after_started(_writer([_Resp(503)] * 100000), "ap", lambda k, v: props.__setitem__(k, v)) is None
     assert props["write_errors"][0].startswith("HTTP 503") and props["write_errors"][-1].startswith("...")
+
+
+def test_wait_for_rides_out_transient_api_errors():
+    from helios.afm import AfmError, wait_for
+    seq = iter([AfmError("GET", "/c", 503, "dial tcp 10.255.4.72:9003: connect: connection refused"), None, "10.255.4.73"])
+
+    def fn():
+        v = next(seq)
+        if isinstance(v, Exception):
+            raise v
+        return v
+    assert wait_for(fn, 5, 0.01) == "10.255.4.73"
+
+
+def test_wait_for_does_not_hide_real_errors():
+    from helios.afm import AfmError, wait_for
+
+    def bad():
+        raise AfmError("GET", "/c", 404, "not found")
+    with pytest.raises(AfmError):
+        wait_for(bad, 1, 0.01)
+
+    def bug():
+        raise TypeError("test bug")
+    with pytest.raises(TypeError):
+        wait_for(bug, 1, 0.01)

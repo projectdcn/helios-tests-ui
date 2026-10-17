@@ -80,16 +80,41 @@ def afm(afm_cfg):
     return c
 
 
+def _api_answers(afm, inventory, when: str) -> None:
+    """Wait (thresholds.afm.api_ready_wait_s, 300 s) until the AFM API answers the cluster read: a controller restart
+    by the previous test (or this one) makes it answer 503 for a while, which must not turn every following test
+    into an ERROR (g02-g17 17 Oct: TC-CTL-074 stopped the leader, the next 20 AFM tests errored in their
+    pre-flight within the same second)."""
+    from helios.afm import transient, wait_for
+    timeout = float(inventory.th("afm.api_ready_wait_s", 300) or 300) * float(inventory.th("afm.time_scale", 1) or 1)
+    err = []
+
+    def up():
+        try:
+            afm.cluster()
+            return True
+        except Exception as e:  # noqa: BLE001
+            if not transient(e):
+                raise
+            err[:] = [e]
+            return False
+    if not wait_for(up, timeout, 10, "AFM API answering"):
+        pytest.fail(f"AFM API not answering {when} the test within {timeout:.0f} s: {str(err[0])[:300] if err else ''}",
+                    pytrace=False)
+
+
 @pytest.fixture
 def afm_ready(afm, inventory):
     """Rack-health gate for state-changing AFM tests: BLOCKED when AFM is not healthy before the test;
     the post-test health is checked too (failure = the test left the rack broken)."""
     skip = inventory.is_quarantined_afm          # quarantined nodes do not block
+    _api_answers(afm, inventory, "before")
     before = rack_health(afm, skip)
     if before:
         pytest.fail("AFM pre-flight failed - rack not healthy, not starting:\n"
                     + "\n".join(f"  - {p}" for p in before), pytrace=False)
     yield
+    _api_answers(afm, inventory, "after")
     after = rack_health(afm, skip)
     if after:
         pytest.fail("AFM rack not healthy after the test:\n" + "\n".join(f"  - {p}" for p in after), pytrace=False)
