@@ -922,7 +922,11 @@ class FakeComputeTransport:
                                                     "accel_path_map": pm(ports if "mch_map_static" in st.f else live)}})
                     devs.append({"bdf": self.bdf(g), "station": stations})
                 out = json.dumps({"device": devs})
-            elif m := re.fullmatch(r"env AFMCTL_FORCE_UPDATE=1 afmctl update port -b (\S+) -s (\d+) -p (\S+) --admin-state (idle|enabled)", c):
+            elif (m := re.fullmatch(r"env AFMCTL_FORCE_UPDATE=1 afmctl update port -b (\S+) -s (\d+) -p (\S+) --admin-state (\S+)", c)) \
+                    and m.group(4) not in ("idle", "enable", "power-off"):
+                # real afmctl: shows "enabled" but only accepts "enable" (MR3, 16 Oct)
+                out, rc = f"Invalid admin state : {m.group(4)} (valid: power-off, idle, enable)\n", 255
+            elif m := re.fullmatch(r"env AFMCTL_FORCE_UPDATE=1 afmctl update port -b (\S+) -s (\d+) -p (\S+) --admin-state (\S+)", c):
                 g = [g for g in range(4) if self.bdf(g) == m.group(1)][0]
                 for pid in map(int, m.group(3).split(",")):
                     key = (self.slot, g, pid)

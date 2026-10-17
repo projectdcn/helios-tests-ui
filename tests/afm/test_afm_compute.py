@@ -53,13 +53,22 @@ class ComputePorts:
         return r
 
     def on(self, bdf, port):
-        self.ops.compute_port_admin(self.tray, bdf, port, up=True)
-        if (bdf, port) in self.down:
+        r = self.ops.compute_port_admin(self.tray, bdf, port, up=True)
+        if r.ok and (bdf, port) in self.down:
             self.down.remove((bdf, port))
+        return r
 
     def restore(self):
+        """Re-enable every port this test disabled; a port that stays down fails the test loudly (it would
+        otherwise leave the rack degraded - MR3, 16 Oct)."""
+        left = []
         for bdf, port in list(self.down):
-            self.on(bdf, port)
+            r = self.on(bdf, port)
+            if not r.ok:
+                left.append(f"{self.tray.name} {bdf} port {port}: rc {r.rc} {r.tail(200)!r}")
+        if left:
+            pytest.fail("PORT LEFT DOWN - re-enable by hand (afmctl update port -b <bdf> -s <port//2> -p <port> "
+                        "--admin-state enable): " + "; ".join(left), pytrace=False)
 
 
 def _down_events(ops, since):
