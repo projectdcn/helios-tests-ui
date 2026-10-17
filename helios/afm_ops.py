@@ -28,6 +28,7 @@ VP = f"{CLUSTER}/vpods"
 CN = f"{CLUSTER}/computenodes"
 SN = f"{CLUSTER}/switchnodes"
 TERMINAL = ("online", "degraded")
+FABRIC_PORT = re.compile(r"^Ethernet\d+$")
 
 
 class AfmOps:
@@ -377,6 +378,10 @@ class AfmOps:
 
     @staticmethod
     def port_admin(sw, ns: str | None, port: str, up: bool):
+        """config interface startup / shutdown of a FABRIC port. Only switch-ASIC ports (EthernetN) are accepted: a
+        management interface (eth0, eth1, mgmt...) is refused, so no test can cut the switch's management access."""
+        if not FABRIC_PORT.match(str(port)):
+            raise ValueError(f"refusing to change admin state of {port!r}: not a fabric port (EthernetN)")
         flag = f" -n {ns}" if ns else ""
         return sw.run(f"config interface{flag} {'startup' if up else 'shutdown'} {port}", sudo=True, timeout=120)
 
