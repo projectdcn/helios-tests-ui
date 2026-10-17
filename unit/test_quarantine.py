@@ -69,7 +69,7 @@ def test_quarantined_tray_is_left_out(tmp_path):
     props = json.loads(hc1["properties"])
     assert props["quarantined"] == {"c2": "unit test: tray down"}
     assert props["snapshot"]["quarantined_reachable"] == {"c2": False}
-    assert "passed without the quarantined node(s): c2" in hc1["message"]
+    assert "NOT run on the quarantined node(s) c2 (unit test: tray down)" in hc1["message"]
 
 
 def test_health_check_go_with_quarantine(tmp_path):

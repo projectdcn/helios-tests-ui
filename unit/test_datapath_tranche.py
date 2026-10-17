@@ -104,3 +104,15 @@ def test_switch_consistency_majority():
     c2 = Checks()
     _majority("vlans", {"st1": ("Vlan100",), "st2": ("Vlan100",)}, c2)
     assert not c2.failures
+
+
+def test_partial_message_says_where_it_ran_and_what_was_left_out():
+    """MR3 17 Oct, TC-AFM-001: the PARTIAL message named neither the tray it passed on nor that c2 was never run."""
+    from helios.pytest_plugin import partial_message, tc_verdict
+    m = partial_message(["c1"], {"c2": "in-tray ping probe c2 GPU 0001:01:00.1 (acc 7) -> acc 6 lost frames: x"})
+    lines = m.splitlines()
+    assert lines[0] == ("PARTIAL - passed on c1; NOT run on c2: left out by the datapath pre-flight before the test "
+                        "started:")
+    assert lines[1] == "  c2: in-tray ping probe c2 GPU 0001:01:00.1 (acc 7) -> acc 6 lost frames: x"
+    assert lines[2] == "A full PASS needs c2 fixed and the case re-run."
+    assert tc_verdict(["partial"]) == "PARTIAL"

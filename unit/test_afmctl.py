@@ -106,7 +106,7 @@ def test_parse_ping_reads_all_three_checks_per_port():
     r = parse_ping(G02_1337)
     assert (r.request_fail, r.response_fail, r.non_ifoe_fail, r.total) == (1, 0, 1, 36)
     assert r.port_checks == {"25": ["non-IFoE"], "26": ["req"]} and not r.ok
-    assert r.describe() == "IFoE request 1/36, response 0/36, non-IFoE 1/36 failed; ports 25 (non-IFoE), 26 (req)"
+    assert r.describe() == "IFoE request 1/36, response 0/36, non-IFoE 1/36 failed; ports 25 (non-IFoE); 26 (req)"
 
 
 def test_a_non_ifoe_only_failure_is_not_ok():
@@ -115,3 +115,13 @@ def test_a_non_ifoe_only_failure_is_not_ok():
         "IFoE Request    : 35/36 PASS, 1/36 fail", "IFoE Request    : 36/36 PASS, 0/36 fail")
     r = parse_ping(text)
     assert r.request_fail == 0 and r.non_ifoe_fail == 1 and not r.ok
+
+
+def test_describe_groups_ports_with_the_same_failed_checks():
+    """MR3 17 Oct: ten ports each followed by '(req+rsp+non-IFoE)' - one list now."""
+    from helios.afmctl import PingResult
+    r = PingResult(request_pass=26, request_fail=10, total=36, response_fail=10, non_ifoe_fail=10,
+                   failed_ports=["20", "22", "23"], port_checks={p: ["req", "rsp", "non-IFoE"] for p in ("20", "22", "23")})
+    assert r.describe() == "IFoE request 10/36, response 10/36, non-IFoE 10/36 failed; ports 20, 22, 23 (all three checks)"
+    r.port_checks["23"] = ["req"]
+    assert r.describe().endswith("; ports 20, 22 (req+rsp+non-IFoE); 23 (req)")

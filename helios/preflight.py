@@ -167,7 +167,7 @@ def assess(rack, computes, inventory, tools=(), min_computes: int = 1) -> Assess
     healthy = [c for c in computes if c.name not in out.excluded]
     if th("ping_probe", True) and healthy:
         for name, msg in _ping_probe(healthy, float(th("ping_timeout_s", 200)), out.evidence):
-            out.excluded.setdefault(name, f"ping probe: {msg}")
+            out.excluded.setdefault(name, msg)
 
     window, max_rate = float(th("window_s", 5)), float(th("max_rate_pps", 100))
     for sw, rates, exc in fan_out(lambda s: _drop_rates(s, window), list(rack.switches.values())):
@@ -216,20 +216,23 @@ def _ping_probe(computes, timeout: float, evidence: list | None = None) -> list[
             dst = devs[(i + 1) % len(devs)]
             common = sorted(up[d.bdf] & up[dst.bdf])
             if not common:
-                fails.append(f"{c.name}/{d.bdf} -> acc {dst.accel_id}: no LINK_UP port in common")
+                fails.append(f"in-tray ping probe {c.name} GPU {d.bdf} (acc {d.accel_id}) -> acc {dst.accel_id}: "
+                             "no LINK_UP port in common")
                 continue
             res, r = a.ping(d.bdf, dst.accel_id, common, timeout=timeout)
             if evidence is not None and (res.total is None or not res.ok):
                 evidence.append(ping_evidence(f"[probe] {c.name}/{d.bdf} -> acc {dst.accel_id}", r))
             if res.total is None:
-                fails.append(f"{c.name}/{d.bdf} -> acc {dst.accel_id}: no ping summary (rc={r.rc})")
+                fails.append(f"in-tray ping probe {c.name} GPU {d.bdf} (acc {d.accel_id}) -> acc {dst.accel_id}: "
+                             f"no ping summary from afmctl (rc={r.rc})")
             elif not res.ok:
-                fails.append(f"{c.name}/{d.bdf} -> acc {dst.accel_id}: ping loss - {res.describe()}")
+                fails.append(f"in-tray ping probe {c.name} GPU {d.bdf} (acc {d.accel_id}) -> acc {dst.accel_id} "
+                             f"lost frames: {res.describe()}")
         return fails
 
     out = []
     for c, fails, exc in fan_out(one, computes):
         if exc:
-            out.append((c.name, f"{c.name}: ping probe failed: {exc}"))
+            out.append((c.name, f"in-tray ping probe on {c.name} could not run: {exc}"))
         out += [(c.name, f) for f in fails or []]
     return out

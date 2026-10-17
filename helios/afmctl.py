@@ -90,7 +90,12 @@ class PingResult:
         t = self.total or "?"
         counts = (f"IFoE request {self.request_fail}/{t}, response {self.response_fail if self.response_fail is not None else '?'}/{t}, "
                   f"non-IFoE {self.non_ifoe_fail if self.non_ifoe_fail is not None else '?'}/{t} failed")
-        ports = ", ".join(f"{p} ({'+'.join(self.port_checks.get(p, []))})" for p in self.failed_ports)
+        groups: dict[str, list[str]] = {}               # same failing checks -> one list ("ports 20, 22 (req+rsp)")
+        for p in self.failed_ports:
+            groups.setdefault("+".join(self.port_checks.get(p, [])), []).append(str(p))
+        if len(groups) == 1 and next(iter(groups)) == "+".join(_CHECKS):
+            return counts + f"; ports {', '.join(next(iter(groups.values())))} (all three checks)"
+        ports = "; ".join(f"{', '.join(ps)} ({c})" if c else ", ".join(ps) for c, ps in groups.items())
         return counts + (f"; ports {ports}" if ports else "")
 
 

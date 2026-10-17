@@ -263,7 +263,8 @@ def pytest_runtest_makereport(item, call):
         if outcome == "passed" and excluded:
             # passed, but only on the trays the pre-flight kept: not a full-rack PASS
             outcome = "partial"
-            msg = "passed on the remaining trays; excluded: " + "; ".join(excluded.values())
+            ran = [getattr(c, "name", str(c)) for c in getattr(item, "funcargs", {}).get("computes") or []]
+            msg = partial_message(ran, excluded)
         ch = getattr(item, "funcargs", {}).get("checks")
         if rep.failed and ch is not None and ch.failures and "failures" not in dict(item.user_properties):
             # the full list (the message is cut at 2000 chars): used by the health check and the reports
@@ -275,8 +276,9 @@ def pytest_runtest_makereport(item, call):
             item.user_properties.append(("quarantined", {n: v.get("reason", "") for n, v in q.items()}))
             if outcome == "passed":
                 outcome = "partial"
-                msg = (msg + "; " if msg else "") + "passed without the quarantined node(s): " + \
-                    "; ".join(f"{n} ({v.get('reason', '')})" for n, v in q.items())
+                msg = (msg + "\n" if msg else "PARTIAL - passed, ") + "NOT run on the quarantined node(s) " + \
+                    "; ".join(f"{n} ({v.get('reason', '')})" for n, v in q.items()) + \
+                    " - lift the quarantine and re-run for a full PASS"
         suite, test, desc = _describe(item)
         item.config._helios_reports.append({
             "tc_id": tc_id(item) or "",
@@ -293,10 +295,31 @@ def pytest_runtest_makereport(item, call):
             from .progress import log as progress
             why = "; ".join(x.strip() for x in (msg or "").splitlines() if x.strip()).replace(":; ", ": ")[:300]
             tc = tc_id(item)
-            progress.info("%s %s%s%s", outcome, test, f" [{tc}]" if tc else "", f": {why}" if why else "")
+            (progress.warning if outcome == "partial" else progress.info)(
+                "%s %s%s%s", outcome, test, f" [{tc}]" if tc else "", f": {why}" if why else "")
+        rep.helios_outcome = outcome            # pytest's own status word follows it (pytest_report_teststatus)
 
 
-SUMMARY_FIELDS = ["tc_id", "verdict", "passed", "failed", "skipped", "error", "blocked"]
+def partial_message(ran: list[str], excluded: dict[str, str]) -> str:
+    """Why a test is PARTIAL, readable on its own: where it passed, which trays it did not run on and why, what a
+    full PASS needs. 17 Oct (MR3 TC-AFM-001): 'passed on the remaining trays; excluded: ping probe: c2/0001...'
+    named neither the trays it ran on nor that c2 was never tested."""
+    out = sorted(excluded)
+    head = (f"PARTIAL - passed on {', '.join(ran)}" if ran else "PARTIAL - passed on the remaining trays") + \
+        f"; NOT run on {', '.join(out)}: left out by the datapath pre-flight before the test started"
+    why = [f"  {n}: {excluded[n].removeprefix(f'{n}: ')}" for n in out]   # reasons may already start 'c2: '
+
+    return "\n".join([head + ":", *why, f"A full PASS needs {', '.join(out)} fixed and the case re-run."])
+
+
+@pytest.hookimpl(tryfirst=True)
+def pytest_report_teststatus(report, config):
+    """The console says PARTIAL (yellow) instead of PASSED for a test that passed only on the trays it kept."""
+    if report.when == "call" and getattr(report, "helios_outcome", None) == "partial":
+        return "partial", "P", ("PARTIAL", {"yellow": True})
+
+
+SUMMARY_FIELDS = ["tc_id", "verdict", "passed", "failed", "skipped", "error", "blocked", "partial"]
 
 
 def tc_verdict(outs: list[str]) -> str:
@@ -316,7 +339,8 @@ def summary_rows(rows) -> list[list]:
         by_tc[r["tc_id"] or "(untagged)"].append(r["outcome"])
     out = []
     for tc, outs in sorted(by_tc.items()):
-        out.append([tc, tc_verdict(outs), *(outs.count(k) for k in ("passed", "failed", "skipped", "error", "blocked"))])
+        out.append([tc, tc_verdict(outs), *(outs.count(k) for k in ("passed", "failed", "skipped", "error", "blocked",
+                                                                     "partial"))])
     return out
 
 

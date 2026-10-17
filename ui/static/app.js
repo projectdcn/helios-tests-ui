@@ -42,6 +42,7 @@ function showLogin() {
   if (!$("#login-box").hidden) return;
   $("#login-box").hidden = false;
   $("nav").hidden = true; $("main").hidden = true;
+  $("#rack").closest("label").hidden = true; $("#rackinfo").hidden = true;   // no rack list before the login
   $("#login-box").token.focus();
 }
 $("#login-box").addEventListener("submit", async ev => {
