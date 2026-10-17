@@ -66,27 +66,49 @@ def _readmit_compute(ops, name: str, slot: int, entries: list[dict], sysv: str, 
 
 @pytest.mark.tc("TC-AFM-006")
 def test_compute_agent_restart(ops, afm_ready, checks, record_property):
-    """Restart afm-agent on the switch hosting a compute's sb-node-agent: the agent comes back with a new PID
-    (re-located every poll, it may move switches), the compute is re-admitted healthy, agent REST reports
-    connected."""
+    """Restart the compute node agent of every compute and verify re-admission. In sideband mode each compute's
+    agent (sb-node-agent) runs on a switch, inside its afm-agent container, so: restart afm-agent on each switch that
+    hosts node agents, one switch at a time; after each, every compute whose agent it hosted must get its agent back
+    (new PID, it may move to another switch), be re-admitted healthy with GPUs Ready, and its agent REST must report
+    connected. Computes not ready before the test (e.g. a tray that is down) are recorded and not judged.
+    thresholds.afm.agent_restart_switches limits the switches (comma-separated names) for a shorter run."""
     _need_sideband(ops)
-    name = ops.pick_compute()
-    slot = ops.compute(name)["spec"]["slot-id"]
-    sw, pid = ops.slot_host(slot)
-    checks.check(sw is not None, f"no sb-node-agent for slot {slot}")
-    if sw is None:
-        checks.assert_all()
-    ops.afm_agent(sw, "restart")
-    moved = ops.wait(lambda: (lambda h: h[1] and (h[1] != pid or h[0] is not sw))(ops.slot_host(slot)),
-                     float(ops.th("agent_respawn_s", 480)), 5, f"slot {slot} sb-node-agent respawned")
-    new_sw, new_pid = ops.slot_host(slot)
-    record_property("sb_node_agent", {"before": f"{sw.name}/{pid}", "after": f"{getattr(new_sw, 'name', None)}/{new_pid}"})
-    checks.check(moved, f"slot {slot} sb-node-agent did not restart (PID {pid} on {sw.name})")
-    checks.check(ops.wait_compute_ready(name), f"{name} not admitted+healthy after the agent restart")
-    if new_sw is not None:
-        h = ops.wait(lambda: (new_sw.agent_api(13000 + slot, "/api/health") or {}).get("is-connected") is True,
-                     120, 10, "agent connected")
-        checks.check(h, f"slot {slot} agent /api/health not is-connected on {new_sw.name}")
+    slot_name = {(c.get("spec") or {}).get("slot-id"): c["meta"]["name"] for c in ops.afm.computes()}
+    ready_before = {n for n in slot_name.values() if ops.compute_ready(n)}
+    placement = {sw: ops.sb_agents(sw) for sw in ops.rack.switches.values()}
+    only = {x.strip() for x in str(ops.th("agent_restart_switches", "") or "").split(",") if x.strip()}
+    hosts = [sw for sw in sorted(placement, key=lambda s: s.name) if placement[sw] and (not only or sw.name in only)]
+    checks.check(hosts, "no switch hosts an sb-node-agent")
+    record_property("placement_before", {sw.name: sorted(placement[sw]) for sw in placement})
+    record_property("not_judged", sorted(set(slot_name.values()) - ready_before))
+    done = {}
+    for sw in hosts:
+        before = dict(placement[sw])               # {slot: pid} this switch hosted
+        ops.afm_agent(sw, "restart")
+
+        def respawned():
+            now = {slot: ops.slot_host(slot) for slot in before}
+            return all(h[1] and (h[1] != before[slot] or h[0] is not sw) for slot, h in now.items()) and now
+
+        now = ops.wait(respawned, float(ops.th("agent_respawn_s", 480)), 5, f"node agents of {sw.name} respawned")
+        res = {}
+        for slot, pid in sorted(before.items()):
+            name = slot_name.get(slot, f"slot {slot}")
+            new_sw, new_pid = (now or {}).get(slot) or ops.slot_host(slot)
+            res[name] = f"{sw.name}/{pid} -> {getattr(new_sw, 'name', None)}/{new_pid}"
+            checks.check(new_pid and (new_pid != pid or new_sw is not sw),
+                         f"{name} (slot {slot}): sb-node-agent did not restart after afm-agent restart on {sw.name} "
+                         f"(PID {pid})")
+            if name not in ready_before:
+                continue                           # not ready before the test: recorded, not judged
+            checks.check(ops.wait_compute_ready(name), f"{name}: not admitted+healthy after afm-agent restart on {sw.name}")
+            if new_sw is not None:
+                h = ops.wait(lambda: (new_sw.agent_api(13000 + slot, "/api/health") or {}).get("is-connected") is True,
+                             120, 10, f"{name} agent connected")
+                checks.check(h, f"{name} (slot {slot}): agent /api/health not is-connected on {new_sw.name}")
+        done[sw.name] = res
+    record_property("restarts", done)
+    record_property("computes_checked", sorted(n for r in done.values() for n in r if n in ready_before))
     checks.assert_all()
 
 
