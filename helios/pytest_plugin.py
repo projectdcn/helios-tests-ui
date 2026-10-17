@@ -208,9 +208,7 @@ def pytest_runtest_protocol(item, nextitem):
     cmd_log = logging.getLogger("helios.cmd")
     cmd_log.addHandler(handler)
     started = time.strftime("%Y-%m-%d %H:%M:%S UTC", time.gmtime())   # one clock for runs from the Mac and the jump host
-    from .progress import Heartbeat, log as progress
-    tc = next((m.args[0] for m in item.iter_markers("tc")), "")
-    progress.info("start %s%s", item.nodeid, f" [{tc}]" if tc else "")
+    from .progress import Heartbeat
     try:
         with Heartbeat(item.nodeid):
             yield
@@ -228,6 +226,16 @@ def _describe(item) -> tuple[str, str, str]:
         suite = Path(str(item.path)).stem
     doc = (getattr(getattr(item, "obj", None), "__doc__", None) or "").strip().splitlines()
     return suite, item.name, (doc[0].strip() if doc else "")
+
+
+@pytest.hookimpl(tryfirst=True)
+def pytest_runtest_setup(item):
+    """'start <test> [TC]' on the live log, under the test's own name (pytest has printed it by now)."""
+    if item.config._helios_inventory is None:
+        return
+    from .progress import log as progress
+    tc = next((m.args[0] for m in item.iter_markers("tc")), "")
+    progress.info("start %s%s", item.nodeid, f" [{tc}]" if tc else "")
 
 
 @pytest.hookimpl(hookwrapper=True)
