@@ -171,8 +171,10 @@ def test_switch_ports_recover_after_agent_flap(ops, afm_ready, checks, record_pr
         ops.afm_agent(sw, "start")
     checks.check(ops.wait(lambda: ops.switch_ready(name), 300, 10), f"{name} not healthy")
     asics = ((ops.switch(name).get("status") or {}).get("asic-info") or {}).get("asics") or []
+    qslots = ops.inv.quarantined_slots() if ops.inv is not None else set()   # ports cabled to a quarantined tray
     bad = [f"asic{a.get('id')}/port{p.get('id')}:{p.get('oper-state')}" for a in asics for p in a.get("ports") or []
-           if p.get("admin-status") == "up" and p.get("oper-state") not in ("PortReady", None)]
+           if p.get("admin-status") == "up" and p.get("oper-state") not in ("PortReady", None)
+           and (p.get("peer") or {}).get("slot-id") not in qslots]
     record_property("asic_ports_not_ready", bad[:20])
     checks.check(not bad, f"{len(bad)} admin-up ports not PortReady: {bad[:6]}")
     ok = ops.wait(lambda: (ops.planes(sysv)[1] or 0) >= (base[1] or 0), float(ops.th("plane_restore_s", 900)), 30)
@@ -416,7 +418,7 @@ def test_restart_sideband_agent(ops, afm_ready, checks, record_property):
     pids0 = {slot: pid for sw in ops.rack.switches.values() for slot, pid in ops.sb_agents(sw).items()}
     for sw in ops.rack.switches.values():
         ops.afm_agent(sw, "restart")
-    slots = {c["spec"]["slot-id"] for c in ops.afm.computes()}
+    slots = {c["spec"]["slot-id"] for c in ops.active_computes()}   # a quarantined tray has no agent to bring back
 
     def all_back():
         seen = [s for sw in ops.rack.switches.values() for s in ops.sb_agents(sw)]

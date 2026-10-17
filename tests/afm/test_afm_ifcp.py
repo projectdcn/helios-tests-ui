@@ -19,7 +19,7 @@ VP = f"{CLUSTER}/vpods"
 
 
 def _baseline(ops) -> dict:
-    return {c["meta"]["name"]: ops.ifcp_up(ops.tray(c["meta"]["name"])) for c in ops.afm.computes()}
+    return {c["meta"]["name"]: ops.ifcp_up(ops.tray(c["meta"]["name"])) for c in ops.active_computes()}  # quarantined: no SSH
 
 
 def _recovered(ops, checks, base: dict, what: str, only=None):

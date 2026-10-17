@@ -151,7 +151,7 @@ def test_switch_agent_restart(ops, afm_ready, checks):
     for s in ops.afm.switches():
         n = s["meta"]["name"]
         checks.check(ops.wait(lambda n=n: ops.switch_ready(n), 300, 10), f"{n} not admitted+healthy")
-    computes = {c["spec"]["slot-id"] for c in ops.afm.computes()}
+    computes = {c["spec"]["slot-id"] for c in ops.active_computes()}   # a quarantined tray has no agent to bring back
 
     def slots_ok():
         seen = [slot for sw in ops.rack.switches.values() for slot in ops.sb_agents(sw)]
