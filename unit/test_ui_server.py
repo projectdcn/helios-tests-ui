@@ -214,8 +214,15 @@ def test_inventory_api_and_quarantine_toggle(ui):
     assert d["errors"] == [] and d["quarantine"] == {} and [r["name"] for r in d["form"]["computes"]] == ["c1", "c2"]
     q = {"node": "c2", "enabled": True, "reason": "tray down, ticket 42", "until": "2099-12-31"}
     _, pre = c.req("POST", "/api/racks/sim/inventory/check", {"quarantine": q})
+    assert any("needs its AFM 'slot'" in e for e in pre["errors"])   # no slot yet: refused (g02-g17 17 Oct)
+    st, _ = c.req("POST", "/api/racks/sim/inventory/save", {"quarantine": q, "sha": d["sha"]})
+    assert st == 400 and "quarantine:" not in inv.read_text()
+    with_slot = d["text"].replace("- name: c2\n", "- name: c2\n  slot: 1\n", 1)
+    st, res = c.req("POST", "/api/racks/sim/inventory/save", {"text": with_slot, "sha": d["sha"]})
+    assert st == 200 and res["saved"]
+    _, d = c.req("GET", "/api/racks/sim/inventory")
+    _, pre = c.req("POST", "/api/racks/sim/inventory/check", {"quarantine": q})
     assert "+  quarantine: {reason: 'tray down, ticket 42'" in pre["diff"] and pre["errors"] == []
-    assert any("without 'slot'" in w for w in pre["warnings"])
     assert "quarantine:" not in inv.read_text()                       # preview only
     st, res = c.req("POST", "/api/racks/sim/inventory/save", {"quarantine": q, "sha": d["sha"]})
     assert st == 200 and res["saved"] and Path(res["backup"]).read_text() == d["text"]

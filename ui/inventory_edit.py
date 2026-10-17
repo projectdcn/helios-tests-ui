@@ -345,6 +345,15 @@ def read(path: Path) -> dict:
     return out
 
 
+def _slotless_quarantined(text: str) -> set[str]:
+    try:
+        data = yaml.safe_load(text) or {}
+    except yaml.YAMLError:
+        return set()
+    return {str(e.get("name")) for e in _entries(data, "computes")
+            if e.get("quarantine") and e.get("slot") is None and not e.get("afm_name")}
+
+
 def prepare(path: Path, req: dict) -> dict:
     """New text from {text} (raw YAML) or {form}, or a quarantine toggle {quarantine: {node, enabled, reason,
     until}}; returns {text, diff, errors, warnings, comments_kept}."""
@@ -362,6 +371,12 @@ def prepare(path: Path, req: dict) -> dict:
     else:
         raise EditError(["send text, form or quarantine"])
     errors, warnings, _ = validate(new, path)
+    # setting a quarantine on a compute without slot / afm_name is refused (g02-g17 17 Oct: saved like that, the AFM
+    # pre-flight still saw pod-1-4 = ct05 and blocked every AFM test); one already in the file only warns
+    for n in sorted(_slotless_quarantined(new) - _slotless_quarantined(old)):
+        errors.append(f"{n}: a quarantined compute needs its AFM 'slot' (slot-id, e.g. ct05 = 4) or 'afm_name' - "
+                      "without it the AFM checks cannot tell which AFM node to leave out; set it first (Compute trays "
+                      "table or raw YAML), then quarantine")
     if not kept:
         warnings.append("the YAML is re-written: comments and formatting of the file are not kept")
     return {"text": new, "diff": diff(old, new, path.name), "errors": errors, "warnings": warnings,

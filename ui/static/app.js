@@ -723,9 +723,12 @@ function showPreview(d, payload) {
   for (const ln of (d.diff || "(no change)").split("\n")) {
     pre.append(h("span", { class: ln.startsWith("+") && !ln.startsWith("+++") ? "add" : ln.startsWith("-") && !ln.startsWith("---") ? "del" : "" }, ln + "\n"));
   }
-  $("#preview").replaceChildren(msgs(d.errors, d.warnings), pre);
   lastPreview = d.errors.length || !d.diff ? null : payload;
+  const note = lastPreview ? h("div", { class: "warn unsaved" },
+    "Preview only - NOT SAVED YET. Click ", h("b", {}, "Save (dated backup first)"), " to apply it to the inventory.") : null;
+  $("#preview").replaceChildren(...[msgs(d.errors, d.warnings), note, pre].filter(Boolean));
   $("#inv-save").disabled = !lastPreview;
+  $("#inv-save").classList.toggle("primary", !!lastPreview);
 }
 $("#inv-preview").addEventListener("click", async () => {
   const payload = invMode === "raw" ? { text: $("#raw").value } : formPayload();
@@ -738,6 +741,8 @@ $("#inv-save").addEventListener("click", async () => {
     const d = await api("POST", `/api/racks/${encodeURIComponent(rack.name)}/inventory/save`, { ...lastPreview, sha: inv.sha });
     await loadInventory();
     $("#savemsg").textContent = d.saved ? `saved; backup ${d.backup}` : "no change";
+    for (const n of $$("#preview .unsaved")) n.remove();
+    $("#inv-save").classList.remove("primary");
   } catch (e) { $("#savemsg").textContent = e.message; $("#savemsg").className = "err"; }
 });
 function askQuarantine(node) {

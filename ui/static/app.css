@@ -86,3 +86,5 @@ fieldset { min-width: 0; }
 #session-box { margin-top: 0; }
 #sessions tr.current td:first-child { border-left: 3px solid var(--accent); }
 #sessions details ul { margin: 4px 0 0; padding-left: 18px; }
+
+.unsaved { margin: 6px 0; padding: 6px 10px; border-left: 3px solid var(--warn, #b45309); background: rgba(180, 83, 9, .08); }

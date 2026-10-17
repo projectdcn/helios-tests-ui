@@ -139,11 +139,14 @@ def test_quarantine_replaces_a_nested_entry_and_validates(inv):
         ie.set_quarantine(INV, "ct99", True, "x")
 
 
-def test_quarantine_on_compute_without_slot_warns(inv):
+def test_quarantine_on_compute_without_slot_is_refused(inv):
+    """g02-g17 17 Oct: a quarantine saved without a slot left the AFM pre-flight blocking on that tray."""
     text = INV.replace("    slot: 0\n", "")
     inv.write_text(text)
     pre = ie.prepare(inv, {"quarantine": {"node": "ct01", "enabled": True, "reason": "down"}})
-    assert pre["errors"] == [] and any("without 'slot'" in w for w in pre["warnings"])
+    assert any("needs its AFM 'slot'" in e for e in pre["errors"])
+    pre = ie.prepare(inv, {"quarantine": {"node": "ct01", "enabled": False}})     # lifting it is always allowed
+    assert not any("needs its AFM 'slot'" in e for e in pre["errors"])
 
 
 def load_inventory_text(inv, text):
