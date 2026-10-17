@@ -134,8 +134,12 @@ def test_switch_states(ops, afm_ready, checks, record_property):
 def test_auto_reconfigure_on_policy_timer(ops, afm_ready, links, checks, record_property):
     """With the automatic system policy, a switch port down past the link-fail-threshold triggers the data-fabric
     reconfiguration on its own: the vPOD degrades with fewer planes, never waits in
-    needdatafabricreconfiguration; the port back restores the planes."""
+    needdatafabricreconfiguration; the port back restores the planes. Starts from a settled system vPOD
+    (online/degraded, no pending ops): g02-g17 17 Oct it was still 'initializing' from the previous case's GPU
+    re-add when the port went down, and went configurationfailed (36, 31, 31) instead."""
     sysv = ops.system_vpod_name()
+    checks.check(ops.wait_vpod(sysv) in TERMINAL and ops.wait_pending_clear(sysv),
+                 f"{sysv} {ops.vpod_state(sysv)} / pending ops before the test")
     base = ops.settled_planes(sysv, interval=float(ops.th("plane_settle_interval_s", 10)))
     name = ops.pick_compute()
     sw, ns, port, _ = ops.gpu_links(ops.compute(name)["spec"]["slot-id"])[0]

@@ -282,18 +282,20 @@ def test_link_down_reconciliation(ops, afm_ready, links, checks, record_property
 @pytest.mark.tc("TC-AFM-039")
 def test_vpod_degraded_on_link_down_during_create(ops, afm_ready, links, uniq, cleanup, checks, record_property):
     """A port of the test computes is down when their user vPOD is created: the vPOD comes up degraded (not
-    configurationfailed); port back (re-flapped if startup does not stick) -> planes restored."""
+    configurationfailed); port back (re-flapped if startup does not stick) -> planes restored. The port is picked
+    while the GPUs are still in the system vPOD: g02-g17 17 Oct, once they left it AFM had taken their switch ports
+    out of the VLAN (Vlan 'routed', not 'trunk') and _pick found none."""
     sysv = ops.system_vpod_name()
     names = [c["meta"]["name"] for c in sorted(ops.afm.computes(), key=lambda c: c["spec"].get("slot-id", 0))
              if ops.compute_ready(c["meta"]["name"])][-int(ops.th("vpod_test_computes", 1)):]
     sysbase = _baseline(ops, sysv, record_property)
+    slots = {ops.compute(n)["spec"]["slot-id"] for n in names}
+    name, sw = _target_switch(ops)
+    ns, port, cab = _pick(ops, sw, slots=slots)
     user, moved = uniq("vp"), []
     try:
         for n in names:
             moved += ops.remove_compute(sysv, n)
-        slots = {ops.compute(n)["spec"]["slot-id"] for n in names}
-        name, sw = _target_switch(ops)
-        ns, port, cab = _pick(ops, sw, slots=slots)
         links.shut(sw, ns, port)
         time.sleep((ops.link_fail_threshold(sysv) + 5) * _scale(ops))
         ops.create_vpod(user, moved)

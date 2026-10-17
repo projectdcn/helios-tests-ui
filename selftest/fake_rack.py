@@ -210,6 +210,15 @@ class Sim:
         return {f"Ethernet{a * 256 + ((s * 4 + g) * len(pids) + j) * 2}": (s, g, s * 4 + g, p)
                 for s in range(self.n_ct) for g in range(4) for j, p in enumerate(pids)}
 
+    def port_vlan(self, i, ns, port) -> str:
+        """'show interfaces status' Vlan column: 'trunk' while the cabled GPU is in a vPOD, else 'routed' - g02-g17
+        17 Oct: AFM takes the switch ports of GPUs that left every vPOD out of the VLAN."""
+        cab = self.ports(i, ns).get(port)
+        if cab is None:
+            return "trunk"
+        return "trunk" if any((g.get("slot-id"), g.get("index")) == (cab[0], cab[1])
+                              for v in self.st.objs["VPod"].values() for g in v["spec"].get("GPUs") or []) else "routed"
+
     def lane_used(self, i, ns, port) -> bool:
         cab = self.ports(i, ns).get(port)
         return cab is not None and cab[3] in self.used
@@ -737,7 +746,7 @@ class FakeSwitchTransport:
                        "------------  ---------------  -----  ----  ---  ------  ------  ----  -----  ----  --------\n")
                 ns_ = m.group(1)
                 rows = "".join("  ".join([f"{p:>12}", f"{'0,1,2,3,4,5,6,7':<15}", f"{'400G':>5}", f"{sim.mtu.get((i, ns_, p), 9100):>4}",
-                                          f"{'rs':>3}", f"{'etp' + str(n):<6}", f"{'trunk':<6}",
+                                          f"{'rs':>3}", f"{'etp' + str(n):<6}", f"{sim.port_vlan(i, ns_, p):<6}",
                                           f"{sim.link_state(i, ns_, p):<4}", f"{sim.admin(i, ns_, p):<5}",
                                           f"{'OSFP':<4}", f"{'N/A':<8}"]) + "\n"
                                for n, p in enumerate(sorted(sim.ports(i, ns_), key=lambda x: int(x[8:]))))
