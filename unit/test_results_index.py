@@ -59,3 +59,12 @@ def test_a_run_without_results_dir_lands_in_runs_rack_and_is_indexed(tmp_path):
     assert runs, r.stdout[-1500:] + r.stderr[-800:]
     rows = ri.read(tmp_path / "results")
     assert rows and rows[0]["tc_id"] == "HC-001" and rows[0]["run"] == runs[0].parent.name
+
+
+def test_ui_session_folders_not_indexed(tmp_path):
+    """<rack>-session-<time>/ (the UI's consolidated session result) repeats rows of its runs: not indexed."""
+    _run(tmp_path, "mr3", "mr3-20261016-160000", [("HC-001", "passed", "2026-10-16 16:00:00 UTC")])
+    s = _run(tmp_path, "mr3", "mr3-session-20261016-155900", [("HC-001", "passed", "2026-10-16 16:00:00 UTC")])
+    assert ri.run_rows(s, "mr3") == []
+    assert ri.rebuild(tmp_path) == 1 and [r["run"] for r in ri.read(tmp_path)] == ["mr3-20261016-160000"]
+    assert ri.update_run(s) and [r["run"] for r in ri.read(tmp_path)] == ["mr3-20261016-160000"]

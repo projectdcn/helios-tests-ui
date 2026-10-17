@@ -82,3 +82,7 @@ fieldset { min-width: 0; }
 .scroll table { margin: 0; }
 .scroll thead th { position: sticky; top: 0; background: var(--panel); z-index: 1; box-shadow: 0 1px 0 var(--line); }
 #runs-scroll { max-height: 38vh; }
+#sessions-scroll { max-height: 30vh; }
+#session-box { margin-top: 0; }
+#sessions tr.current td:first-child { border-left: 3px solid var(--accent); }
+#sessions details ul { margin: 4px 0 0; padding-left: 18px; }

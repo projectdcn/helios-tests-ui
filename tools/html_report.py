@@ -59,6 +59,13 @@ def to_utc(started: str, offset_h: float | None) -> str:
     return t.strftime("%Y-%m-%d %H:%M:%S") + " UTC"
 
 
+def supersedes(prev: dict | None, r: dict) -> bool:
+    """Does the later result ``r`` of a test item replace the earlier ``prev``? An executed result beats a skip or a
+    pre-flight block; a later run beats an earlier one otherwise (an earlier BLOCKED must not hide a later run's skip
+    reason). Also used for the UI's consolidated session results (ui/sessions.py)."""
+    return prev is None or prev["outcome"] in ("skipped", "blocked") or r["outcome"] not in ("skipped", "blocked")
+
+
 def load_runs(dirs: list[Path], tz: dict[str, float] | None = None) -> list[dict]:
     items: "OrderedDict[str, dict]" = OrderedDict()
     for d in dirs:
@@ -68,10 +75,7 @@ def load_runs(dirs: list[Path], tz: dict[str, float] | None = None) -> list[dict
             r["started"] = to_utc(r.get("started", ""), (tz or {}).get(d.name))
             log = d / r["log"] if r.get("log") else None
             r["_log"] = log.read_text(errors="replace") if log and log.exists() else ""
-            prev = items.get(r["nodeid"])
-            # an executed result beats a skip or a pre-flight block; a later run beats an earlier one otherwise
-            # (an earlier BLOCKED must not hide a later run's skip reason)
-            if prev is None or prev["outcome"] in ("skipped", "blocked") or r["outcome"] not in ("skipped", "blocked"):
+            if supersedes(items.get(r["nodeid"]), r):
                 items[r["nodeid"]] = r
     return list(items.values())
 

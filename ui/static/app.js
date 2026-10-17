@@ -44,6 +44,7 @@ function showTab(t) {
   if (t === "runs") loadRuns();
   if (t === "results") loadResults();
   if (t === "inventory") loadInventory();
+  if (t === "run") loadSession();
 }
 
 // ---------------------------------------------------------------- case history (results/index.csv)
@@ -91,8 +92,46 @@ function rackChanged() {
     loadPresets();
     loadPwStatus();
     loadPlan();
+    loadSession();
   }
 }
+
+// ---------------------------------------------------------------- sessions (per rack, ui-sessions.json)
+let sessData = null;
+const SESSION_NAME = /^[A-Za-z0-9 _.-]{1,60}$/;
+function sessMsg(text, cls = "muted") { $("#sess-msg").textContent = text; $("#sess-msg").className = cls; }
+async function loadSession() {
+  if (!rack) return;
+  const r = rack.name;
+  try {
+    const d = await api("GET", `/api/racks/${enc(r)}/sessions`);
+    if (!rack || rack.name !== r) return;
+    sessData = d;
+    const cur = d.sessions.find(s => s.id === d.current);
+    $("#sess-name").textContent = cur ? cur.name : "(none yet)";
+    $("#sess-info").textContent = cur
+      ? `started ${cur.created} · ${cur.runs.length} run(s)${cur.runs.length ? " · " + cur.summary : ""}`
+      : "the first run starts one";
+    $("#sess-name").title = cur ? cur.id : "";
+  } catch (e) { if (rack && rack.name === r) sessMsg("sessions: " + e.message, "err"); }
+}
+function dateName() {
+  const d = new Date();
+  const mon = d.toLocaleString("en-GB", { month: "short" });
+  return `${d.getDate()} ${mon} ${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+}
+$("#sess-new").addEventListener("click", async () => {
+  let name = prompt(`New session of ${rack.title}: the next runs of this rack are consolidated in it.\n`
+    + "Name (letters, digits, space, - _ . ; at most 60):", dateName());
+  if (name === null) return;
+  name = name.trim();
+  if (!SESSION_NAME.test(name)) { sessMsg("session name: 1-60 letters, digits, spaces, '-', '_' or '.'", "err"); return; }
+  try {
+    const d = await api("POST", `/api/racks/${enc(rack.name)}/sessions`, { name });
+    sessMsg(`new session "${d.name}" started`, "ok");
+    loadSession();
+  } catch (e) { sessMsg(e.message, "err"); }
+});
 
 // ---------------------------------------------------------------- run form
 const form = $("#runform");
@@ -540,7 +579,7 @@ function openLog(id) {
     pre.append(JSON.parse(ev.data) + "\n");
     if (atEnd) pre.scrollTop = pre.scrollHeight;
   };
-  es.addEventListener("end", () => { es.close(); es = null; loadRuns(); loadRacks(); });
+  es.addEventListener("end", () => { es.close(); es = null; loadRuns(); loadRacks(); loadSession(); });
   es.onerror = () => { /* the browser reconnects with Last-Event-ID; the server resumes from 'from' */ };
   loadRuns();
 }
@@ -549,9 +588,26 @@ function openLog(id) {
 $("#refresh-results").addEventListener("click", loadResults);
 async function loadResults() {
   if (!rack) return;
-  const rows = await api("GET", `/api/racks/${encodeURIComponent(rack.name)}/history`);
+  const [rows, sess] = await Promise.all([api("GET", `/api/racks/${encodeURIComponent(rack.name)}/history`),
+    api("GET", `/api/racks/${enc(rack.name)}/sessions`).catch(e => ({ sessions: [], error: e.message }))]);
   const base = n => `/results/${encodeURIComponent(rack.name)}/${encodeURIComponent(n)}/`;
   const dl = (n, what) => `/api/racks/${enc(rack.name)}/results/${enc(n)}/${what}`;
+  const runLink = n => h("a", { href: base(n) + (rows.some(x => x.name === n && x.reports.includes("report.html")) ? "report.html" : "tc_summary.csv"),
+                                target: "_blank" }, n);
+  $("#sessions tbody").replaceChildren(...(sess.error ? [h("tr", {}, h("td", { colspan: 7, class: "err" }, sess.error))] : []),
+    ...(sess.sessions.length || sess.error ? [] : [h("tr", {}, h("td", { colspan: 7, class: "muted" }, "no session yet: the first run started from the Run tab starts one"))]),
+    ...sess.sessions.map(s => h("tr", { class: s.current ? "current" : "" },
+      h("td", {}, h("b", {}, s.name), s.current ? h("span", { class: "muted" }, " (current)") : null,
+        h("div", { class: "muted" }, `${s.id} · started ${s.created}`)),
+      h("td", {}, s.runs.length ? h("details", {}, h("summary", {}, `${s.runs.length} run(s)`),
+        h("ul", {}, ...s.runs.map(n => h("li", {}, runLink(n))))) : "0"),
+      h("td", {}, s.summary),
+      h("td", {}, s.written || ""),
+      h("td", {}, s.reports.includes("report.html") ? h("a", { href: base(s.id) + "report.html", target: "_blank" }, "session report") : "",
+        s.folder ? [" ", h("a", { href: base(s.id) + "session.json", target: "_blank", class: "muted" }, "session.json")] : null),
+      h("td", {}, s.folder ? h("a", { class: "btn", href: dl(s.id, "zip"), download: "", title: "the consolidated folder: csv files, logs, report, session.json" }, "Download results (.zip)") : ""),
+      h("td", {}, s.runs.length ? h("button", { onclick: () => rebuildSession(s.id),
+        title: "build the consolidated folder and its report again from the session's runs" }, "Rebuild") : null))));
   $("#results tbody").replaceChildren(...rows.map(r => h("tr", {},
     h("td", {}, r.name, r.merged_from ? h("div", { class: "muted" }, "merged from " + r.merged_from.join(" + ")) : null),
     h("td", {}, r.mtime),
@@ -566,6 +622,10 @@ async function loadResults() {
     h("td", {},
       r.reports.includes("report.html") ? null : h("button", { onclick: () => buildReport(r.name) }, "Build report"),
       r.health && r.health.verdict !== "GO" ? h("button", { onclick: () => askRerun(r.name) }, "Re-run failed") : null))));
+}
+async function rebuildSession(id) {
+  try { await api("POST", `/api/racks/${enc(rack.name)}/sessions/${enc(id)}/rebuild`, {}); loadResults(); }
+  catch (e) { alert(e.message); }
 }
 async function buildReport(name) {
   try { await api("POST", `/api/racks/${encodeURIComponent(rack.name)}/report`, { run: name }); loadResults(); }

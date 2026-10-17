@@ -21,6 +21,13 @@
 </nav>
 <main>
 <section id="tab-run" class="tab active">
+  <div id="session-box" class="box row">
+    <span>Session <b id="sess-name">(none yet)</b></span>
+    <span id="sess-info" class="muted"></span>
+    <button type="button" id="sess-new" title="start a new session: the next runs of this rack are consolidated in it">New session…</button>
+    <span id="sess-msg" class="muted" role="status" aria-live="polite"></span>
+  </div>
+  <p class="muted small">Every run started here joins the rack's current session (the first run starts one, named by date); the session's consolidated result (the latest result of each test across its runs) is at the top of the Results tab.</p>
   <div class="row" id="preset-row">
     <label class="inline">Load preset <select id="preset"><option value="">(no presets)</option></select></label>
     <button type="button" id="preset-delete" title="delete the selected preset">Delete preset</button>
@@ -115,6 +122,10 @@
       <span class="muted">empty = the password saved in the macOS Keychain for this rack, if any</span></label>
     <button id="rerun-go" class="primary">Re-run failed</button> <button id="rerun-cancel">Cancel</button>
   </div>
+  <h3>Sessions</h3>
+  <p class="muted small">One entry per session: the latest result of each test across the session's runs (an executed result beats a later skip). The single runs are listed below.</p>
+  <div class="scroll" id="sessions-scroll"><table id="sessions"><thead><tr><th>Session</th><th>Runs</th><th>Cases</th><th>Written</th><th>Report</th><th>Download</th><th></th></tr></thead><tbody></tbody></table></div>
+  <h3>Runs</h3>
   <div class="scroll" id="results-scroll"><table id="results"><thead><tr><th>Folder</th><th>Written</th><th>Cases</th><th>Health</th><th>Reports</th><th>Download</th><th></th></tr></thead><tbody></tbody></table></div>
 </section>
 

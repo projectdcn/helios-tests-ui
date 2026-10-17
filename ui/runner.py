@@ -191,7 +191,8 @@ def index_runs(run_dirs, log=None) -> None:
 def _result_dirs(results_dir: Path, rack: str) -> set[str]:
     if not results_dir.is_dir():
         return set()
-    return {p.name for p in results_dir.iterdir() if p.is_dir() and p.name.startswith(f"{rack}-")}
+    return {p.name for p in results_dir.iterdir()       # a UI session folder (ui/sessions.py) is not a run's result
+            if p.is_dir() and p.name.startswith(f"{rack}-") and "-session-" not in p.name}
 
 
 PARTIAL_AFTER_S = 1.0     # text without a line ending yet (pytest's "path::test " before PASSED) is shown after this

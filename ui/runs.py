@@ -14,6 +14,7 @@ import threading
 import time
 from pathlib import Path
 
+from . import sessions
 from .config import ROOT, RackProfile, inventory_rack_name
 from .runner import Job, JobError, NAME_RX, clean_filters, make_runner
 
@@ -59,6 +60,7 @@ class Run:
         self.stop_requested = False
         self.lines: list[str] = []
         self.current: str | None = None          # the test running now (from helios.progress "start <nodeid>")
+        self.session: str | None = None          # the rack's UI session this run joined (ui/sessions.py)
         self.cond = threading.Condition()
         self.log_path = log_dir / f"{rid}.log"
         self.meta_path = log_dir / f"{rid}.json"
@@ -69,7 +71,8 @@ class Run:
                 "created": self.created, "started": self.started, "ended": self.ended, "rc": self.rc,
                 "results": self.results, "verdict": self.verdict, "error": self.error,
                 "has_password": self.has_password, "password_source": self.password_source,
-                "lines": len(self.lines), "current": self.current if self.status == "running" else None}
+                "lines": len(self.lines), "current": self.current if self.status == "running" else None,
+                "session": self.session}
 
     def save(self) -> None:
         self.meta_path.parent.mkdir(parents=True, exist_ok=True)
@@ -100,6 +103,10 @@ class RunManager:
         p = self.profiles[rack]
         rid = f"{rack}-{time.strftime('%Y%m%d-%H%M%S')}-" + "".join(random.choices(string.ascii_lowercase, k=4))
         run = Run(rid, rack, job, password, p.results_dir / "ui-runs", filters, password_source, notes)
+        try:
+            run.session = sessions.join(p, rid)
+        except (JobError, OSError) as e:       # an unreadable ui-sessions.json must not stop the run
+            run.notes.append(f"not added to a session: {e}")
         with self.lock:
             self.runs[rid] = run
             self.queues[rack].append(run)
@@ -168,11 +175,25 @@ class RunManager:
             finally:
                 run._password = None
                 run.ended = _now()
+                self._session(run, log)
                 self._retention(run, log)
                 log(f"# {run.status} rc={run.rc} results={', '.join(run.results) or '-'}")
                 run.save()
                 with run.cond:
                     run.cond.notify_all()
+
+    def _session(self, run: Run, log) -> None:
+        """Add the run's results folders to its session and rebuild the session's consolidated folder; never fails
+        the run."""
+        if not run.session or not run.results:
+            return
+        p = self.profiles[run.rack]
+        try:
+            sessions.add_results(p, run.session, run.results)
+            out = sessions.rebuild(p, run.session)
+            log(f"# session {run.session}: {sessions.summary_text(sessions.counts_of(out))} ({out.name}/report.html)")
+        except Exception as e:  # noqa: BLE001
+            log(f"# session {run.session} not updated: {e}")
 
     def _retention(self, run: Run, log) -> None:
         """Apply results/retention.yaml (tools/results_retention.py) to the results store after each run; never
@@ -306,7 +327,8 @@ def history(profile: RackProfile) -> list[dict]:
     rack = inventory_rack_name(profile.inventory) if profile.inventory.is_file() else profile.name
     out = []
     for p in d.iterdir():
-        if not p.is_dir() or not (p / "tc_summary.csv").exists() or not p.name.startswith(f"{rack}-"):
+        if not p.is_dir() or not (p / "tc_summary.csv").exists() or not p.name.startswith(f"{rack}-") \
+                or sessions.is_session(p.name):     # sessions are listed on their own (GET .../sessions)
             continue
         row = {"name": p.name, "mtime": time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(p.stat().st_mtime)),
                "counts": summary_counts(p), "reports": sorted(x.name for x in p.glob("*.html")),

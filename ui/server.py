@@ -20,7 +20,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, unquote, urlparse
 
-from . import defaults, inventory_edit, plan, presets
+from . import defaults, inventory_edit, plan, presets, sessions
 from .config import ROOT, afm_username, load_config
 from .keychain import Keychain, KeychainError, account
 from .runner import JobError, NAME_RX, TC_RX
@@ -30,7 +30,8 @@ STATIC = Path(__file__).resolve().parent / "static"
 ALLOWED_HOSTS = {"127.0.0.1", "localhost", "[::1]"}
 MAX_BODY = 4 * 1024 * 1024
 # files of a results folder offered as single downloads (the zip has everything)
-DOWNLOADABLE = ("report.html", "health.html", "tc_summary.csv", "tc_results.csv", "health.json", "health-notes.txt")
+DOWNLOADABLE = ("report.html", "health.html", "tc_summary.csv", "tc_results.csv", "health.json", "health-notes.txt",
+                "session.json")
 
 
 def result_folder(profile, run: str) -> Path | None:
@@ -303,6 +304,9 @@ class Handler(BaseHTTPRequestHandler):
             m = re.fullmatch(r"/api/racks/([^/]+)/defaults", path)
             if m:
                 return self.json(defaults.get(self.app.profile(m.group(1))))
+            m = re.fullmatch(r"/api/racks/([^/]+)/sessions", path)
+            if m:                                  # the rack's sessions (newest first) + the current one
+                return self.json(sessions.list_sessions(self.app.profile(m.group(1))))
             m = re.fullmatch(r"/api/racks/([^/]+)/password", path)
             if m:                                  # {saved: bool, ...}: NEVER the password
                 return self.json(self.app.password_status(m.group(1)))
@@ -416,6 +420,20 @@ class Handler(BaseHTTPRequestHandler):
             m = re.fullmatch(r"/api/runs/([^/]+)/stop", path)
             if m:
                 return self.json(self.app.runs.stop(m.group(1)).as_dict())
+            m = re.fullmatch(r"/api/racks/([^/]+)/sessions", path)
+            if m:                                  # a new session becomes the rack's current one
+                return self.json(sessions.new_session(self.app.profile(m.group(1)), body.get("name")), 201)
+            m = re.fullmatch(r"/api/racks/([^/]+)/sessions/([^/]+)/rebuild", path)
+            if m:
+                p = self.app.profile(m.group(1))
+                sid = m.group(2)
+                if not NAME_RX.match(sid) or not sessions.is_session(sid):
+                    return self.err(404, "no such session")
+                s = sessions.get(p, sid)
+                if not s.get("runs"):
+                    return self.err(400, "this session has no results yet")
+                out = sessions.rebuild(p, sid)
+                return self.json({"id": sid, "folder": out.name, "summary": sessions.summary_text(sessions.counts_of(out))})
             if path == "/api/select":
                 p = self.app.profile(str(body.get("rack") or ""))
                 return self.json({"tc": select_cases(body, p), "workbook": p.workbook.name})
