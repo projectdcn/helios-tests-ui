@@ -6,6 +6,7 @@ puts it into that variable for the remote process only (the same as ``read -s`` 
 """
 from __future__ import annotations
 
+import fnmatch
 import io
 import os
 import posixpath
@@ -21,6 +22,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from .config import ROOT, RackProfile, find_secrets, inventory_rack_name, password_env
+from .version import build_info, is_git_checkout, manifest
 
 NAME_RX = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
 TC_RX = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]*$")
@@ -306,6 +308,21 @@ class LocalRunner(Runner):
                 pass
 
 
+def bundle_tar(root: Path, base: str) -> bytes:
+    """The files MANIFEST.txt lists (regular files inside ``root`` only), as an uncompressed tar under <base>/, like
+    ``git archive --prefix=<base>/`` gives for a checkout."""
+    buf = io.BytesIO()
+    top = root.resolve()
+    with tarfile.open(fileobj=buf, mode="w", format=tarfile.PAX_FORMAT) as t:
+        for rel in manifest(root) or []:
+            f = root / rel
+            if ".." in Path(rel).parts or Path(rel).is_absolute() or f.is_symlink() or not f.is_file() \
+                    or top not in f.resolve().parents or fnmatch.fnmatch(rel, "testplan/*.xlsx"):
+                continue
+            t.add(f, arcname=f"{base}/{rel}", recursive=False)
+    return buf.getvalue()
+
+
 def rq(p: str) -> str:
     """Quote for the remote shell, keeping a leading ~/ expandable."""
     if p == "~":
@@ -350,13 +367,22 @@ class SshRunner(Runner):
     def sync_code(self, log) -> None:
         s = self.profile.ssh
         parent, base = self._parent_base
-        argv = ["git", "-C", str(ROOT), "archive", "--format=tar", f"--prefix={base}/", s.ref, "--", ".",
-                ":(exclude)testplan/*.xlsx"]
-        log(f"== sync code: git archive {s.ref} -> {s.target}:{s.code_dir}")
-        r = self.ex.run(argv)
-        if r.returncode != 0:
-            raise JobError("git archive failed: " + (r.stderr or b"").decode("utf-8", "replace")[-300:])
-        self._remote(f"mkdir -p {rq(parent)} && tar -xf - -C {rq(parent)}", input=r.stdout)
+        if not is_git_checkout(ROOT) and manifest(ROOT) is not None:
+            # an installed bundle (tools/build_ui_installer.py): no git here; its files ARE the committed code of
+            # the commit it was built from, listed in MANIFEST.txt (workbooks, local inventories already left out)
+            bi = build_info(ROOT) or {}
+            log(f"== sync code: installed bundle {bi.get('version', '?')} (commit {bi.get('commit', '?')}; "
+                f"ref {s.ref} not used) -> {s.target}:{s.code_dir}")
+            data = bundle_tar(ROOT, base)
+        else:
+            argv = ["git", "-C", str(ROOT), "archive", "--format=tar", f"--prefix={base}/", s.ref, "--", ".",
+                    ":(exclude)testplan/*.xlsx"]
+            log(f"== sync code: git archive {s.ref} -> {s.target}:{s.code_dir}")
+            r = self.ex.run(argv)
+            if r.returncode != 0:
+                raise JobError("git archive failed: " + (r.stderr or b"").decode("utf-8", "replace")[-300:])
+            data = r.stdout
+        self._remote(f"mkdir -p {rq(parent)} && tar -xf - -C {rq(parent)}", input=data)
 
     def sync_inventory(self, log) -> None:
         s, inv = self.profile.ssh, self.profile.inventory

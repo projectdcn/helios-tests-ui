@@ -333,7 +333,9 @@ def pytest_sessionfinish(session):
     if not reports or cfg._helios_inventory is None:
         return
     rack = cfg._helios_inventory.rack
-    base = Path(cfg.getoption("--results-dir") or Path("results") / "runs" / rack)
+    res = Path(os.environ["HELIOS_RESULTS_ROOT"]).expanduser() if os.environ.get("HELIOS_RESULTS_ROOT") \
+        else Path("results")                    # an installed UI keeps its results outside the code
+    base = Path(cfg.getoption("--results-dir") or res / "runs" / rack)
     out = base / f"{rack}-{time.strftime('%Y%m%d-%H%M%S')}"
     out.mkdir(parents=True, exist_ok=True)
     # one command-trace file per test item, referenced from tc_results.csv (used by tools/html_report.py)

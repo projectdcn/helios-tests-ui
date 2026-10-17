@@ -317,6 +317,11 @@ and title.
   `password_env` / `key_file`), diff preview, dated backup `<file>.bak-YYYYmmdd-HHMMSS` before each save. Per node
   **Quarantine…** (reason required, optional until date) / **Lift** writes the `quarantine:` entry. For g02-g17 the
   editor changes the local copy; the jump host gets it with the next run.
+- **Linux server**: `python tools/build_ui_installer.py` builds `dist/helios-ui-<version>.tar.gz` (committed code +
+  offline wheels for CPython 3.10-3.12); on the server `tar -xzf ... && helios-ui-<version>/install.sh` installs it for
+  your user under `~/helios-ui` (systemd --user service or nohup helper, 127.0.0.1 only: open it with
+  `ssh -L 8765:127.0.0.1:8765 <user>@<server>`); upgrade = run a newer install.sh (config/ and data/ kept),
+  `~/helios-ui/bin/install.sh --rollback`, `~/helios-ui/bin/uninstall.sh [--purge]`. See docs/how-to-run.html, 9b.9.
 
 ## Coverage (435 of 577 cases: 542 plan + 23 switch cases TC-SWH-037…059 + 12 health checks HC-000…011)
 

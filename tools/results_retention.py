@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import shutil
 import sys
 import tarfile
@@ -28,7 +29,15 @@ from pathlib import Path
 import yaml
 
 ROOT = Path(__file__).resolve().parent.parent
-RESULTS = ROOT / "results"
+
+
+def default_results_root() -> Path:
+    """results/ of this checkout, or $HELIOS_RESULTS_ROOT (an installed UI keeps its results outside the code)."""
+    v = os.environ.get("HELIOS_RESULTS_ROOT", "").strip()
+    return Path(v).expanduser() if v else ROOT / "results"
+
+
+RESULTS = default_results_root()
 DEFAULTS = {"keep_full_runs": 30, "keep_full_days": 30, "delete_logs_days": 90, "ui_logs_per_rack": 200}
 
 

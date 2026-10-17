@@ -1,0 +1,44 @@
+# Rack profiles of the installed helios-tests UI (written by install.sh once; an upgrade never touches it).
+# NO SECRETS HERE: the AFM password is typed in the browser for each run (there is no macOS Keychain on Linux).
+# Relative paths are relative to the code (@PREFIX@/app); the paths below point into @PREFIX@/data instead, so an
+# upgrade (which replaces app/) keeps every result, inventory and the workbook.
+#
+# Copy these files here yourself (the installer never copies secrets or creates keys):
+#   @PREFIX@/data/inventories/mr3.local.yaml               MR3 inventory (from the Mac: ~/dev/helios-tests/inventory/)
+#   @PREFIX@/data/inventories/fullrack-jump-afm.local.yaml g02-g17 inventory: copy of the jump host's
+#                                                           ~/helios/fullrack-jump-afm.yaml (scp -P 8059 ...)
+#   @PREFIX@/data/testplan/full_rack_testplan.xlsx         test-plan workbook (for "Pick from the test plan")
+# SSH keys of the user the UI runs as (~/.ssh; the UI service has no ssh-agent, so a key it can use without a prompt):
+#   g02-g17: a key the jump host accepts:  ssh -p 8059 tenant-hpe@165.204.38.103 true   must work with no prompt
+#   mr3:     the keys / key_file the MR3 inventory names for its switches and computes (direct SSH from this server)
+racks:
+  mr3:
+    title: MR3 mini rack (direct)
+    runner: local                       # pytest / tools/rack_health.py run on this server
+    inventory: @PREFIX@/data/inventories/mr3.local.yaml
+    results_dir: @PREFIX@/data/results/runs/mr3
+    workbook: @PREFIX@/data/testplan/full_rack_testplan.xlsx
+
+  g02-g17:
+    title: g02-g17 full rack (via jump host)
+    runner: ssh                         # every run: sync code + inventory to the jump host, run there, copy results back
+    inventory: @PREFIX@/data/inventories/fullrack-jump-afm.local.yaml
+    results_dir: @PREFIX@/data/results/runs/g02-g17
+    known: testplan/health-known.yaml   # in the code (app/testplan/)
+    workbook: @PREFIX@/data/testplan/full_rack_testplan.xlsx
+    ssh:
+      host: 165.204.38.103
+      port: 8059
+      user: tenant-hpe
+      code_dir: ~/helios/helios-tests   # the installed code (app/, as listed in app/MANIFEST.txt) is unpacked here
+      python: ~/helios/venv/bin/python
+      inventory: ~/helios/fullrack-jump-afm.yaml
+      ref: HEAD                         # not used by an installed UI: it sends the code it was built from
+      remote_html: false
+
+  selftest:
+    title: Simulated rack (selftest replay + fake AFM)
+    runner: local
+    inventory: selftest/inventory.yaml  # in the code (app/selftest/)
+    results_dir: @PREFIX@/data/results/runs/selftest
+    workbook: @PREFIX@/data/testplan/full_rack_testplan.xlsx

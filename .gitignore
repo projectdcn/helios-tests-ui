@@ -20,3 +20,6 @@ tools/*.rtf
 # workbook backups written by tools/update_testplan.py
 testplan/*.backup-*.xlsx
 testplan/~$*
+
+# installer bundles (tools/build_ui_installer.py)
+dist/

@@ -19,7 +19,15 @@ import tempfile
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-RESULTS = ROOT / "results"
+
+
+def default_results_root() -> Path:
+    """results/ of this checkout, or $HELIOS_RESULTS_ROOT (an installed UI keeps its results outside the code)."""
+    v = os.environ.get("HELIOS_RESULTS_ROOT", "").strip()
+    return Path(v).expanduser() if v else ROOT / "results"
+
+
+RESULTS = default_results_root()
 FIELDS = ["rack", "run", "started", "tc_id", "test", "outcome", "duration_s", "message", "log"]
 
 

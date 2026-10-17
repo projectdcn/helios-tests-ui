@@ -256,7 +256,7 @@ async function loadPwStatus() {
   if (!rack || rack.name !== r) return;
   pwSaved = !!d.saved;
   const st = $("#pwstatus");
-  if (!d.available) { st.textContent = d.error || "macOS Keychain not available: type the password for each run"; st.className = "muted"; }
+  if (!d.available) { st.textContent = d.note || d.error || "macOS Keychain not available: type the password for each run"; st.className = "muted"; }
   else if (d.error) { st.textContent = d.error; st.className = "err"; }
   else { st.textContent = pwSaved ? "saved in Keychain" : "not saved"; st.className = pwSaved ? "ok" : "muted"; }
   st.title = d.account ? `Keychain item: service helios-ui, account ${d.account}` : "";

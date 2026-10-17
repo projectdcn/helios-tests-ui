@@ -1,8 +1,9 @@
 """HTTP controller (standard library): JSON API + server-sent events for the live log + static page + results files.
 
-Bound to 127.0.0.1. State-changing requests need ``Content-Type: application/json`` and the ``X-Helios-UI`` header
-(a page from another site cannot send them without a CORS preflight, which this server never grants), and the Host
-header must be the loopback address (no DNS rebinding).
+Bound to 127.0.0.1 by default (``--host`` / HELIOS_UI_HOST for another address, e.g. 0.0.0.0 on a lab server: there
+is no login, so anyone who reaches the port can use it). State-changing requests need ``Content-Type:
+application/json`` and the ``X-Helios-UI`` header (a page from another site cannot send them without a CORS preflight, which this server never grants), and the Host
+header must name this server (loopback, or its host names / addresses when bound beyond loopback; no DNS rebinding).
 """
 from __future__ import annotations
 
@@ -11,6 +12,7 @@ import mimetypes
 import os
 import re
 import shutil
+import socket
 import subprocess
 import sys
 import tempfile
@@ -25,6 +27,7 @@ from .config import ROOT, afm_username, load_config
 from .keychain import Keychain, KeychainError, account
 from .runner import JobError, NAME_RX, TC_RX
 from .runs import RunManager, build_report, history
+from .version import build_info, version
 
 STATIC = Path(__file__).resolve().parent / "static"
 ALLOWED_HOSTS = {"127.0.0.1", "localhost", "[::1]"}
@@ -85,6 +88,8 @@ class App:
         except KeychainError as e:
             return {"saved": False, "available": False, "account": None, "error": str(e)}
         out = {"saved": False, "available": self.keychain.available(), "account": acct}
+        if not out["available"]:
+            out["note"] = self.keychain.unavailable_reason()
         if out["available"]:
             try:
                 out["saved"] = self.keychain.has(acct)
@@ -183,6 +188,7 @@ def case_history(app, tc: str) -> dict:
 
 class Handler(BaseHTTPRequestHandler):
     app: App = None          # set by make_server
+    server_names: frozenset = frozenset()     # Host names accepted besides loopback (set by make_server)
     server_version = "helios-ui"
 
     def log_message(self, fmt, *args):        # quiet; request bodies (passwords) are never logged anyway
@@ -209,9 +215,22 @@ class Handler(BaseHTTPRequestHandler):
                    "errors": msg if isinstance(msg, list) else [msg], **extra}, code)
 
     def _host_ok(self) -> bool:
+        """The Host header names this server: the loopback address, or (bound to another address, e.g. 0.0.0.0)
+        this machine's host names, the address the request came in on, or HELIOS_UI_ALLOWED_HOSTS. Anything else
+        is refused (no DNS rebinding)."""
         h = self.headers.get("Host") or ""
-        host = h.split("]")[0] + "]" if h.startswith("[") else h.split(":")[0]
-        return host in ALLOWED_HOSTS
+        host = (h.split("]")[0] + "]" if h.startswith("[") else h.split(":")[0]).lower()
+        if host in ALLOWED_HOSTS:
+            return True
+        if not self.server_names:
+            return False
+        if host in self.server_names:
+            return True
+        try:
+            local = self.connection.getsockname()[0]
+        except OSError:
+            return False
+        return host.strip("[]") == str(local).lower()
 
     def _body(self) -> dict:
         n = int(self.headers.get("Content-Length") or 0)
@@ -287,6 +306,10 @@ class Handler(BaseHTTPRequestHandler):
                 if not NAME_RX.match(m.group(2)):
                     return self.err(404, "not found")
                 return self._file(p.results_dir / m.group(2), m.group(3))
+            if path == "/api/version":             # installer health check; no secrets
+                bi = build_info() or {}
+                return self.json({"version": version(), "commit": bi.get("commit"), "built": bi.get("built"),
+                                  "root": str(ROOT)})
             if path == "/api/racks":
                 return self.json([{**p.as_dict(), **self.app.runs.busy(n)} for n, p in self.app.profiles.items()])
             m = re.fullmatch(r"/api/cases/([^/]+)/history", path)
@@ -476,10 +499,44 @@ class Handler(BaseHTTPRequestHandler):
             return self.err(404, str(e))
 
 
+LOOPBACK = ("127.0.0.1", "::1", "localhost")
+
+
+def is_loopback(host: str) -> bool:
+    return host in LOOPBACK
+
+
+def host_names() -> frozenset:
+    """Names a browser may use for this machine when the UI listens beyond loopback: host name, FQDN, short name,
+    their addresses, and HELIOS_UI_ALLOWED_HOSTS (comma-separated DNS aliases / addresses)."""
+    names = set()
+    try:
+        hn = socket.gethostname()
+        fq = socket.getfqdn()
+        names |= {hn, fq, hn.split(".")[0], fq.split(".")[0]}
+        for n in (hn, fq):
+            try:
+                names |= {ai[4][0] for ai in socket.getaddrinfo(n, None)}
+            except OSError:
+                pass
+    except OSError:
+        pass
+    names |= {x.strip() for x in os.environ.get("HELIOS_UI_ALLOWED_HOSTS", "").split(",") if x.strip()}
+    return frozenset(n.lower() for n in names if n)
+
+
 def make_server(app: App, port: int = 8765, host: str = "127.0.0.1") -> ThreadingHTTPServer:
-    if host not in ("127.0.0.1", "::1", "localhost"):
-        raise ValueError("the UI binds to the loopback address only")
-    handler = type("BoundHandler", (Handler,), {"app": app})
-    srv = ThreadingHTTPServer((host, port), handler)
+    """Bound to ``host``: 127.0.0.1 (default; only this machine) or e.g. 0.0.0.0 / an address of this machine
+    (anyone who reaches the port can use the UI: it has no login)."""
+    extra = {"app": app}
+    if not is_loopback(host):
+        extra["server_names"] = host_names() | {host.lower()}
+    handler = type("BoundHandler", (Handler,), extra)
+    # SO_REUSEADDR (explicit; http.server sets it too): a just-closed socket in TIME_WAIT never blocks a restart
+    attrs = {"allow_reuse_address": True}
+    if ":" in host:                               # IPv6 address
+        attrs["address_family"] = socket.AF_INET6
+    cls = type("HeliosHTTPServer", (ThreadingHTTPServer,), attrs)
+    srv = cls((host, port), handler)
     srv.daemon_threads = True
     return srv

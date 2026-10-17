@@ -62,6 +62,14 @@ class Keychain:
     def available(self) -> bool:
         return self.enabled and (self._run is not None or (sys.platform == "darwin" and Path(self.security).is_file()))
 
+    def unavailable_reason(self) -> str | None:
+        """Why the Keychain cannot be used here (shown on the page next to the disabled Remember box), or None."""
+        if not self.enabled:
+            return "the macOS Keychain is not enabled in this UI: type the AFM password for each run"
+        if not self.available():
+            return "macOS Keychain not available on this system: type the AFM password for each run"
+        return None
+
     def _call(self, args: list[str], stdin: str | None = None) -> tuple[int, str, str]:
         if not self.enabled:
             raise KeychainError("the macOS Keychain is not enabled in this UI")

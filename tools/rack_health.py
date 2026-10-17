@@ -153,6 +153,15 @@ def notes(j, diffs: list[str]) -> str:
     return "\n".join(lines) + "\n"
 
 
+def default_results_dir(rack: str | None) -> Path:
+    """results/runs/<rack> of this checkout, or of $HELIOS_RESULTS_ROOT (an installed UI keeps results outside the
+    code)."""
+    import os
+    v = os.environ.get("HELIOS_RESULTS_ROOT", "").strip()
+    res = Path(v).expanduser() if v else ROOT / "results"
+    return res / "runs" / rack if rack else res
+
+
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--inventory", help="inventory to run against (or $HELIOS_INVENTORY)")
@@ -179,7 +188,7 @@ def main(argv=None) -> int:
         else:
             inv = a.inventory or os.environ.get("HELIOS_INVENTORY")
             rack = (yaml.safe_load(Path(inv).expanduser().read_text()) or {}).get("rack") if inv else None
-            a.results_dir = ROOT / "results" / "runs" / rack if rack else ROOT / "results"
+            a.results_dir = default_results_dir(rack)
     if a.rerun_failed:
         inv = a.inventory or os.environ.get("HELIOS_INVENTORY")
         if not inv:
