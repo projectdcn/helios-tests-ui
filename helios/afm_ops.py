@@ -21,6 +21,8 @@ from typing import Any
 
 from .afm import CLUSTER, AfmClient, AfmError, conditions_ok, wait_for
 
+from .progress import action  # noqa: E402
+
 log = logging.getLogger("helios.cmd")
 VP = f"{CLUSTER}/vpods"
 CN = f"{CLUSTER}/computenodes"
@@ -287,15 +289,18 @@ class AfmOps:
         return None, None
 
     @staticmethod
-    def afm_agent(sw, action: str):
-        return sw.run(f"systemctl {action} afm-agent", sudo=True, timeout=300)
+    def afm_agent(sw, what: str):
+        action("%s: systemctl %s afm-agent", sw.name, what)
+        return sw.run(f"systemctl {what} afm-agent", sudo=True, timeout=300)
 
     @staticmethod
     def restart_controller(sw):
+        action("%s: docker restart afm-controller", sw.name)
         return sw.run("docker restart afm-controller", sudo=True, timeout=300)
 
     @staticmethod
     def signal_sb_agent(sw, pid: int, sig: str):
+        action("%s: kill -%s sb-node-agent pid %s", sw.name, sig, pid)
         return sw.run(f"docker exec afm-agent kill -{sig} {pid}", sudo=True, timeout=60)
 
     @staticmethod
@@ -531,6 +536,7 @@ class AfmOps:
         state as "enabled" but SETS it as "enable" (MR3, 16 Oct: "Invalid admin state : enabled (valid: power-off,
         idle, enable)"); if a version refuses the value, the one it lists as valid is used instead."""
         st = port // int(self.th("ports_per_station", 2))
+        action("%s %s port %s -> %s", tray.name, bdf, port, "enable" if up else "idle")
         cmd = f"env AFMCTL_FORCE_UPDATE=1 afmctl update port -b {bdf} -s {st} -p {port} --admin-state "
         want = "enable" if up else "idle"
         r = tray.run(cmd + want, sudo=True, timeout=120)
