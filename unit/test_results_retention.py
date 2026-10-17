@@ -77,3 +77,18 @@ def test_dry_run_changes_nothing(tmp_path):
     d = _run(tmp_path, "mr3", 200)
     rr.main(["--results", str(tmp_path)])
     assert (d / "logs" / "001_test.log").is_file()
+
+
+def test_ui_sessions_and_their_runs_protected(tmp_path):
+    import json
+    (tmp_path / "retention.yaml").write_text("keep_full_runs: 0\nkeep_full_days: 30\ndelete_logs_days: 90\n")
+    inside, outside = _run(tmp_path, "mr3", 100), _run(tmp_path, "mr3", 101)
+    sess = tmp_path / "runs" / "mr3" / f"mr3-session-{(NOW - timedelta(days=150)).strftime('%Y%m%d-%H%M%S')}"
+    (sess / "logs").mkdir(parents=True)
+    (sess / "logs" / "x.log").write_text("x")
+    (sess / "session.json").write_text(json.dumps({"name": "s", "runs": [inside.name]}))
+    assert {inside.name, sess.name} <= rr.protected(tmp_path) and outside.name not in rr.protected(tmp_path)
+    acts = rr.plan(tmp_path, now=NOW.timestamp())
+    assert {p.parent.name for _, p, _ in acts} == {outside.name}
+    rr.apply(acts)
+    assert (inside / "logs" / "001_test.log").is_file() and (sess / "logs" / "x.log").is_file()

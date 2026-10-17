@@ -277,9 +277,40 @@ def pytest_runtest_makereport(item, call):
         })
         if outcome != "passed":     # the reason on the live log, right after the test (pytest shows it only in -v / the summary)
             from .progress import log as progress
-            why = "; ".join(x.strip() for x in (msg or "").splitlines() if x.strip())[:300]
+            why = "; ".join(x.strip() for x in (msg or "").splitlines() if x.strip()).replace(":; ", ": ")[:300]
             tc = tc_id(item)
             progress.info("%s %s%s%s", outcome, test, f" [{tc}]" if tc else "", f": {why}" if why else "")
+
+
+SUMMARY_FIELDS = ["tc_id", "verdict", "passed", "failed", "skipped", "error", "blocked"]
+
+
+def tc_verdict(outs: list[str]) -> str:
+    """The verdict of one plan case from the outcomes of its test items (tc_summary.csv)."""
+    n = {k: outs.count(k) for k in ("passed", "failed", "skipped", "error", "blocked", "partial")}
+    return ("FAIL" if n["failed"] or n["error"] else
+            "BLOCKED" if n["blocked"] else
+            "PARTIAL" if n["partial"] else
+            "PASS" if n["passed"] and not n["skipped"] else
+            "SKIP" if not n["passed"] else "PARTIAL")
+
+
+def summary_rows(rows) -> list[list]:
+    """tc_summary.csv rows (after the SUMMARY_FIELDS header) from tc_results.csv rows (tc_id, outcome)."""
+    by_tc: dict[str, list[str]] = defaultdict(list)
+    for r in rows:
+        by_tc[r["tc_id"] or "(untagged)"].append(r["outcome"])
+    out = []
+    for tc, outs in sorted(by_tc.items()):
+        out.append([tc, tc_verdict(outs), *(outs.count(k) for k in ("passed", "failed", "skipped", "error", "blocked"))])
+    return out
+
+
+def write_summary(path: Path, rows) -> None:
+    with open(path, "w", newline="") as f:
+        w = csv.writer(f)
+        w.writerow(SUMMARY_FIELDS)
+        w.writerows(summary_rows(rows))
 
 
 def pytest_sessionfinish(session):
@@ -304,20 +335,7 @@ def pytest_sessionfinish(session):
         w.writeheader()
         w.writerows(reports)
 
-    by_tc: dict[str, list[str]] = defaultdict(list)
-    for r in reports:
-        by_tc[r["tc_id"] or "(untagged)"].append(r["outcome"])
-    with open(out / "tc_summary.csv", "w", newline="") as f:
-        w = csv.writer(f)
-        w.writerow(["tc_id", "verdict", "passed", "failed", "skipped", "error", "blocked"])
-        for tc, outs in sorted(by_tc.items()):
-            n = {k: outs.count(k) for k in ("passed", "failed", "skipped", "error", "blocked", "partial")}
-            verdict = ("FAIL" if n["failed"] or n["error"] else
-                       "BLOCKED" if n["blocked"] else
-                       "PARTIAL" if n["partial"] else
-                       "PASS" if n["passed"] and not n["skipped"] else
-                       "SKIP" if not n["passed"] else "PARTIAL")
-            w.writerow([tc, verdict, n["passed"], n["failed"], n["skipped"], n["error"], n["blocked"]])
+    write_summary(out / "tc_summary.csv", reports)
     session.config._helios_results_dir = out
     try:        # results/index.csv (tools/results_index.py) - only when the run sits in <results>/runs/<rack>/
         sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "tools"))

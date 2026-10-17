@@ -12,11 +12,13 @@ Per rack (results/runs/<rack>/):
   * UI live logs (ui-runs/<id>.log): the newest ``ui_logs_per_rack``; older .log files are deleted (the small .json
     run record stays)
 Protected (never touched): the runs listed in results/notes/*runs*.txt (the published reports are built from them),
-every <run>-merged folder and the runs it was merged from. Limits: results/retention.yaml (defaults below).
+every <run>-merged folder and the runs it was merged from, every UI session folder (<rack>-session-<time>/, ui/sessions.py)
+and the runs its session.json lists. Limits: results/retention.yaml (defaults below).
 """
 from __future__ import annotations
 
 import argparse
+import json
 import shutil
 import sys
 import tarfile
@@ -39,7 +41,8 @@ def limits(results_root: Path = RESULTS) -> dict:
 
 
 def protected(results_root: Path = RESULTS) -> set[str]:
-    """Run folder names that must keep their logs: report run lists + merged results and their sources."""
+    """Run folder names that must keep their logs: report run lists, merged results and their sources, UI session
+    folders and their runs."""
     keep: set[str] = set()
     for f in (results_root / "notes").glob("*runs*.txt"):
         keep |= {Path(t).name for t in f.read_text().split() if t.strip()}
@@ -48,6 +51,15 @@ def protected(results_root: Path = RESULTS) -> set[str]:
         src = m / "merged-from.txt"
         if src.is_file():
             keep |= {n.strip() for n in src.read_text().splitlines() if n.strip()}
+    for s in (results_root / "runs").glob("*/*-session-*"):
+        if not s.is_dir():
+            continue
+        keep.add(s.name)
+        try:
+            runs = json.loads((s / "session.json").read_text()).get("runs") or []
+        except (OSError, ValueError, AttributeError):
+            continue
+        keep |= {Path(str(n)).name for n in runs if str(n).strip()}
     return keep
 
 

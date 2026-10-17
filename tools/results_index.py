@@ -6,7 +6,8 @@ TC-AFM-001, when and with what result" is one lookup instead of reading workbook
     python tools/results_index.py runs [--rack g02-g17]  # the runs, newest first
 
 The test runner (helios/pytest_plugin.py) adds each new run itself when it finishes. Merged health results
-(<run>-merged) are derived from other runs and are not indexed; their source runs are.
+(<run>-merged) and the UI's session folders (<rack>-session-<time>, ui/sessions.py) are derived from other runs and
+are not indexed; their source runs are.
 """
 from __future__ import annotations
 
@@ -54,9 +55,10 @@ def to_utc(started: str, offset: float | None) -> str:
 
 
 def run_rows(run_dir: Path, rack: str, tz: dict[str, float] | None = None) -> list[dict]:
-    """The index rows of one results folder (empty when it has no tc_results.csv or is a merged result)."""
+    """The index rows of one results folder (empty when it has no tc_results.csv or is a merged result / a UI
+    session's consolidated folder)."""
     f = run_dir / "tc_results.csv"
-    if run_dir.name.endswith("-merged") or not f.is_file():
+    if run_dir.name.endswith("-merged") or "-session-" in run_dir.name or not f.is_file():
         return []
     out = []
     with open(f, newline="") as fh:
