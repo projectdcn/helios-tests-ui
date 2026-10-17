@@ -542,10 +542,20 @@ class AfmOps:
                 if v["link"] == "LINK_UP" and v["ll_up"] and v["peer_enabled"] and not v["error"]}
 
     def compute_port_admin(self, tray, bdf: str, port: int, up: bool):
-        """afmctl update port admin-state on the compute side (station = port // ports_per_station)."""
+        """afmctl update port admin-state on the compute side (station = port // ports_per_station). afmctl SHOWS the
+        state as "enabled" but SETS it as "enable" (MR3, 16 Oct: "Invalid admin state : enabled (valid: power-off,
+        idle, enable)"); if a version refuses the value, the one it lists as valid is used instead."""
         st = port // int(self.th("ports_per_station", 2))
-        return tray.run(f"env AFMCTL_FORCE_UPDATE=1 afmctl update port -b {bdf} -s {st} -p {port} "
-                        f"--admin-state {'enabled' if up else 'idle'}", sudo=True, timeout=120)
+        cmd = f"env AFMCTL_FORCE_UPDATE=1 afmctl update port -b {bdf} -s {st} -p {port} --admin-state "
+        want = "enable" if up else "idle"
+        r = tray.run(cmd + want, sudo=True, timeout=120)
+        if not r.ok:
+            m = re.search(r"valid:\s*([^)]*)\)", r.stdout + r.stderr)
+            valid = [v.strip() for v in m.group(1).split(",")] if m else []
+            alt = next((v for v in valid if v != want and v.startswith(want[:5])), None)
+            if alt:
+                r = tray.run(cmd + alt, sudo=True, timeout=120)
+        return r
 
     def station_map(self, tray, bdf: str, which: str = "status") -> dict[int, set[int]]:
         """{station: ports in its path-to-port map} from afmctl show station (spec or status)."""
