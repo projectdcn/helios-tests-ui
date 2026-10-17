@@ -45,6 +45,14 @@ def _planes_restored(ops, checks, sysv, base, timeout=None):
                      "(full-rack product issue: Reconcile needed)")
 
 
+
+def _afm_vlans(ops, sw) -> set[str]:
+    """VLANs on the switch that AFM manages: all of them except thresholds.afm.non_afm_vlans (ids). g02-g17 17 Oct:
+    TC-AFM-024 failed '2 VLANs after decommission' = Vlan2 on both ASICs, the stale VLAN left by the ARC run (not
+    AFM's; open with AMD) - AFM's Vlan100/200/300 were gone."""
+    skip = {f"Vlan{int(v)}" for v in (ops.th("non_afm_vlans", []) or [])}
+    return {v for ns in sw.namespaces() for v in sw.vlans(ns)} - skip
+
 def _all_computes_ready(ops, checks, timeout=None):
     names = [c["meta"]["name"] for c in ops.afm.computes()]
     for n in names:
@@ -674,7 +682,8 @@ def test_switch_decommission_and_delete(ops, afm_ready, checks, record_property)
     def steps(name, sw):
         _drain(ops, checks, name)
         _decommission(ops, checks, name)
-        checks.check(ops.wait(lambda: ops.vlan_count(sw) == 0, 120, 10), f"{name}: {ops.vlan_count(sw)} VLANs after decommission")
+        checks.check(ops.wait(lambda: not _afm_vlans(ops, sw), 120, 10),
+                     f"{name}: AFM VLANs left after decommission: {sorted(_afm_vlans(ops, sw))}")
         checks.check(ops.static_macs(sw) == 0, f"{name}: static MACs left after decommission")
         _delete(ops, checks, name)
         _readmit_switch(ops, name, sw, checks)

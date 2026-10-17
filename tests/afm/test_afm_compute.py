@@ -546,6 +546,11 @@ def test_reconfigure_during_admission(ops, afm_ready, checks, record_property):
     sysv = ops.system_vpod_name()
     name = ops.pick_compute()
     slot = ops.compute(name)["spec"]["slot-id"]
+    # the switch hosting the slot's sb-node-agent, found BEFORE the delete: once the compute is deleted its agent is
+    # gone and slot_host() finds nothing (g02-g17 17 Oct 18:20: AttributeError on None, compute left deleted)
+    sw, _ = ops.slot_host(slot)
+    if sw is None:
+        pytest.skip(f"no sb-node-agent found for slot {slot}")
     entries = ops.remove_compute(sysv, name)
     codes = []
     try:
@@ -553,7 +558,6 @@ def test_reconfigure_during_admission(ops, afm_ready, checks, record_property):
         ops.wait(lambda: ops.compute_phase(name) == "decommissioned", 300, 10)
         ops.afm.raw("DELETE", f"{CN}/{name}")
         ops.wait(lambda: ops.compute_phase(name) == "absent", 60, 5)
-        sw, _ = ops.slot_host(slot)
         ops.afm_agent(sw, "restart")
         end = time.monotonic() + 120 * float(ops.th("time_scale", 1)) + 1
         while time.monotonic() < end and ops.compute_phase(name) == "absent":
@@ -562,6 +566,9 @@ def test_reconfigure_during_admission(ops, afm_ready, checks, record_property):
         checks.check(all(c < 500 for c in codes), f"Reconfigure during admission -> {codes}")
         checks.check(ops.wait_compute_ready(name), f"{name} not Ready after admission")
     finally:
+        if ops.compute_phase(name) == "absent":      # never readmitted (e.g. the test stopped early): readmit it
+            ops.afm_agent(sw, "restart")
+            ops.wait(lambda: ops.compute_phase(name) == "admitted", 300, 10)
         if ops.compute_phase(name) == "admitted":
             ops.add_gpus(sysv, entries)
     record_property("reconfigure_codes", codes)

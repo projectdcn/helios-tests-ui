@@ -135,15 +135,19 @@ class AfmOps:
                                                                             "meta": v["meta"], "spec": spec}))
 
     def _retry_400(self, call, timeout: float | None = None):
-        """Retry while AFM answers 400 '... configuration failed state' (GPU just left a vPOD / reconfigured)."""
+        """Retry while AFM answers 400 '... configuration failed state' (GPU just left a vPOD / reconfigured) or 400
+        'gpu id N ... is not registered with the pod' (its node agent was just restarted and has not re-registered
+        the GPUs yet - g02-g17 17 Oct 18:30: TC-AFM-037 re-added slot 17 right after starting the agents)."""
         end = time.monotonic() + (timeout or float(self.th("readd_retry_s", 180)))
         while True:
             r = call()
-            if r.status_code != 400 or "configuration failed" not in r.text or time.monotonic() >= end:
+            transient = "configuration failed" in r.text or "is not registered with the pod" in r.text
+            if r.status_code != 400 or not transient or time.monotonic() >= end:
                 if r.status_code >= 400:
                     raise AfmError("PUT/POST", "vpods", r.status_code, r.text)
                 return r.json() if r.content else None
-            log.debug("AFM: 400 configuration-failed state, retrying")
+            log.debug("AFM: 400 %s, retrying", "configuration-failed state" if "configuration failed" in r.text
+                      else "GPU not registered yet")
             time.sleep(float(self.th("retry_interval_s", 10)))
 
     def vpod_gpus(self, name: str) -> list[dict]:
