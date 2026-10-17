@@ -83,6 +83,7 @@ class App:
         self.edit_lock = threading.Lock()
         # python -m ui passes the real one; an App built without one (tests) has no Keychain
         self.keychain = keychain if keychain is not None else Keychain(enabled=False)
+        self.runs.store_label = self.store_label
 
     @property
     def store_label(self) -> str:

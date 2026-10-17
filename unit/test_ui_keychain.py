@@ -259,7 +259,7 @@ def test_run_uses_keychain_password_when_field_empty(ui):
     d = c.wait(r["id"])
     assert d["status"] == "finished" and d["has_password"] is True and d["password_source"] == "keychain"
     log = c.log(r["id"])
-    assert "AFM password from macOS Keychain (memory only)" in log.splitlines()[0]
+    assert "AFM password from the macOS Keychain (memory only)" in log.splitlines()[0]
     assert f"digest {_digest(SAVED)}" in log and "pw is <REDACTED>" in log and SAVED not in log
     _nowhere(results, SAVED)
 
@@ -273,7 +273,7 @@ def test_rerun_failed_uses_keychain_password(ui):
                                       "known": True, "password": ""})
     assert st == 201, r
     log = (c.wait(r["id"]), c.log(r["id"]))[1]
-    assert "from macOS Keychain" in log.splitlines()[0] and f"digest {_digest(SAVED)}" in log and SAVED not in log
+    assert "from the macOS Keychain" in log.splitlines()[0] and f"digest {_digest(SAVED)}" in log and SAVED not in log
     _nowhere(results, SAVED)
 
 
@@ -297,7 +297,7 @@ def test_typed_password_wins_and_remember_saves_it(ui):
     # the next run with an empty field gets it from the Keychain
     st, r = c.j("POST", "/api/runs", {"rack": "rack-a", "kind": "health"})
     log = (c.wait(r["id"]), c.log(r["id"]))[1]
-    assert "from macOS Keychain" in log and f"digest {_digest(TYPED)}" in log
+    assert "from the macOS Keychain" in log and f"digest {_digest(TYPED)}" in log
     for a, _ in fake.calls:
         assert TYPED not in " ".join(a) and SAVED not in " ".join(a)
     _nowhere(results, TYPED, SAVED)
@@ -404,3 +404,22 @@ def test_remember_on_a_linux_ui_server(tmp_path):
         srv.shutdown()
         srv.server_close()
     _nowhere(results, TYPED)
+
+
+
+def test_linux_run_log_names_the_password_file(tmp_path):
+    """17 Oct, Linux UI server: the run log said 'AFM password from macOS Keychain'."""
+    results, f = tmp_path / "results", tmp_path / "secrets.json"
+    FileSecrets(f).save("rack-a:admin", SAVED)
+    app = App(profiles={"rack-a": _profile(tmp_path, "rack-a", results)}, executor=HashExecutor(),
+              keychain=FileSecrets(f))
+    srv = _serve(app)
+    try:
+        c = Client(srv.server_address[1])
+        r = c.j("POST", "/api/runs", {"rack": "rack-a", "kind": "health"})[1]
+        first = (c.wait(r["id"]), c.log(r["id"]))[1].splitlines()[0]
+        assert f"AFM password from the password file {f} (memory only)" in first and "macOS" not in first
+    finally:
+        app.shutdown()
+        srv.shutdown()
+        srv.server_close()

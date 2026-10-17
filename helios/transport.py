@@ -18,6 +18,26 @@ from .inventory import Host
 log = logging.getLogger("helios.cmd")
 
 
+
+def key_path(key_file: str | None, who: str) -> str | None:
+    """The inventory's key_file with ~ expanded (paramiko does not), or a clear FileNotFoundError when this machine
+    does not have it. 17 Oct: the MR3 inventory copied from a laptop to the UI server still named the laptop's key;
+    every node then showed as 'unreachable/unresponsive (FileNotFoundError: ...)'."""
+    if not key_file:
+        return None
+    path = os.path.expanduser(key_file)
+    if not os.path.isfile(path):
+        import getpass
+        import socket
+        try:
+            user = getpass.getuser()
+        except Exception:  # noqa: BLE001
+            user = "?"
+        raise FileNotFoundError(
+            f"SSH key {path} (inventory key_file of {who}) does not exist on {socket.gethostname().split('.')[0]} "
+            f"(user {user}): copy that key there (chmod 600) or set key_file to a key this machine has")
+    return path
+
 @dataclass
 class CmdResult:
     host: str
@@ -128,7 +148,7 @@ class SshTransport:
         # Lab racks get reimaged constantly; host-key pinning would just break runs.
         client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
         use_keys = h.password is None or bool(h.key_file)
-        key_file = os.path.expanduser(h.key_file) if h.key_file else None  # paramiko does not expand ~
+        key_file = key_path(h.key_file, h.name)
         sock = None
         if self.jump:
             sock = _jump_client(self.jump, self.connect_timeout).get_transport().open_channel(
@@ -332,8 +352,7 @@ def _jump_client(jump: dict, timeout: float, tag: str = ""):
         c = paramiko.SSHClient()
         c.load_system_host_keys()
         c.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-        kf = jump.get("key_file")
-        c.connect(key[0], port=key[1], username=key[2], key_filename=os.path.expanduser(kf) if kf else None,
+        c.connect(key[0], port=key[1], username=key[2], key_filename=key_path(jump.get("key_file"), "transport.jump"),
                   timeout=timeout, banner_timeout=timeout, auth_timeout=timeout, look_for_keys=True, allow_agent=True)
         c.get_transport().set_keepalive(30)
         log.debug("jump host %s@%s:%s connected", key[2], key[0], key[1])

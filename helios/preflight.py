@@ -157,7 +157,8 @@ def assess(rack, computes, inventory, tools=(), min_computes: int = 1) -> Assess
     accs: set[int] = set()
     for c, res, exc in fan_out(probe, computes):
         if exc:
-            out.excluded[c.name] = f"{c.name}: unreachable/unresponsive ({type(exc).__name__}: {str(exc)[:120]})"
+            out.excluded[c.name] = (f"{c.name}: {exc}" if isinstance(exc, FileNotFoundError) else   # missing SSH key
+                                    f"{c.name}: unreachable/unresponsive ({type(exc).__name__}: {str(exc)[:120]})")
             continue
         msg, a = res
         accs |= a

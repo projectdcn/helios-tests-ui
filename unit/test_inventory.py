@@ -38,3 +38,16 @@ def test_example_inventory_loads():
 
     inv = load_inventory(Path(__file__).resolve().parents[1] / "inventory" / "example-fullrack.yaml")
     assert len(inv.switches) == 6 and len(inv.computes) == 18
+
+
+def test_missing_ssh_key_is_a_clear_error(tmp_path):
+    """17 Oct: the MR3 inventory copied to the UI server named the laptop's key; every node showed only as
+    'unreachable/unresponsive (FileNotFoundError ...)'. The error names the key, the node and this machine."""
+    import pytest
+    from helios.transport import key_path
+    assert key_path(None, "c1") is None
+    k = tmp_path / "id_test"
+    k.write_text("x")
+    assert key_path(str(k), "c1") == str(k)
+    with pytest.raises(FileNotFoundError, match=r"SSH key .*id_missing \(inventory key_file of c1\) does not exist on "):
+        key_path(str(tmp_path / "id_missing"), "c1")

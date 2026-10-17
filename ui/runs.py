@@ -86,6 +86,7 @@ class Run:
 class RunManager:
     def __init__(self, profiles: dict[str, RackProfile], executor=None):
         self.profiles = profiles
+        self.store_label = "macOS Keychain"       # where a saved AFM password comes from (App sets it)
         self.runners = {n: make_runner(p, executor) for n, p in profiles.items()}
         self.runs: dict[str, Run] = {}
         self.queues: dict[str, collections.deque] = {n: collections.deque() for n in profiles}
@@ -157,7 +158,7 @@ class RunManager:
         with open(run.log_path, "w") as fh:
             log = lambda line: self._log(run, fh, line)   # noqa: E731
             try:
-                pw = {"typed": "given (memory only)", "keychain": "from macOS Keychain (memory only)"}
+                pw = {"typed": "given (memory only)", "keychain": f"from the {self.store_label} (memory only)"}
                 log(f"# run {run.id} on {run.rack} ({self.profiles[run.rack].runner}); "
                     f"AFM password {pw.get(run.password_source, 'not given')}")
                 for note in run.notes:
