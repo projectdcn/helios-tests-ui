@@ -164,10 +164,29 @@ class RunManager:
             finally:
                 run._password = None
                 run.ended = _now()
+                self._retention(run, log)
                 log(f"# {run.status} rc={run.rc} results={', '.join(run.results) or '-'}")
                 run.save()
                 with run.cond:
                     run.cond.notify_all()
+
+    def _retention(self, run: Run, log) -> None:
+        """Apply results/retention.yaml (tools/results_retention.py) to the results store after each run; never
+        fails the run. Only for a store laid out as <root>/runs/<rack>/."""
+        p = self.profiles[run.rack]
+        if p.results_dir.parent.name != "runs":
+            return
+        try:
+            sys.path.insert(0, str(Path(ROOT, "tools")))
+            import results_retention as rr
+            root = p.results_dir.parent.parent
+            acts = rr.plan(root)
+            if acts:
+                rr.apply(acts)
+                log(f"# retention: {len(acts)} action(s), {sum(a[2] for a in acts) / 1e6:.1f} MB "
+                    f"(results/retention.yaml)")
+        except Exception as e:  # noqa: BLE001
+            log(f"# retention not applied: {e}")
 
     def _post(self, run: Run, log) -> None:
         """Reports built here (no rack access): report.html for pytest runs; health.html when the jump host ran

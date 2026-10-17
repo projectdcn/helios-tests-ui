@@ -52,3 +52,23 @@ def test_copied_back_runs_are_indexed(tmp_path):
     d = _run(tmp_path, "g02-g17", "g02-g17-20261017-010101", "HC-001", "passed", "2026-10-17 01:01:01 UTC")
     index_runs([d])
     assert [r["run"] for r in ri.read(tmp_path)] == [d.name]
+
+
+def test_retention_applied_after_a_run(tmp_path):
+    """The UI applies results/retention.yaml after each run (old UI live logs beyond the cap are removed)."""
+    import os
+    import time
+    from ui.runs import RunManager
+    ui = tmp_path / "runs" / "mr3" / "ui-runs"
+    ui.mkdir(parents=True)
+    (tmp_path / "retention.yaml").write_text("ui_logs_per_rack: 1\n")
+    for i in range(3):
+        f = ui / f"old{i}.log"
+        f.write_text("x")
+        t0 = time.time() - (100 - i) * 60
+        os.utime(f, (t0, t0))
+    mgr = RunManager.__new__(RunManager)
+    mgr.profiles = {"mr3": _app(tmp_path).profiles["mr3"]}
+    lines = []
+    mgr._retention(SimpleNamespace(rack="mr3"), lines.append)
+    assert sorted(p.name for p in ui.glob("*.log")) == ["old2.log"] and "retention: 2 action(s)" in lines[0]
