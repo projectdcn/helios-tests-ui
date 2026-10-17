@@ -119,8 +119,62 @@ function rackChanged() {
     loadPwStatus();
     loadPlan();
     loadSession();
+    loadAccess();
   }
 }
+
+// ---------------------------------------------------------------- prerequisites (Check access: tools/access_check.py)
+const ACC_MARK = { ok: ["✓", "ok"], fail: ["✗", "err"], warn: ["!", "warn"], skip: ["–", "muted"] };
+let accRun = null;
+async function loadAccess() {
+  const r = rack.name;
+  $("#acc-ssh-who").textContent = rack.runner === "ssh"
+    ? `the jump host ${rack.ssh.target} (the jump host's own key reaches the nodes)` : "every switch and compute tray";
+  let d;
+  try { d = await api("GET", `/api/racks/${enc(r)}/access`); } catch (e) { d = { found: false, error: e.message }; }
+  if (!rack || rack.name !== r) return;
+  const sum = $("#acc-summary"), body = $("#acc-table tbody");
+  if (!d.found) {
+    sum.textContent = d.error || "not checked yet: Check access before the first run on this rack";
+    sum.className = d.error ? "err" : "muted";
+    $("#acc-table").hidden = true; $("#acc-setup").open = true;
+    return;
+  }
+  const c = d.counts || {};
+  sum.textContent = `${d.verdict} - ${c.fail || 0} fail, ${c.warn || 0} warn, ${c.ok || 0} ok · checked ${d.at} from ${d.checked_from}`;
+  sum.className = d.verdict === "OK" ? "ok" : d.verdict === "WARN" ? "warn" : "err";
+  const order = { fail: 0, warn: 1, ok: 2, skip: 3 };
+  const rows = (d.items || []).filter(i => $("#acc-all").checked || i.status === "fail" || i.status === "warn")
+    .sort((a, b) => order[a.status] - order[b.status]);
+  body.replaceChildren(...rows.map(i => h("tr", {},
+    h("td", { class: ACC_MARK[i.status][1], title: i.status }, ACC_MARK[i.status][0]), h("td", {}, i.area), h("td", {}, i.node),
+    h("td", {}, i.check), h("td", { class: "small" }, i.detail), h("td", { class: "small" }, i.fix || ""))));
+  if (!rows.length) body.append(h("tr", {}, h("td", { colspan: 6, class: "ok" }, "nothing to fix (tick 'show every check' for the details)")));
+  $("#acc-table").hidden = false;
+  $("#acc-setup").open = d.verdict === "FAIL";
+}
+$("#acc-all").addEventListener("change", loadAccess);
+$("#acc-log").addEventListener("click", () => { if (accRun) { showTab("runs"); openLog(accRun); } });
+$("#acc-run").addEventListener("click", async () => {
+  const r = rack.name, sum = $("#acc-summary");
+  try {   // the typed AFM password (if any) also checks the AFM login; the field is left as it is for the run
+    const run = await api("POST", "/api/runs", { rack: r, kind: "access", password: form.password.value });
+    accRun = run.id;
+    $("#acc-log").hidden = false; $("#acc-run").disabled = true;
+    sum.textContent = run.status === "queued" ? "queued behind the rack's current run…" : "checking…"; sum.className = "muted";
+    for (;;) {
+      await new Promise(res => setTimeout(res, 2000));
+      const s = await api("GET", `/api/runs/${enc(run.id)}`);
+      if (!["queued", "running"].includes(s.status)) {
+        if (s.status !== "finished") { sum.textContent = `check ${s.status}${s.error ? ": " + s.error : ""} (Open log)`; sum.className = "err"; }
+        break;
+      }
+      sum.textContent = s.status === "queued" ? "queued behind the rack's current run…" : "checking…";
+    }
+    if (rack.name === r) await loadAccess();
+  } catch (e) { sum.textContent = e.message; sum.className = "err"; }
+  finally { $("#acc-run").disabled = false; }
+});
 
 // ---------------------------------------------------------------- sessions (per rack, ui-sessions.json)
 let sessData = null;
@@ -542,7 +596,7 @@ form.addEventListener("submit", async ev => {
   ev.preventDefault();
   const req = { rack: rack.name, ...formState(), password: form.password.value,
                 remember_password: form.remember_pw.checked && !!form.password.value };
-  if (form.remember_pw.checked && !req.password && !confirm("\"Remember in macOS Keychain\" is ticked but no password "
+  if (form.remember_pw.checked && !req.password && !confirm("\"Remember\" is ticked but no password "
       + "is typed: nothing will be saved. Start anyway" + (pwSaved ? " (with the saved password)?" : "?"))) return;
   if (req.allow_disruptive && !confirm(`Run DISRUPTIVE cases on ${rack.title}?`)) return;
   rememberForm();
@@ -552,7 +606,7 @@ form.addEventListener("submit", async ev => {
     const run = await api("POST", "/api/runs", req);
     const kc = run.keychain || {};
     $("#runmsg").textContent = (run.status === "queued" && run.queue_position > 1 ? `queued (#${run.queue_position})` : "started")
-      + (kc.saved ? "; password saved in the Keychain" : "") + (kc.error ? "; Keychain: " + kc.error : "");
+      + (kc.saved ? `; password saved (${pwStore})` : "") + (kc.error ? "; password not saved: " + kc.error : "");
     if (kc.error) $("#runmsg").className = "warn";
     form.remember_pw.checked = false;
     loadPwStatus();
@@ -566,6 +620,7 @@ $("#refresh-runs").addEventListener("click", loadRuns);
 function what(job) {
   if (job.kind === "health") return "health check" + (job.tc.length ? " --tc " + job.tc.join(",") : "");
   if (job.kind === "rerun") return "re-run failed of " + job.base_run;
+  if (job.kind === "access") return "prerequisites check (Check access)";
   return [job.tc.length ? job.tc.join(",") : "", job.marker ? "-m " + job.marker : "", job.paths.join(" ")].filter(Boolean).join(" ");
 }
 function resultLinks(name) {

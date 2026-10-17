@@ -30,7 +30,7 @@ from pathlib import Path
 from urllib.parse import parse_qs, unquote, urlparse
 
 from . import defaults, inventory_edit, plan, presets, sessions
-from .config import ROOT, afm_username, load_config
+from .config import ROOT, afm_username, inventory_rack_name, load_config
 from .keychain import Keychain, KeychainError, account
 from .runner import JobError, NAME_RX, TC_RX
 from .runs import RunManager, build_report, history
@@ -204,6 +204,22 @@ AUTH_COOKIE = "helios_ui_auth"
 AUTH_MAX_AGE = 30 * 24 * 3600                      # a login lasts 30 days in that browser
 OPEN_PATHS = {"/", "/index.html", "/api/version", "/api/login", "/api/logout"}   # no login needed (no rack data)
 MIN_TOKEN = 16
+
+
+def latest_access(p) -> dict:
+    """{found, folder, ...access.json} of the rack's newest <rack>-access-* results folder."""
+    try:
+        rack = inventory_rack_name(p.inventory)
+    except Exception:  # noqa: BLE001
+        rack = p.name
+    dirs = sorted((d for d in p.results_dir.glob(f"{rack}-access-*") if (d / "access.json").is_file()),
+                  key=lambda d: d.name) if p.results_dir.is_dir() else []
+    if not dirs:
+        return {"found": False}
+    try:
+        return {"found": True, "folder": dirs[-1].name, **json.loads((dirs[-1] / "access.json").read_text())}
+    except (OSError, ValueError) as e:
+        return {"found": False, "error": f"{dirs[-1].name}/access.json: {e}"}
 
 
 def login_hint() -> dict:
@@ -396,6 +412,9 @@ class Handler(BaseHTTPRequestHandler):
             m = re.fullmatch(r"/api/racks/([^/]+)/inventory", path)
             if m:
                 return self.json(inventory_edit.read(self.app.profile(m.group(1)).inventory))
+            m = re.fullmatch(r"/api/racks/([^/]+)/access", path)
+            if m:                                  # the latest Check access result (tools/access_check.py)
+                return self.json(latest_access(self.app.profile(m.group(1))))
             m = re.fullmatch(r"/api/racks/([^/]+)/presets", path)
             if m:
                 return self.json(presets.list_presets(self.app.profile(m.group(1))))

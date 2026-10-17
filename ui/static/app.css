@@ -92,3 +92,6 @@ fieldset { min-width: 0; }
 #logout { margin-left: auto; }
 #login-hint { flex-basis: 100%; font-family: ui-monospace, Menlo, monospace; }
 [hidden] { display: none !important; }      /* the hidden attribute wins over display rules (nav, flex boxes) */
+#acc-table td:first-child { font-weight: 700; text-align: center; width: 1.5em; }
+#acc-setup ul { margin: 6px 0 0 18px; padding: 0; }
+#acc-setup li { margin: 3px 0; }

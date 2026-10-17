@@ -28,7 +28,7 @@ NAME_RX = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
 TC_RX = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]*$")
 MARKER_RX = re.compile(r"^[A-Za-z0-9_ ()]+$")
 ENV_RX = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
-KINDS = ("pytest", "health", "rerun")
+KINDS = ("pytest", "health", "rerun", "access")
 
 SECRET_ENV = re.compile(r"PASSWORD|PASSWD|SECRET|TOKEN", re.I)   # env vars a run must not inherit
 
@@ -75,7 +75,7 @@ def clean_filters(d) -> dict:
 @dataclass
 class Job:
     """One run request. kind: pytest (selected cases), health (tools/rack_health.py), rerun (rack_health
-    --rerun-failed <base_run>)."""
+    --rerun-failed <base_run>), access (tools/access_check.py: the rack's prerequisites, nothing else)."""
     kind: str = "pytest"
     paths: list[str] = field(default_factory=lambda: ["tests"])
     tc: list[str] = field(default_factory=list)
@@ -150,6 +150,8 @@ def build_args(job: Job, inventory: str, results_dir: str, known: str | None, no
     if job.kind == "pytest":
         return ["-m", "pytest", *job.paths, "--inventory", inventory, "--results-dir", results_dir,
                 "-p", "no:cacheprovider", *job.selection_args()]
+    if job.kind == "access":
+        return ["tools/access_check.py", "--inventory", inventory, "--results-dir", results_dir]
     a = ["tools/rack_health.py"]
     if job.kind == "rerun":
         a += ["--rerun-failed", posixpath.join(results_dir, job.base_run)]

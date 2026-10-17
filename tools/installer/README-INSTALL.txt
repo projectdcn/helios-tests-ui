@@ -36,6 +36,9 @@ Copy these yourself (the installer copies no secrets and creates no keys)
     prompt) for g02-g17, and the keys the MR3 inventory uses. The service has no ssh-agent: use a key it can read
     without a passphrase prompt (or ~/.ssh/config IdentityFile).
 Then reload the page; a rack whose inventory is missing shows it as MISSING.
+Then click "Check access" on the Run tab: a read-only checklist of what the tests need (SSH key and key login,
+passwordless sudo on every switch and compute, GPUs ACTIVE and openable, traffic tools, AFM reachable and the login)
+with what to do about each problem. For g02-g17 it runs on the jump host.
 
 AFM password: type it in the Run form. "Remember on the UI server" (or "Save password") keeps it per rack in
 ~/.config/helios-ui/secrets.json of the installing user: mode 600, CLEAR TEXT - as safe as that account. It is

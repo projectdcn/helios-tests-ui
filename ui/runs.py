@@ -105,7 +105,8 @@ class RunManager:
         rid = f"{rack}-{time.strftime('%Y%m%d-%H%M%S')}-" + "".join(random.choices(string.ascii_lowercase, k=4))
         run = Run(rid, rack, job, password, p.results_dir / "ui-runs", filters, password_source, notes)
         try:
-            run.session = sessions.join(p, rid)
+            if job.kind != "access":             # a prerequisites check has no test results for a session
+                run.session = sessions.join(p, rid)
         except (JobError, OSError) as e:       # an unreadable ui-sessions.json must not stop the run
             run.notes.append(f"not added to a session: {e}")
         with self.lock:
@@ -220,6 +221,15 @@ class RunManager:
         p = self.profiles[run.rack]
         for name in run.results:
             d = p.results_dir / name
+            if (d / "access.json").exists():     # Check access (tools/access_check.py)
+                try:
+                    a = json.loads((d / "access.json").read_text())
+                    c = a.get("counts") or {}
+                    run.verdict = (f"access {a.get('verdict')}: {c.get('fail', 0)} fail, {c.get('warn', 0)} warn, "
+                                   f"{c.get('ok', 0)} ok")
+                except (OSError, ValueError):
+                    pass
+                continue
             if not (d / "tc_summary.csv").exists():
                 continue
             if (d / "health.json").exists():

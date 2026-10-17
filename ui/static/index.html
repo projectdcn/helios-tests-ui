@@ -36,6 +36,28 @@
     <button type="button" id="sess-new" title="start a new session: the next runs of this rack are consolidated in it">New session…</button>
     <span id="sess-msg" class="muted" role="status" aria-live="polite"></span>
   </div>
+  <div id="access-box" class="box">
+    <div class="row">
+      <b>Prerequisites</b>
+      <span id="acc-summary" class="muted">not checked yet</span>
+      <button type="button" id="acc-run" title="read-only check of this machine, the AFM controller and every switch and compute tray (SSH key login, passwordless sudo, GPUs, tools); a few seconds per node">Check access</button>
+      <button type="button" id="acc-log" hidden>Open log</button>
+      <label class="inline"><input type="checkbox" id="acc-all"> show every check</label>
+    </div>
+    <table id="acc-table" hidden><thead><tr><th></th><th>Where</th><th>Node</th><th>Check</th><th>Result</th><th>What to do</th></tr></thead><tbody></tbody></table>
+    <details id="acc-setup"><summary>One-time setup a rack needs before tests (Check access verifies these)</summary>
+      <ul class="small">
+        <li><b>SSH key on the machine that runs the tests</b> (this UI server, or the jump host for a jump-host rack), with no passphrase, accepted by <span id="acc-ssh-who">every switch and compute tray</span>. Install it with <code>ssh-copy-id</code>; the inventory's <code>key_file</code> names it. No switch / compute passwords are used.</li>
+        <li><b>Network path</b> from that machine to the nodes and to the AFM controller.</li>
+        <li><b>The rack's inventory</b> (Inventory tab): hosts, users, <code>key_file</code>.</li>
+        <li><b>Passwordless sudo</b> for the SSH users on switches and computes (<code>NOPASSWD</code> in <code>/etc/sudoers.d/</code>): checks run as <code>sudo -n</code> and never answer a prompt.</li>
+        <li><b>Compute trays, for traffic cases:</b> GPUs <code>ACTIVE</code> in afmctl, openable by the user (<code>render</code> group, or <code>commands.datapath.sudo: true</code>), not used by another workload; TransferBench and the RCCL tests installed where the inventory says.</li>
+        <li><b>AFM password:</b> typed below for each run, or saved for this rack - without it the AFM cases skip.</li>
+        <li><b>Calibration:</b> the inventory's <code>VERIFY</code> items and <code>thresholds</code>; until set, those cases SKIP and name the setting.</li>
+        <li>Special cases only: <code>rdma:</code> ports (scale-out RDMA), <code>bmc:</code> / <code>pdu_outlet:</code> (power cycles), an MCH rack, LDAP / RADIUS servers, upgrade images.</li>
+      </ul>
+    </details>
+  </div>
   <p class="muted small">Every run started here joins the rack's current session (the first run starts one, named by date); the session's consolidated result (the latest result of each test across its runs) is at the top of the Results tab.</p>
   <div class="row" id="preset-row">
     <label class="inline">Load preset <select id="preset"><option value="">(no presets)</option></select></label>
