@@ -90,9 +90,9 @@ def _crud_works(ops, uniq) -> tuple[bool, str]:
 
 def _rack_settled(ops, checks):
     checks.check(ops.wait(lambda: _all_started(ops), 300, 10), f"controllers not all started: {_members(ops)}")
-    for s in ops.afm.switches():
+    for s in ops.active_switches():              # quarantined nodes left out (the test is PARTIAL then)
         checks.check(ops.wait(lambda n=s["meta"]["name"]: ops.switch_ready(n), 300, 10), f"{s['meta']['name']} not healthy")
-    for c in ops.afm.computes():
+    for c in ops.active_computes():
         checks.check(ops.wait_compute_ready(c["meta"]["name"], 600), f"{c['meta']['name']} not healthy")
     checks.check(ops.wait_vpod(ops.system_vpod_name(), timeout=600) in TERMINAL, "system vPOD not online/degraded")
 
@@ -135,7 +135,7 @@ def test_cluster_tolerates_single_node_failure(ops, afm_ready, uniq, checks, rec
         checks.check(ops.leader_ip() == leader, f"leader moved {leader} -> {ops.leader_ip()}")
         ok, how = _crud_works(ops, uniq)
         checks.check(ok, f"API CRUD with one controller down: {how}")
-        checks.check(all(ops.switch_ready(s["meta"]["name"]) for s in ops.afm.switches()), "a switch went unhealthy")
+        checks.check(all(ops.switch_ready(s["meta"]["name"]) for s in ops.active_switches()), "a switch went unhealthy")
     finally:
         ops.controller_action(sw, "start")
     _rack_settled(ops, checks)

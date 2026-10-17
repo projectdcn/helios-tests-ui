@@ -209,7 +209,16 @@ class AfmOps:
         return ((n.get("status") or {}).get("admission-phase") == "admitted" and conditions_ok(n)
                 and bool(gi) and all(g.get("oper-state") == "Ready" for g in gi.values()))
 
-    def wait_compute_ready(self, name: str, timeout: float | None = None) -> bool:
+    def wait_compute_ready(self, name: str, timeout: float | None = None, include_quarantined: bool = False) -> bool:
+        """Wait until the compute is admitted, healthy and its GPUs Ready. A compute quarantined in the inventory is
+        not waited for (it was not healthy before the test either; the test is PARTIAL through the plugin) -
+        g02-g17 17 Oct: TC-CTL-074 / TC-AFM-051 failed only on 'pod-1-4-ComputeTray not healthy' = ct05, Down.
+        Picking a target (compute_ready / pick_compute) stays strict."""
+        if not include_quarantined and self.inv is not None:
+            r = self.afm.raw("GET", f"{CN}/{name}")
+            if r.status_code == 200 and self.quarantined(r.json()):
+                log.info("%s is quarantined in the inventory: not waiting for it to be healthy", self.label(name))
+                return True
         return bool(self.wait(lambda: self.compute_ready(name), timeout or float(self.th("readmit_timeout_s", 300)),
                              10, f"{name} admitted+healthy+GPUs Ready"))
 
