@@ -1,7 +1,7 @@
 "use strict";
 // helios-tests UI. Plain JS, no build step. The AFM password is read from the field when a run starts, sent once
 // in that request and the field is cleared; it is never stored in the page, localStorage, a preset, the rack's
-// saved default or a cookie. Opt-in, the server keeps it in the macOS Keychain (the page only learns saved / not).
+// saved default or a cookie. Opt-in, the server keeps it (macOS Keychain, or a 0600 file on Linux; the page only learns saved / not).
 const $ = (s, el = document) => el.querySelector(s);
 const $$ = (s, el = document) => [...el.querySelectorAll(s)];
 let racks = [], rack = null, es = null, inv = null, invMode = "form", lastPreview = null, rerunBase = null, quarNode = null;
@@ -28,6 +28,7 @@ async function api(method, url, body) {
   }
   const r = await fetch(url, opt);
   const d = await r.json().catch(() => ({}));
+  if (r.status === 401 && d.login) showLogin();
   if (!r.ok) {
     const e = new Error((d.errors || [d.error || r.statusText]).join("\n"));
     e.status = r.status; e.data = d;
@@ -35,6 +36,23 @@ async function api(method, url, body) {
   }
   return d;
 }
+
+// ---------------------------------------------------------------- access token login (HELIOS_UI_TOKEN on the server)
+function showLogin() {
+  if (!$("#login-box").hidden) return;
+  $("#login-box").hidden = false;
+  $("nav").hidden = true; $("main").hidden = true;
+  $("#login-box").token.focus();
+}
+$("#login-box").addEventListener("submit", async ev => {
+  ev.preventDefault();
+  const tok = $("#login-box").token.value;
+  $("#login-box").token.value = "";
+  try { await api("POST", "/api/login", { token: tok }); location.reload(); }
+  catch (e) { $("#login-msg").textContent = e.message; $("#login-msg").className = "err"; $("#login-box").token.focus(); }
+});
+$("#logout").addEventListener("click", async () => { await api("POST", "/api/logout", {}).catch(() => {}); location.reload(); });
+api("GET", "/api/version").then(v => { $("#logout").hidden = !v.auth; }).catch(() => {});
 
 // ---------------------------------------------------------------- tabs / rack
 $$("nav button").forEach(b => b.addEventListener("click", () => showTab(b.dataset.tab)));
@@ -264,8 +282,19 @@ async function loadPwStatus() {
   else { st.textContent = pwSaved ? `saved (${pwStore})` : "not saved"; st.className = pwSaved ? "ok" : "muted"; }
   st.title = d.account ? `${pwStore}, account ${d.account}` : "";
   form.remember_pw.disabled = !d.available;
+  $("#pw-save").disabled = !d.available;
   $("#pw-forget").disabled = !pwSaved;
 }
+$("#pw-save").addEventListener("click", async () => {   // save without starting a run; the field is cleared
+  const pw = form.password.value;
+  if (!pw) { formMsg("type the AFM password first, then Save password", "err"); return; }
+  form.password.value = "";
+  try {
+    await api("POST", `/api/racks/${enc(rack.name)}/password`, { password: pw });
+    formMsg(`AFM password of ${rack.title} saved (${pwStore}): leave the field empty to use it`, "ok");
+  } catch (e) { form.password.value = pw; formMsg(e.message, "err"); }
+  loadPwStatus();
+});
 $("#pw-forget").addEventListener("click", async () => {
   if (!confirm(`Delete the AFM password of ${rack.title} from the ${pwStore}?`)) return;
   try {
@@ -769,5 +798,5 @@ async function quarantinePreview(q) {
   } catch (e) { $("#preview").replaceChildren(msgs(e.message.split("\n"))); }
 }
 
-loadRacks().catch(e => document.body.prepend(h("div", { class: "err" }, e.message)));
+loadRacks().catch(e => { if (e.status !== 401) document.body.prepend(h("div", { class: "err" }, e.message)); });
 setInterval(() => { if ($("#tab-runs").classList.contains("active") && !es) loadRuns(); }, 5000);

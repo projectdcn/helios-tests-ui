@@ -1,5 +1,5 @@
 # Rack profiles of the installed helios-tests UI (written by install.sh once; an upgrade never touches it).
-# NO SECRETS HERE: the AFM password is typed in the browser for each run (there is no macOS Keychain on Linux).
+# NO SECRETS HERE: the AFM password is typed in the browser (optionally saved per rack in ~/.config/helios-ui/secrets.json).
 # Relative paths are relative to the code (@PREFIX@/app); the paths below point into @PREFIX@/data instead, so an
 # upgrade (which replaces app/) keeps every result, inventory and the workbook.
 #

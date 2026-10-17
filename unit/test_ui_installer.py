@@ -268,13 +268,18 @@ def test_install_dry_run_changes_nothing(tmp_path):
     assert "systemd --user is not available" in out
     # default: every address, said plainly; stored for upgrades
     assert "listen: 0.0.0.0:18799" in out and "-m ui --host 0.0.0.0 --port 18799" in out
-    assert "Open:   http://" in out and ":18799/" in out and "WARNING: the UI has NO login" in out
+    assert "Open:   http://" in out and ":18799/" in out and "WARNING: the UI has NO login" not in out
+    assert "generate an access token" in out and "Access token (each browser logs in with it once" in out
     assert "INSTALLED_HOST=0.0.0.0" in out and "INSTALLED_PORT=18799" in out
     r = _sh([str(b / "install.sh"), "--dry-run", "--online", "--no-systemd", "--python", sys.executable,
              "--prefix", str(prefix), "--port", "18799", "--host", "127.0.0.1"])
     assert r.returncode == 0, r.stdout + r.stderr
     assert "listen: 127.0.0.1:18799" in r.stdout and "WARNING: the UI has NO login" not in r.stdout
     assert "then open  http://127.0.0.1:18799/" in r.stdout and "INSTALLED_HOST=127.0.0.1" in r.stdout
+    assert "no access token needed" in r.stdout
+    r = _sh([str(b / "install.sh"), "--dry-run", "--online", "--no-systemd", "--python", sys.executable,
+             "--prefix", str(prefix), "--port", "18799", "--no-token"])
+    assert r.returncode == 0 and "WARNING: the UI has NO login" in r.stdout and "Access token (" not in r.stdout
 
 
 def test_upgrade_keeps_port_and_an_old_install_becomes_0000(tmp_path):

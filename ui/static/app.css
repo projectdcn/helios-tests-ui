@@ -88,3 +88,6 @@ fieldset { min-width: 0; }
 #sessions details ul { margin: 4px 0 0; padding-left: 18px; }
 
 .unsaved { margin: 6px 0; padding: 6px 10px; border-left: 3px solid var(--warn, #b45309); background: rgba(180, 83, 9, .08); }
+#login-box:not([hidden]) { display: flex; gap: 12px; flex-wrap: wrap; align-items: center; margin: 16px; }
+#logout { margin-left: auto; }
+[hidden] { display: none !important; }      /* the hidden attribute wins over display rules (nav, flex boxes) */

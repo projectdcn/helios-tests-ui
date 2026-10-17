@@ -168,3 +168,38 @@ def test_new_rack_without_inventory_file(tmp_path):
     assert res["saved"] is True and res["backup"] is None and f.is_file()
     assert [s.name for s in load_inventory(f).switches] == ["st1"]
     assert list(f.parent.glob("*.bak-*")) == []
+
+
+def test_form_save_keeps_comments_of_unchanged_parts(inv):
+    """17 Oct: every form save re-wrote the whole YAML and dropped the comments. Now only changed parts are."""
+    form = ie.to_form(yaml.safe_load(INV))
+    form["computes"].append({"name": "ct04", "host": "10.0.0.14", "slot": "3"})
+    form["computes"][1]["gpus"] = "8"                          # ct02 (flow entry, no comment) changes
+    res = ie.prepare(inv, {"form": form})
+    assert res["errors"] == [] and res["comments_kept"] is True
+    text = res["text"]
+    for c in ("# MR3-like inventory", "# the only switch", "# QFX5252"):
+        assert c in text
+    assert text.startswith(INV.split("  - {name: ct02")[0])   # everything above ct02 untouched
+    data = yaml.safe_load(text)
+    assert [e["name"] for e in data["computes"]] == ["ct01", "ct02", "ct03", "ct04"] and data["computes"][1]["gpus"] == 8
+    assert data["computes"][2]["quarantine"]["reason"] == "old reason"
+    # a changed section with a comment in it: re-written, and the preview says so
+    form["thresholds_yaml"] = "switch: {interface_mtu: 9000}\n"
+    res = ie.prepare(inv, {"form": form})
+    assert res["comments_kept"] is False and "# QFX5252" not in res["text"] and "# the only switch" in res["text"]
+    assert any("changed thresholds" in w for w in res["warnings"])
+    # removing a node leaves the other entries' text alone
+    form = ie.to_form(yaml.safe_load(INV))
+    form["computes"] = [r for r in form["computes"] if r["name"] != "ct02"]
+    res = ie.prepare(inv, {"form": form})
+    assert res["comments_kept"] is True and "ct02" not in res["text"] and "# the only switch" in res["text"]
+
+
+def test_form_save_with_anchors_rewrites_whole_file(tmp_path):
+    f = tmp_path / "a.yaml"
+    f.write_text("# top\nrack: a\ndefaults:\n  switch: &sw {user: admin}\nswitches:\n  - {name: s1, host: 10.0.0.1}\n")
+    form = ie.to_form(yaml.safe_load(f.read_text()))
+    form["rack"] = "b"
+    res = ie.prepare(f, {"form": form})
+    assert res["comments_kept"] is False and "# top" not in res["text"] and yaml.safe_load(res["text"])["rack"] == "b"

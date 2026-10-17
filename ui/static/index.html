@@ -11,7 +11,15 @@
   <h1>Helios tests</h1>
   <label>Rack <select id="rack"></select></label>
   <span id="rackinfo" class="muted"></span>
+  <button type="button" id="logout" hidden title="forget this browser's login to the UI">Log out</button>
 </header>
+<form id="login-box" class="box" hidden>
+  <b>This UI needs its access token.</b>
+  <label>Access token <input type="password" name="token" autocomplete="current-password" required></label>
+  <button type="submit" class="primary">Log in</button>
+  <span id="login-msg" class="muted" role="status" aria-live="polite">Ask whoever installed the UI (it is
+    HELIOS_UI_TOKEN in ~/helios-ui/config/ui.env on the server). This browser stays logged in for 30 days.</span>
+</form>
 <nav>
   <button data-tab="run" class="active">Run</button>
   <button data-tab="runs">Runs &amp; live log</button>
@@ -98,6 +106,7 @@
         <span class="muted">kept in memory for this run only, handed to the run through <code id="pwenv">HELIOS_AFM_PASSWORD</code>; empty = the password saved for this rack, if any, else AFM cases skip</span></label>
       <div class="row" id="pw-row">
         <label class="inline"><input type="checkbox" name="remember_pw"> Remember <span id="pw-store">in macOS Keychain</span> for <b id="pw-rack"></b></label>
+        <button type="button" id="pw-save" title="save the typed AFM password for this rack now, without starting a run">Save password</button>
         <button type="button" id="pw-forget" title="delete this rack's saved AFM password">Forget saved password</button>
         <span id="pwstatus" class="muted" role="status" aria-live="polite"></span>
       </div>

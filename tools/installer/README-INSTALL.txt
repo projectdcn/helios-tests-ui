@@ -37,8 +37,10 @@ Copy these yourself (the installer copies no secrets and creates no keys)
     without a passphrase prompt (or ~/.ssh/config IdentityFile).
 Then reload the page; a rack whose inventory is missing shows it as MISSING.
 
-There is no macOS Keychain on Linux: type the AFM password in the Run form for each run (the page says so and the
-"Remember" box is disabled).
+AFM password: type it in the Run form. "Remember on the UI server" (or "Save password") keeps it per rack in
+~/.config/helios-ui/secrets.json of the installing user: mode 600, CLEAR TEXT - as safe as that account. It is
+outside ~/helios-ui, so upgrades and uninstall --purge leave it; delete it with "Forget saved password" or rm.
+HELIOS_UI_SECRETS=/path in ~/helios-ui/config/ui.env puts it elsewhere. A file other users can read is refused.
 
 Open it
 -------

@@ -1,12 +1,16 @@
 """HTTP controller (standard library): JSON API + server-sent events for the live log + static page + results files.
 
-Bound to 127.0.0.1 by default (``--host`` / HELIOS_UI_HOST for another address, e.g. 0.0.0.0 on a lab server: there
-is no login, so anyone who reaches the port can use it). State-changing requests need ``Content-Type:
+Bound to 127.0.0.1 by default (``--host`` / HELIOS_UI_HOST for another address, e.g. 0.0.0.0 on a lab server).
+With an access token (HELIOS_UI_TOKEN) every request but the page itself, /static/, /api/version and /api/login needs
+the login cookie (an HMAC of the token: it survives a restart, a new token ends every login) or ``Authorization:
+Bearer <token>``; without one anyone who reaches the port can use the UI. State-changing requests need ``Content-Type:
 application/json`` and the ``X-Helios-UI`` header (a page from another site cannot send them without a CORS preflight, which this server never grants), and the Host
 header must name this server (loopback, or its host names / addresses when bound beyond loopback; no DNS rebinding).
 """
 from __future__ import annotations
 
+import hashlib
+import hmac
 import json
 import mimetypes
 import os
@@ -17,7 +21,9 @@ import subprocess
 import sys
 import tempfile
 import threading
+import time
 import zipfile
+from http.cookies import CookieError, SimpleCookie
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, unquote, urlparse
@@ -192,10 +198,21 @@ def case_history(app, tc: str) -> dict:
     return {"index": [str(Path(r) / "index.csv") for r in sorted(roots)], "rows": rows}
 
 
+AUTH_COOKIE = "helios_ui_auth"
+AUTH_MAX_AGE = 30 * 24 * 3600                      # a login lasts 30 days in that browser
+OPEN_PATHS = {"/", "/index.html", "/api/version", "/api/login", "/api/logout"}   # no login needed (no rack data)
+MIN_TOKEN = 16
+
+
+def auth_cookie_value(token: str) -> str:
+    return hmac.new(token.encode(), b"helios-ui-login-v1", hashlib.sha256).hexdigest()
+
+
 class Handler(BaseHTTPRequestHandler):
     app: App = None          # set by make_server
     server_names: frozenset = frozenset()     # Host names accepted besides loopback (set by make_server)
     server_version = "helios-ui"
+    token: str | None = None                  # access token (set by make_server); None = no login
 
     def log_message(self, fmt, *args):        # quiet; request bodies (passwords) are never logged anyway
         pass
@@ -237,6 +254,40 @@ class Handler(BaseHTTPRequestHandler):
         except OSError:
             return False
         return host.strip("[]") == str(local).lower()
+
+    def _authed(self) -> bool:
+        if not self.token:
+            return True
+        a = self.headers.get("Authorization") or ""
+        if a.startswith("Bearer ") and hmac.compare_digest(a[7:].strip().encode(), self.token.encode()):
+            return True
+        try:
+            c = SimpleCookie(self.headers.get("Cookie") or "")
+        except CookieError:
+            return False
+        got = c[AUTH_COOKIE].value if AUTH_COOKIE in c else ""
+        return hmac.compare_digest(got.encode(), auth_cookie_value(self.token).encode())
+
+    def _need_login(self, path: str) -> bool:
+        """True (and a 401 sent) when this request needs the login it does not have."""
+        if path in OPEN_PATHS or path.startswith("/static/") or self._authed():
+            return False
+        self.err(401, "login required: enter the UI access token", login=True)
+        return True
+
+    def _login(self, body: dict) -> None:
+        tok = body.get("token")
+        if not self.token:
+            return self.json({"ok": True, "auth": False})
+        if not isinstance(tok, str) or not hmac.compare_digest(tok.strip().encode(), self.token.encode()):
+            time.sleep(1)                         # slows guessing (one thread per request)
+            return self.err(401, "wrong access token", login=True)
+        cookie = f"{AUTH_COOKIE}={auth_cookie_value(self.token)}; Path=/; Max-Age={AUTH_MAX_AGE}; HttpOnly; SameSite=Strict"
+        self._send(200, b'{"ok": true, "auth": true}', "application/json", {"Set-Cookie": cookie})
+
+    def _logout(self) -> None:
+        self._send(200, b'{"ok": true}', "application/json",
+                   {"Set-Cookie": f"{AUTH_COOKIE}=; Path=/; Max-Age=0; HttpOnly; SameSite=Strict"})
 
     def _body(self) -> dict:
         n = int(self.headers.get("Content-Length") or 0)
@@ -301,6 +352,8 @@ class Handler(BaseHTTPRequestHandler):
             return self.err(403, "bad Host header")
         u = urlparse(self.path)
         path, q = unquote(u.path), parse_qs(u.query)
+        if self._need_login(path):
+            return
         try:
             if path in ("/", "/index.html"):
                 return self._file(STATIC, "index.html")
@@ -315,7 +368,7 @@ class Handler(BaseHTTPRequestHandler):
             if path == "/api/version":             # installer health check; no secrets
                 bi = build_info() or {}
                 return self.json({"version": version(), "commit": bi.get("commit"), "built": bi.get("built"),
-                                  "root": str(ROOT)})
+                                  "root": str(ROOT), "auth": bool(self.token)})
             if path == "/api/racks":
                 return self.json([{**p.as_dict(), **self.app.runs.busy(n)} for n, p in self.app.profiles.items()])
             m = re.fullmatch(r"/api/cases/([^/]+)/history", path)
@@ -425,8 +478,14 @@ class Handler(BaseHTTPRequestHandler):
                 not (self.headers.get("Content-Type") or "").startswith("application/json"):
             return self.err(403, "missing X-Helios-UI header / JSON content type")
         path = urlparse(self.path).path
+        if self._need_login(path):
+            return
         try:
             body = self._body()
+            if path == "/api/login":
+                return self._login(body)
+            if path == "/api/logout":
+                return self._logout()
             if path == "/api/runs":
                 run, kc = self.app.start_run(body)
                 return self.json({**self.app.runs.get(run.id), "keychain": kc}, 201)
@@ -529,10 +588,12 @@ def host_names() -> frozenset:
     return frozenset(n.lower() for n in names if n)
 
 
-def make_server(app: App, port: int = 8765, host: str = "127.0.0.1") -> ThreadingHTTPServer:
-    """Bound to ``host``: 127.0.0.1 (default; only this machine) or e.g. 0.0.0.0 / an address of this machine
-    (anyone who reaches the port can use the UI: it has no login)."""
-    extra = {"app": app}
+def make_server(app: App, port: int = 8765, host: str = "127.0.0.1", token: str | None = None) -> ThreadingHTTPServer:
+    """Bound to ``host``: 127.0.0.1 (default; only this machine) or e.g. 0.0.0.0 / an address of this machine.
+    ``token``: the access token every browser logs in with once; None = no login (anyone who reaches the port)."""
+    if token is not None and len(token) < MIN_TOKEN:
+        raise ValueError(f"the access token needs at least {MIN_TOKEN} characters")
+    extra = {"app": app, "token": token or None}
     if not is_loopback(host):
         extra["server_names"] = host_names() | {host.lower()}
     handler = type("BoundHandler", (Handler,), extra)

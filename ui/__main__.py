@@ -1,5 +1,6 @@
 """python -m ui [--host 127.0.0.1] [--port 8765] [--config ui/racks.yaml] - the helios-tests web UI on
-http://<host>:<port>/ (default 127.0.0.1: only this machine)."""
+http://<host>:<port>/ (default 127.0.0.1: only this machine). HELIOS_UI_TOKEN=<at least 16 characters>: every
+browser logs in once with that access token."""
 from __future__ import annotations
 
 import argparse
@@ -10,7 +11,7 @@ import sys
 from pathlib import Path
 
 from .keychain import password_store
-from .server import App, host_names, is_loopback, make_server
+from .server import MIN_TOKEN, App, host_names, is_loopback, make_server
 from .version import version
 
 DEFAULT_HOST = "127.0.0.1"
@@ -51,9 +52,13 @@ def urls(host: str, port: int) -> list[str]:
 
 def main(argv=None) -> int:
     a = parse_args(argv)
+    token = (os.environ.get("HELIOS_UI_TOKEN") or "").strip() or None
+    if token and len(token) < MIN_TOKEN:
+        print(f"helios-ui: HELIOS_UI_TOKEN needs at least {MIN_TOKEN} characters", file=sys.stderr, flush=True)
+        return 2
     app = App(a.config, keychain=password_store())
     try:
-        srv = make_server(app, a.port, a.host)
+        srv = make_server(app, a.port, a.host, token)
     except OSError as e:
         if e.errno == errno.EADDRINUSE:
             print(f"helios-ui: port {a.port} on {a.host} is already in use (another UI running?): stop it or "
@@ -69,8 +74,11 @@ def main(argv=None) -> int:
           "it; runs in progress are stopped with it)", flush=True)
     if len(where) > 1:
         print("  also: " + "  ".join(where[1:]), flush=True)
-    if not is_loopback(a.host):
-        print("  NOTE: the UI has no login: anyone who can reach this port can start runs on the racks and read the "
+    if token:
+        print("  access token required (HELIOS_UI_TOKEN): each browser logs in once", flush=True)
+    elif not is_loopback(a.host):
+        print("  NOTE: the UI has no login (set HELIOS_UI_TOKEN for one): anyone who can reach this port can start runs "
+              "on the racks and read the "
               "results. Restrict it with the host firewall (team subnet only), or use --host 127.0.0.1 + an SSH "
               "tunnel.", flush=True)
     try:

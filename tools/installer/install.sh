@@ -9,10 +9,12 @@
 # Options: --prefix DIR (default ~/helios-ui)  --host ADDR (default 0.0.0.0 = every address; 127.0.0.1 = this
 # server only, reach it through an SSH tunnel)  --port N (default 8765)  --python PATH  --online (pip from PyPI
 # instead of ./wheelhouse)  --no-systemd (nohup + bin/helios-ui helper)  --no-start  --force (upgrade even while a
-# run is going; it is stopped)  --dry-run (print what would be done, change nothing)  -h|--help
+# run is going; it is stopped)  --no-token (no access token, see below)  --dry-run (print what would be done,
+# change nothing)  -h|--help
 #
-# The UI has NO login: anyone who can reach host:port can start runs on the racks and read the results. Restrict
-# the port with the host firewall (team subnet), or install with --host 127.0.0.1 and use an SSH tunnel.
+# Listening beyond 127.0.0.1, the UI gets an access token (HELIOS_UI_TOKEN in config/ui.env, generated once, kept by
+# upgrades): each browser logs in with it once. Without it (--no-token) anyone who can reach host:port can start runs
+# on the racks and read the results. Restrict the port with the host firewall (team subnet) either way.
 set -euo pipefail
 
 HERE=$(cd "$(dirname "$0")" && pwd)
@@ -27,6 +29,8 @@ ROLLBACK=0
 NO_START=0
 NO_SYSTEMD=0
 FORCE=0
+NO_TOKEN=0
+TOKEN_NEW=""
 PORT_SET=0
 UNIT=helios-ui.service
 MIN_PY=3.10
@@ -65,6 +69,7 @@ while [ $# -gt 0 ]; do
         --no-start)    NO_START=1; shift ;;
         --no-systemd)  NO_SYSTEMD=1; shift ;;
         --force)       FORCE=1; shift ;;
+        --no-token)    NO_TOKEN=1; shift ;;
         -h|--help)     usage 0 ;;
         *)             warn "unknown option: $1"; usage 2 ;;
     esac
@@ -205,11 +210,18 @@ check_port() {   # $1 python, $2 advice
 
 # runs queued / running in the UI on this port (0 when it does not answer)
 active_runs() {   # $1 python
-    "$1" - "$PORT" <<'PYEOF' 2>/dev/null || echo 0
-import json, sys, urllib.request
+    "$1" - "$PORT" "$PREFIX/config/ui.env" <<'PYEOF' 2>/dev/null || echo 0
+import json, re, sys, urllib.request
 o = urllib.request.build_opener(urllib.request.ProxyHandler({}))
 try:
-    runs = json.load(o.open(f"http://127.0.0.1:{sys.argv[1]}/api/runs", timeout=3))
+    req = urllib.request.Request(f"http://127.0.0.1:{sys.argv[1]}/api/runs")
+    try:                                   # the UI's access token, if it has one
+        m = re.search(r"^HELIOS_UI_TOKEN=(\S+)", open(sys.argv[2]).read(), re.M)
+        if m:
+            req.add_header("Authorization", "Bearer " + m.group(1).strip("'\""))
+    except OSError:
+        pass
+    runs = json.load(o.open(req, timeout=3))
     print(sum(1 for r in runs if r.get("status") in ("queued", "running")))
 except Exception:
     print(0)
@@ -312,7 +324,7 @@ write_unit() {
     write_file "$HOME/.config/systemd/user/$UNIT" <<EOF
 # helios-tests web UI of $PREFIX (written by install.sh; uninstall.sh removes it)
 [Unit]
-Description=helios-tests web UI (listening on $HOST:$PORT; no login)
+Description=helios-tests web UI (listening on $HOST:$PORT)
 After=network-online.target
 
 [Service]
@@ -409,9 +421,18 @@ print_access() {
         fi
         say "        (alternative, SSH tunnel: ssh -L $PORT:127.0.0.1:$PORT $(id -un)@$host, then http://127.0.0.1:$PORT/)"
         say ""
-        say "WARNING: the UI has NO login. Anyone who can reach $host:$PORT can start runs on the racks (including"
-        say "disruptive ones) and read every result. Restrict the port with the host firewall to the team's subnet,"
-        say "or install again with --host 127.0.0.1 (then only the SSH tunnel reaches it)."
+        if [ -n "$TOKEN_NEW" ]; then
+            say "Access token (each browser logs in with it once; give it to the team):"
+            say "    $TOKEN_NEW"
+            say "  it is HELIOS_UI_TOKEN in $PREFIX/config/ui.env (change it + restart to end every login)"
+        elif grep -q '^HELIOS_UI_TOKEN=' "$PREFIX/config/ui.env" 2>/dev/null; then
+            say "Access token: unchanged (grep HELIOS_UI_TOKEN $PREFIX/config/ui.env)"
+        else
+            say "WARNING: the UI has NO login. Anyone who can reach $host:$PORT can start runs on the racks (including"
+            say "disruptive ones) and read every result. Install again without --no-token for an access token,"
+            say "or with --host 127.0.0.1 (then only the SSH tunnel reaches it)."
+        fi
+        say "Restrict the port with the host firewall to the team's subnet as well."
         firewall_advice
     fi
     say ""
@@ -594,6 +615,26 @@ for n, r in load_config(sys.argv[1]).items():
         print("  %-10s workbook  MISSING %s" % ("", r.workbook))
 PYEOF
     ) || warn "$PREFIX/config/racks.yaml does not load: fix it, then $PREFIX/bin/helios-ui restart"
+fi
+
+step "access token"
+ENVF="$PREFIX/config/ui.env"
+if is_loopback; then
+    say "listening on $HOST only (SSH tunnel): no access token needed"
+elif [ "$NO_TOKEN" = 1 ]; then
+    say "--no-token: the UI on $HOST:$PORT has no login"
+    if grep -q '^HELIOS_UI_TOKEN=' "$ENVF" 2>/dev/null; then warn "but $ENVF still sets HELIOS_UI_TOKEN: remove that line for no login"; fi
+elif grep -q '^HELIOS_UI_TOKEN=' "$ENVF" 2>/dev/null; then
+    say "kept the access token in $ENVF (HELIOS_UI_TOKEN)"
+elif [ "$DRY" = 1 ]; then
+    say "  [dry-run] generate an access token -> HELIOS_UI_TOKEN in $ENVF (mode 600)"
+    TOKEN_NEW="<generated at install>"
+else
+    TOKEN_NEW=$("$PREFIX/venv/bin/python" -c 'import secrets; print(secrets.token_urlsafe(24))')
+    ( umask 077; [ -f "$ENVF" ] || : > "$ENVF"
+      printf '# access token of the UI (each browser logs in with it once; change it to end every login)\nHELIOS_UI_TOKEN=%s\n' "$TOKEN_NEW" >> "$ENVF" )
+    chmod 600 "$ENVF"
+    say "generated an access token -> $ENVF (HELIOS_UI_TOKEN, mode 600)"
 fi
 
 step "helper scripts"

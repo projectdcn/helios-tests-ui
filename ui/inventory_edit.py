@@ -2,8 +2,9 @@
 diff preview, dated backup before every save, and the per-node quarantine toggle (``quarantine: {reason, since,
 until}`` as helios/inventory.py and helios/quarantine.py read it).
 
-Saving from the raw YAML text keeps comments. A form save re-writes the YAML (comments are lost - the diff preview
-shows it). The quarantine toggle edits only the node's lines when it can, so comments elsewhere survive.
+Saving from the raw YAML text keeps comments. A form save re-writes only what changed (``merge_text``): unchanged
+top-level sections and unchanged switch / compute entries keep their text and comments; a changed one is re-written
+(comments inside it are lost - the preview says which). A layout it cannot split re-writes the whole file. The quarantine toggle edits only the node's lines when it can, so comments elsewhere survive.
 """
 from __future__ import annotations
 
@@ -43,6 +44,39 @@ def sha(text: str) -> str:
 
 def _dump(obj) -> str:
     return yaml.safe_dump(obj, sort_keys=False, default_flow_style=False, width=120, allow_unicode=True)
+
+
+class _LeafFlowDumper(yaml.SafeDumper):
+    """Block style, but a mapping / list holding only scalars on one line ({dev: x, gpu: 0}) - as the inventories
+    are written by hand."""
+
+
+def _leaf(v) -> bool:
+    vals = v.values() if isinstance(v, dict) else v
+    return bool(vals) and all(not isinstance(x, (dict, list)) for x in vals)
+
+
+_LeafFlowDumper.add_representer(dict, lambda d, v: d.represent_mapping("tag:yaml.org,2002:map", v,
+                                                                       flow_style=_leaf(v)))
+_LeafFlowDumper.add_representer(list, lambda d, v: d.represent_sequence("tag:yaml.org,2002:seq", v,
+                                                                        flow_style=_leaf(v)))
+
+
+def _dump_entry(e) -> str:
+    """One switch / compute entry as a list item: its keys block style, collections of scalars on one line."""
+    if not isinstance(e, dict):
+        return _dump([e])
+    out = []
+    for k, v in e.items():
+        if isinstance(v, (dict, list)) and v and not _leaf(v):      # nested: the key, then the value indented
+            sub = yaml.dump(v, Dumper=_LeafFlowDumper, sort_keys=False, width=120, allow_unicode=True)
+            out.append(_dump({k: []}).replace(" []", "", 1) + "".join("  " + ln for ln in sub.splitlines(True)))
+        elif isinstance(v, (dict, list)) and v:
+            out.append(_dump({k: []}).replace("[]", _flow(v), 1))
+        else:
+            out.append(_dump({k: v}))
+    body = "".join(out).splitlines(keepends=True)
+    return "".join(("- " if i == 0 else "  ") + ln for i, ln in enumerate(body))
 
 
 def _flow(obj) -> str:
@@ -229,6 +263,119 @@ def from_form(original: dict, form: dict) -> dict:
     return data
 
 
+# ------------------------------------------------------------------ form save: re-write only what changed
+
+_TOP_RX = re.compile(r"^([A-Za-z_][\w.-]*)\s*:")
+
+
+def _blocks(lines: list[str], start_idx: list[int], may_lead) -> list[tuple[int, int, int]]:
+    """(lead, start, end) per block: the comment / blank lines right above a start line (``may_lead``) belong to it."""
+    out = []
+    for n, st in enumerate(start_idx):
+        lead = st
+        floor = out[-1][1] + 1 if out else 0
+        while lead > floor and may_lead(lines[lead - 1]):
+            lead -= 1
+        out.append([lead, st, None])
+    for n, b in enumerate(out):
+        b[2] = out[n + 1][0] if n + 1 < len(out) else len(lines)
+    return [tuple(b) for b in out]
+
+
+def _name(e):
+    return e if isinstance(e, str) else (e or {}).get("name") if isinstance(e, dict) else None
+
+
+def _merge_list(key: str, body: list[str], old: list, new: list, lost: list[str]) -> list[str] | None:
+    """A switches / computes section with only its changed entries re-written (matched by name)."""
+    if not body or body[0].split("#")[0].strip() != f"{key}:":
+        return None                                    # flow list or value on the key line
+    items = [i for i in range(1, len(body)) if re.match(r"^\s*-(\s|$)", body[i])]
+    if not items:
+        return None
+    ind = min(len(body[i]) - len(body[i].lstrip()) for i in items)
+    items = [i for i in items if len(body[i]) - len(body[i].lstrip()) == ind]
+    if any(body[i].strip() and not body[i].lstrip().startswith("#") for i in range(1, items[0])):
+        return None
+    blocks = _blocks(body, items, lambda ln: not ln.strip() or
+                     (ln.lstrip().startswith("#") and len(ln) - len(ln.lstrip()) <= ind))
+    if len(blocks) != len(old if isinstance(old, list) else []):
+        return None
+    by_name = {}
+    for (lead, st, end), e in zip(blocks, old):
+        try:
+            if yaml.safe_load("".join(body[st:end])) != [e]:
+                return None
+        except yaml.YAMLError:
+            return None
+        by_name.setdefault(_name(e), (body[lead:end], e))
+    out = body[:blocks[0][0]]
+    for e in new:
+        prev = by_name.get(_name(e))
+        if prev and prev[1] == e:
+            out += prev[0]
+            continue
+        if prev and any("#" in ln for ln in prev[0]):
+            lost.append(f"{key} {_name(e)}")
+        text = "".join(" " * ind + ln if ln.strip() else ln for ln in _dump_entry(e).splitlines(keepends=True))
+        out += text.splitlines(keepends=True)
+    if out and not out[-1].endswith("\n"):
+        out[-1] += "\n"
+    return out
+
+
+def merge_text(old_text: str, old_data: dict, new_data: dict) -> tuple[str, list[str]] | None:
+    """``new_data`` written over ``old_text`` keeping the text (and comments) of everything unchanged: top-level
+    sections, and single switch / compute entries. Returns (text, what lost comments) or None when the layout is
+    not one this splits safely (anchors, flow style, documents ...): the caller then re-writes the whole file."""
+    lines = old_text.splitlines(keepends=True)
+    if lines and not lines[-1].endswith("\n"):
+        lines[-1] += "\n"
+    if any(ln.startswith(("---", "...", "%")) or re.search(r"(^|[:\-\[,{]\s*)[&*][\w-]", ln.split(" #")[0])
+           for ln in lines):                          # documents, anchors / aliases: whole re-write
+        return None
+    starts = [i for i, ln in enumerate(lines) if _TOP_RX.match(ln)]
+    if not starts or not isinstance(old_data, dict) or not isinstance(new_data, dict):
+        return None
+    blocks = _blocks(lines, starts, lambda ln: not ln.strip() or ln.startswith("#"))
+    sections = {}
+    for lead, st, end in blocks:
+        key = _TOP_RX.match(lines[st]).group(1)
+        try:
+            if key in sections or key not in old_data or yaml.safe_load("".join(lines[st:end])) != {key: old_data[key]}:
+                return None
+        except yaml.YAMLError:
+            return None
+        sections[key] = (lines[lead:st], lines[st:end])
+    if set(sections) != set(old_data):
+        return None
+    out, lost = lines[:blocks[0][0]], []
+    for key, (lead, body) in sections.items():
+        if key not in new_data:
+            continue
+        if new_data[key] == old_data[key]:
+            out += lead + body
+            continue
+        merged = None
+        if dict(ROLES).get(key) and isinstance(new_data[key], list):
+            merged = _merge_list(key, body, old_data[key], new_data[key], lost)
+        if merged is None:
+            if any("#" in ln for ln in body):
+                lost.append(key)
+            merged = _dump({key: new_data[key]}).splitlines(keepends=True)
+        out += lead + merged
+    for key, v in new_data.items():
+        if key not in sections:
+            out += _dump({key: v}).splitlines(keepends=True)
+    text = "".join(out)
+    try:
+        if yaml.safe_load(text) != new_data:
+            return None
+    except yaml.YAMLError:
+        return None
+    return text, lost
+
+
 # ------------------------------------------------------------------ quarantine toggle (minimal text edit)
 
 def _find_node(data: dict, node: str) -> tuple[str, int]:
@@ -364,6 +511,7 @@ def prepare(path: Path, req: dict) -> dict:
     """New text from {text} (raw YAML) or {form}, or a quarantine toggle {quarantine: {node, enabled, reason,
     until}}; returns {text, diff, errors, warnings, comments_kept}."""
     old = _current(path)
+    partial = ""
     if not old:
         path.parent.mkdir(parents=True, exist_ok=True)   # validate() loads a copy next to where the file will be
     kept = True
@@ -372,8 +520,16 @@ def prepare(path: Path, req: dict) -> dict:
         new, kept = set_quarantine(old, str(qr.get("node") or ""), bool(qr.get("enabled")), qr.get("reason") or "",
                                    (qr.get("until") or "").strip() or None)
     elif "form" in req:
-        new = _dump(from_form(yaml.safe_load(old) or {}, req["form"]))
-        kept = False
+        old_data = yaml.safe_load(old) or {}
+        new_data = from_form(old_data, req["form"])
+        merged = merge_text(old, old_data, new_data) if old.strip() else None
+        if merged:
+            new, lost = merged
+            kept = not lost
+            if lost:
+                partial = f"comments inside the changed {', '.join(lost)} are not kept; the rest of the file is unchanged"
+        else:
+            new, kept = _dump(new_data), False
     elif "text" in req:
         new = str(req["text"])
     else:
@@ -386,7 +542,7 @@ def prepare(path: Path, req: dict) -> dict:
                       "without it the AFM checks cannot tell which AFM node to leave out; set it first (Compute trays "
                       "table or raw YAML), then quarantine")
     if not kept:
-        warnings.append("the YAML is re-written: comments and formatting of the file are not kept")
+        warnings.append(partial if partial else "the YAML is re-written: comments and formatting of the file are not kept")
     return {"text": new, "diff": diff(old, new, path.name), "errors": errors, "warnings": warnings,
             "comments_kept": kept, "sha": sha(old)}
 
