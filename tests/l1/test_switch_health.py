@@ -612,20 +612,12 @@ def test_critical_processes_running(switch, inventory, checks, record_property):
     """In every running container that declares /etc/supervisor/critical_processes, each listed program is RUNNING."""
     seen = 0
     for c in switch.containers():
-        crit = switch.critical_processes(c)
-        if not crit:
+        if not switch.critical_processes(c):
             continue
-        status = switch.supervisor_status(c)
-        procs = None
         seen += 1
-        for prog in crit:
-            if status.get(prog) == "RUNNING":
-                continue
-            if prog not in status:   # not a supervisor program of its own (e.g. dsserve wraps syncd): look for the process
-                procs = procs if procs is not None else switch.container_processes(c)
-                if re.search(rf"(^|/){re.escape(prog)}(\s|$)", procs, re.M):
-                    continue
-            checks.fail(f"{switch.name}: {c}/{prog} is {status.get(prog, 'not running')}")
+        for d in switch.critical_down(c):     # dsserve-style wrappers count when their process runs
+            prog, _, state = d.partition(":")
+            checks.fail(f"{switch.name}: {c}/{prog} is {state}")
     record_property("containers_checked", seen)
     checks.check(seen, f"{switch.name}: no container declares critical processes")
     checks.assert_all()

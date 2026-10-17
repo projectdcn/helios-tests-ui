@@ -188,16 +188,22 @@ def test_restart_container_recovers(switch, inventory, checks):
         if not checks.check(r.ok, f"{switch.name}: systemctl restart {switch.per_asic(base, ns, '@')} rc={r.rc} {r.tail()!r}"):
             continue
 
+        why = []
+
         def recovered():
             if ctr not in switch.containers():
+                why[:] = [f"{ctr} not running"]
                 return False
-            st = switch.supervisor_status(ctr)
-            if any(st.get(p) != "RUNNING" for p in switch.critical_processes(ctr)):
+            down = switch.critical_down(ctr)
+            if down:
+                why[:] = [f"{ctr} critical {down}"]
                 return False
-            return lldp_before <= set(switch.lldp_ports(ns))
+            missing = lldp_before - set(switch.lldp_ports(ns))
+            why[:] = [f"LLDP neighbours missing on {sorted(missing)[:8]}"] if missing else []
+            return not missing
 
         ok, _ = wait_until(recovered, timeout, interval)
-        checks.check(ok, f"{switch.name}: {ctr} not recovered within {timeout:.0f}s")
+        checks.check(ok, f"{switch.name}: {ctr} not recovered within {timeout:.0f}s: {'; '.join(why)}")
     checks.assert_all()
 
 
@@ -214,17 +220,23 @@ def test_restart_swss_dependents_recover(switch, inventory, checks):
         if not checks.check(r.ok, f"{switch.name}: restart {switch.per_asic('swss', ns, '@')} rc={r.rc} {r.tail()!r}"):
             continue
 
+        why = []
+
         def recovered():
             running = set(switch.containers())
             for base in ("swss", "syncd"):
                 ctr = switch.per_asic(base, ns)
                 if ctr not in running:
+                    why[:] = [f"{ctr} not running"]
                     return False
-                st = switch.supervisor_status(ctr)
-                if any(st.get(p) != "RUNNING" for p in switch.critical_processes(ctr)):
+                down = switch.critical_down(ctr)
+                if down:
+                    why[:] = [f"{ctr} critical {down}"]
                     return False
-            return up_before <= _oper_up(switch)
+            lost = up_before - _oper_up(switch)
+            why[:] = [f"{len(lost)} port(s) up before still down: {sorted(p[1] for p in lost)[:8]}"] if lost else []
+            return not lost
 
         ok, _ = wait_until(recovered, timeout, interval)
-        checks.check(ok, f"{switch.name}: swss/syncd on {ns} not fully recovered within {timeout:.0f}s")
+        checks.check(ok, f"{switch.name}: swss/syncd on {ns} not fully recovered within {timeout:.0f}s: {'; '.join(why)}")
     checks.assert_all()

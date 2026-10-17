@@ -193,6 +193,25 @@ class SonicSwitch:
         """Process command lines inside a container (ps args), one per line."""
         return self.run(f"docker exec {container} ps -eo args", sudo=True, timeout=60).stdout
 
+    def critical_down(self, container: str) -> list[str]:
+        """The container's critical programs (/etc/supervisor/critical_processes) that are not running, as
+        'prog:STATE'. A program supervisor does not manage itself (syncd's 'dsserve', which wraps syncd) counts as
+        running when its process is there - as TC-SWH-057 judges it. g02-g17 17 Oct: TC-SWA-141 required supervisor
+        to show dsserve RUNNING, which it never does, and failed on every switch that had recovered."""
+        crit = self.critical_processes(container)
+        if not crit:
+            return []
+        status, procs, down = self.supervisor_status(container), None, []
+        for prog in crit:
+            if status.get(prog) == "RUNNING":
+                continue
+            if prog not in status:
+                procs = procs if procs is not None else self.container_processes(container)
+                if re.search(rf"(^|/){re.escape(prog)}(\s|$)", procs, re.M):
+                    continue
+            down.append(f"{prog}:{status.get(prog, 'not running')}")
+        return down
+
     def supervisor_status(self, container: str) -> dict[str, str]:
         # supervisorctl exits non-zero when anything isn't RUNNING; the table is still what we want.
         out = self.run(f"docker exec {container} supervisorctl status", sudo=True).stdout
