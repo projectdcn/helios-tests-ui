@@ -65,6 +65,37 @@ def _gpu_with_stations(ops, slot, n_stations, both_ports=0):
     pytest.skip(f"slot {slot}: no GPU with {n_stations} stations up ({both_ports} with both ports up)")
 
 
+def _still_up(ops, sel, timeout: float = 60) -> list[str]:
+    """Shut switch ports of ``sel`` not oper down within ``timeout`` (one status read per switch ASIC per poll).
+    g02-g17 17 Oct TC-E2E-144: GPU0 ports 34/35 (st1 asic0 Ethernet186, st2 asic0 Ethernet187) never went PortFailed
+    and the trimmed log could not show whether the switch ports went down - now it is checked and recorded."""
+    groups: dict[tuple, list] = {}
+    for sw, ns, port, _ in sel:
+        groups.setdefault((sw.name, ns), []).append((sw, port))
+
+    def up():
+        out = []
+        for (name, ns), items in groups.items():
+            oper = {r.get("Interface"): r.get("Oper") for r in items[0][0].interfaces_status(ns)}
+            out += [f"{name}/{ns}/{p}" for _, p in items if oper.get(p) != "down"]
+        return out
+    left = up()
+    end = time.monotonic() + timeout * _scale(ops)
+    while left and time.monotonic() < end:
+        time.sleep(max(0.05, 2 * _scale(ops)))
+        left = up()
+    return left
+
+
+def _planes_after(ops, vpod, changed, timeout: float) -> int:
+    """Available planes once AFM has acted on the last link change: wait (``timeout``) for a terminal state with
+    ``changed(planes, previous)``, then for the value to settle. g02-g17 17 Oct TC-E2E-141: PortFailed comes ~2 s
+    after a shut but the reconfiguration only after the link-fail threshold; reading the planes at once (the vPOD
+    was 'degraded' already) gave failing [33, 33, 33] and recovering [33, 32, 32] - the late reconfigurations."""
+    ops.wait(lambda: ops.vpod_state(vpod) in TERMINAL and changed(ops.planes(vpod)[1] or 0), timeout, 5)
+    return ops.settled_planes(vpod, interval=float(ops.th("plane_settle_interval_s", 10)))[1] or 0
+
+
 def _events_for(ops, etype, since, needles) -> set[str]:
     """Which of ``needles`` appear (as a whole name: Ethernet35 is not Ethernet354) in an event of ``etype`` newer
     than ``since``."""
@@ -157,10 +188,15 @@ def test_fo037_all_stations_one_gpu(ops, afm_ready, links, checks, record_proper
     base = _baseline(ops, sysv, record_property)
     want = _expected(ops, sel)
     _shut(links, sel)
+    up = _still_up(ops, sel)
     ok = ops.wait(lambda: want <= ops.failed_gpu_ports(), _fail_window(ops, sysv), 5)
     st = ops.vpod_state(sysv)
-    record_property("with_all_ports_down", {"ports": len(sel), "state": st, "planes": ops.planes(sysv)})
-    checks.check(ok, f"not all {len(sel)} GPU ports PortFailed: missing {sorted(want - ops.failed_gpu_ports())[:6]}")
+    record_property("with_all_ports_down", {"ports": len(sel), "state": st, "planes": ops.planes(sysv),
+                                            "switch_ports_not_down": up})
+    checks.check(not up, f"switch ports still oper up after shutdown: {up}")
+    missing = sorted(want - ops.failed_gpu_ports())
+    checks.check(ok, f"not all {len(sel)} GPU ports PortFailed: missing {missing[:6]} (cabled to "
+                     f"{[f'{sw.name}/{ns}/{p}' for sw, ns, p, c in sel if (_cname(ops, c[0]), c[1], c[3]) in missing][:6]})")
     checks.check(st != "operation-failed", f"{sysv} operation-failed with one GPU fully disconnected")
     _restore(links, checks, sel)
     _restored(ops, checks, sysv, base)
@@ -177,18 +213,17 @@ def test_fo033_sequential_failures(ops, afm_ready, links, checks, record_propert
     sel = [ls[0] for _, ls in sorted(st.items())[:3]]
     sysv = ops.system_vpod_name()
     base = _baseline(ops, sysv, record_property)
-    down_seq, up_seq = [], []
+    down_seq, up_seq, prev = [], [], base[1]
     for link in sel:
         want = _expected(ops, [link])
         _shut(links, [link])
         checks.check(ops.wait(lambda: want <= ops.failed_gpu_ports(), _fail_window(ops, sysv), 5),
                      f"{link[2]} not PortFailed")
-        ops.wait(lambda: ops.vpod_state(sysv) in TERMINAL, 120, 5)
-        down_seq.append(ops.planes(sysv)[1])
+        down_seq.append(prev := _planes_after(ops, sysv, lambda p, q=prev: p < q, _fail_window(ops, sysv) + 60))
     for link in sel:
         _restore(links, checks, [link])
         ops.wait(lambda: not (_expected(ops, [link]) & ops.failed_gpu_ports()), 120, 5)
-        up_seq.append(ops.planes(sysv)[1])
+        up_seq.append(prev := _planes_after(ops, sysv, lambda p, q=prev: p > q, _fail_window(ops, sysv) + 60))
     record_property("planes", {"baseline": base[1], "failing": down_seq, "recovering": up_seq})
     checks.check(all(a >= b for a, b in zip([base[1]] + down_seq, down_seq)), f"planes rose while failing: {down_seq}")
     checks.check(down_seq and down_seq[-1] < base[1], f"planes {down_seq} never below baseline {base[1]}")
