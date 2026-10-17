@@ -44,3 +44,12 @@ def test_start_line_in_live_output(tmp_path):
                         "--results-dir", str(tmp_path), "-p", "no:cacheprovider"], cwd=ROOT, capture_output=True,
                        text=True, timeout=300)
     assert "start tests/health/test_rack_health.py::test_every_node_answers_ssh [HC-001]" in r.stdout, r.stdout[-2000:]
+
+
+def test_reason_of_a_non_passing_test_in_live_output(tmp_path):
+    """A skipped / failed / blocked test gets one live line with its reason (pytest shows it only with -v)."""
+    r = subprocess.run([sys.executable, "-m", "pytest", str(ROOT / "tests" / "health" / "test_rack_health.py"),
+                        "--inventory", str(ROOT / "selftest" / "inventory.yaml"), "--tc", "HC-002",
+                        "--results-dir", str(tmp_path), "-p", "no:cacheprovider"], cwd=ROOT, capture_output=True,
+                       text=True, timeout=300)
+    assert "INFO skipped " in r.stdout and "[HC-002]: " in r.stdout and "not configured" in r.stdout, r.stdout[-2000:]

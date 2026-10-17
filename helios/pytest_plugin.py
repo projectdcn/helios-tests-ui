@@ -281,6 +281,11 @@ def pytest_runtest_makereport(item, call):
             "properties": json.dumps(dict(item.user_properties)) if item.user_properties else "",
             "message": msg,
         })
+        if outcome != "passed":     # the reason on the live log, right after the test (pytest shows it only in -v / the summary)
+            from .progress import log as progress
+            why = "; ".join(x.strip() for x in (msg or "").splitlines() if x.strip())[:300]
+            tc = tc_id(item)
+            progress.info("%s %s%s%s", outcome, test, f" [{tc}]" if tc else "", f": {why}" if why else "")
 
 
 def pytest_sessionfinish(session):
