@@ -41,12 +41,17 @@ def _restore(ops, checks, path: str):
     checks.check(ops.wait_vpod(ops.system_vpod_name(), timeout=300) in TERMINAL, "system vPOD not online/degraded after restore")
 
 
-def _healthy_after(ops, checks):
+def _healthy_after(ops, checks, record_property=None):
+    """Every node back healthy after the restore - except the ones quarantined in the inventory (g02-g17 17 Oct:
+    TC-AFM-051 failed only on pod-1-4 = ct05, quarantined Down, which was never healthy before the snapshot)."""
     names = [x["meta"]["name"] for x in ops.afm.items(FP)]
     checks.check("system-failover-policy" in names, f"system-failover-policy missing after restore: {names}")
-    for c in ops.afm.computes():
+    left_out = [n["meta"]["name"] for n in ops.afm.computes() + ops.afm.switches() if ops.quarantined(n)]
+    if left_out and record_property is not None:
+        record_property("quarantine_applied", left_out)
+    for c in ops.active_computes():
         checks.check(ops.wait_compute_ready(c["meta"]["name"], 300), f"{c['meta']['name']} not admitted/healthy after restore")
-    for s in ops.afm.switches():
+    for s in ops.active_switches():
         checks.check(ops.wait(lambda n=s["meta"]["name"]: ops.switch_ready(n), 300, 10), f"{s['meta']['name']} not healthy")
 
 
@@ -69,7 +74,7 @@ def test_snapshot_collect_and_restore(ops, afm_ready, uniq, checks, record_prope
         checks.check(ops.afm.raw("GET", f"{CLUSTER}/vpods/{user}").status_code == 404, f"vPOD {user} survived the restore")
         checks.check(ops.wait(lambda: ops.membership(name) == {sysv}, 300, 10),
                      f"{name} not back in {sysv} after restore: {ops.membership(name)}")
-        _healthy_after(ops, checks)
+        _healthy_after(ops, checks, record_property)
     finally:
         if ops.afm.raw("GET", f"{CLUSTER}/vpods/{user}").status_code == 200:
             ops.delete_vpod(user)
@@ -94,7 +99,7 @@ def test_restore_auth_objects(ops, afm_ready, make_user, uniq, checks, record_pr
     for kind, obj in (("users", name), ("roles", f"{name}-role"), ("role-bindings", f"{name}-bind")):
         checks.check(ops.afm.raw("GET", f"{AUTH}/tenant/{t}/{kind}/{obj}").status_code == 200, f"{kind}/{obj} not restored")
     checks.check(ops.afm.as_user(name, pw).login_raw().status_code == 200, f"restored user {name} cannot log in")
-    _healthy_after(ops, checks)
+    _healthy_after(ops, checks, record_property)
     checks.assert_all()
 
 
@@ -110,7 +115,7 @@ def test_restore_after_compute_removed(ops, afm_ready, checks, record_property):
         _restore(ops, checks, path)
         checks.check(ops.wait(lambda: ops.membership(name) == {sysv}, 300, 10),
                      f"{name} not back in {sysv} after restore: {ops.membership(name)}")
-        _healthy_after(ops, checks)
+        _healthy_after(ops, checks, record_property)
     finally:
         if ops.membership(name) != {sysv}:
             ops.add_gpus(sysv, moved)
@@ -134,5 +139,5 @@ def test_recovery_key_disaster_recovery(ops, afm_ready, checks, record_property)
     checks.check(r2.status_code != 200, "recovery key downloadable twice")
     path = _snapshot(ops, checks, record_property)
     _restore(ops, checks, path)
-    _healthy_after(ops, checks)
+    _healthy_after(ops, checks, record_property)
     checks.assert_all()

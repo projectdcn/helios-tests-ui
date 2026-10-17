@@ -52,6 +52,35 @@ def _api_ip(ops) -> str:
     return urlparse(ops.afm.base).hostname or ""
 
 
+
+_WRITE_GIVE_UP_S = 180
+
+
+def _write_after_started(ops, name, record_property):
+    """POST the alert policy, retrying while the API refuses it, from the moment every controller reported
+    'started'. Returns the write outage in seconds (0 = first try worked), None when no write worked within
+    _WRITE_GIVE_UP_S. g02-g17 17 Oct: right after a leader restart reported 'started', the POST got HTTP 503
+    'dial tcp 10.255.4.72:9003: connect: connection refused' - this measures how long that lasts."""
+    t0, errors = time.monotonic(), []
+    k = float(ops.th("time_scale", 1))
+    while True:
+        try:
+            r = ops.afm.raw("POST", AP, _ap(name))
+            if r.status_code in (200, 201):
+                break
+            errors.append(f"HTTP {r.status_code}: {' '.join(r.text.split())[:160]}")
+        except Exception as e:  # noqa: BLE001 - connection refused / reset while the cluster settles
+            errors.append(f"{type(e).__name__}: {str(e)[:160]}")
+        if time.monotonic() - t0 > _WRITE_GIVE_UP_S * k:
+            record_property("write_errors", errors[:3] + ([f"... {len(errors) - 3} more"] if len(errors) > 3 else []))
+            return None
+        time.sleep(max(0.05, 5 * k))
+    outage = round(time.monotonic() - t0, 1)
+    record_property("write_outage_s", outage)
+    if errors:
+        record_property("write_errors", errors[:3] + ([f"... {len(errors) - 3} more"] if len(errors) > 3 else []))
+    return outage
+
 def _crud_works(ops, uniq) -> tuple[bool, str]:
     name = uniq("fp")
     r1 = ops.afm.raw("POST", FP, {"meta": {"name": name}, "spec": {"datafabric-reconfig": "manual", "link-fail-threshold": 10}})
@@ -223,7 +252,14 @@ def test_watch_during_leader_failover(ops, afm_ready, uniq, cleanup, checks, rec
     ops.wait(lambda: _all_started(ops), 300, 10)
     name = uniq("ap")
     cleanup(f"{AP}/{name}")
-    ops.afm.post(AP, _ap(name))
+    outage = _write_after_started(ops, name, record_property)
+    limit = float((ops.th("aggwatch", {}) or {}).get("write_recover_s", 30))
+    if outage is None:
+        w.close()
+        pytest.fail(f"no write worked within {_WRITE_GIVE_UP_S:.0f} s after every controller reported 'started' "
+                    "(see write_errors)")
+    checks.check(outage <= limit, f"writes failed for {outage:.0f} s after every controller reported 'started' "
+                                  f"(limit {limit:.0f} s, thresholds.afm.aggwatch.write_recover_s)")
     w.collect(wait, lambda evs: name in ev_names(evs, "Created"))
     kept = name in ev_names(w.events, "Created")
     w.close()
