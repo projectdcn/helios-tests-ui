@@ -32,7 +32,7 @@ def state(ops: AfmOps, name: str) -> tuple[dict, list]:
 
 def show(ops: AfmOps, name: str) -> list:
     st, pend = state(ops, name)
-    print(f"system vPOD {name}: state {st.get('state') or st.get('phase')}, pending ops {len(pend)}")
+    print(f"system vPOD {name}: state {st.get('vpod-state') or st.get('state')}, pending ops {len(pend)}")
     for p in pend:
         gpus = (p.get("pending-components") or {}).get("gpus") or []
         print(f"  - {p.get('operation')} version {p.get('version')}: {len(gpus)} GPU(s) {', '.join(gpus[:8])}"
