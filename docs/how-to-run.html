@@ -489,6 +489,9 @@ defaults:
   <div class="cmd"><pre>.venv/bin/python tools/results_index.py history TC-AFM-001</pre></div>
   <div class="cmd"><pre>.venv/bin/python tools/results_index.py runs --rack g02-g17</pre></div>
   <p class="muted">Runs without <code>--results-dir</code> go to <code>results/runs/&lt;rack&gt;/</code> and are indexed when they finish. Runs on the jump host write to its own <code>~/helios/helios-tests/results/runs/g02-g17/</code>; copy the run folder back into <code>results/runs/g02-g17/</code> and run <code>tools/results_index.py</code> (the UI does both). Start times of runs from a clock without a time zone (13-14 Oct from the Mac) are converted with the <code>--tz</code> lists in <code>notes/</code>, otherwise shown as "(runner clock)". The 16 Oct reorganisation is listed in <code>results/MOVED-2026-10-16.txt</code>.</p>
+  <p class="muted"><strong>Retention.</strong> Results (<code>tc_*.csv</code>, <code>health.json</code>, reports) and the index are kept forever. Per-test command logs are kept in full for the newest 30 runs per rack or the last 30 days (whichever keeps more), then compressed to <code>&lt;run&gt;/logs.tar.gz</code>, and deleted after 90 days; UI live logs: the newest 200 per rack. Runs in the report run lists (<code>results/notes/*runs*.txt</code>) and merged health results with their sources are never touched. Limits in <code>results/retention.yaml</code>; the UI applies it after each run; by hand:</p>
+  <div class="cmd"><pre>.venv/bin/python tools/results_retention.py           # dry run: what it would compress / delete</pre></div>
+  <div class="cmd"><pre>.venv/bin/python tools/results_retention.py --apply</pre></div>
   <p>Each run folder contains:</p>
   <div class="table-wrap">
   <table>
