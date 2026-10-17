@@ -67,6 +67,14 @@ def source_runs(run: Path) -> list[Path]:
     return [run.parent / n for n in names]               # merged-from.txt only ever lists plain runs
 
 
+def _union(a: list | None, b: list | None) -> list | None:
+    """Column list covering both runs: a run from before a column was added (tc_summary.csv 'partial', 17 Oct) merges
+    with a newer one instead of crashing DictWriter on the unknown field."""
+    if not a:
+        return b
+    return a + [f for f in (b or []) if f not in a]
+
+
 def merge_runs(runs: list[Path], results_dir: Path) -> Path:
     """One results folder from several health runs (e.g. a full run + a re-run of its failed checks): every case
     comes from the LATEST run that ran it (its result rows and summary row); logs are kept per source run."""
@@ -85,7 +93,7 @@ def merge_runs(runs: list[Path], results_dir: Path) -> Path:
     res_rows, sum_rows, res_fields, sum_fields = [], [], None, None
     for r in runs:
         rows = list(csv.DictReader(open(r / "tc_results.csv", newline="")))
-        res_fields = res_fields or (list(rows[0]) if rows else None)
+        res_fields = _union(res_fields, list(rows[0]) if rows else None)
         for row in rows:
             if owner.get(row["tc_id"]) == r:
                 if row.get("log"):
@@ -96,12 +104,12 @@ def merge_runs(runs: list[Path], results_dir: Path) -> Path:
                         shutil.copy2(src, out / row["log"])
                 res_rows.append(row)
         for row in csv.DictReader(open(r / "tc_summary.csv", newline="")):
-            sum_fields = sum_fields or list(row)
+            sum_fields = _union(sum_fields, list(row))
             if owner.get(row["tc_id"]) == r:
                 sum_rows.append(row)
     for name, fields, rows in (("tc_results.csv", res_fields, res_rows), ("tc_summary.csv", sum_fields, sum_rows)):
         with open(out / name, "w", newline="") as f:
-            w = csv.DictWriter(f, fieldnames=fields)
+            w = csv.DictWriter(f, fieldnames=fields, restval="0" if name == "tc_summary.csv" else "")
             w.writeheader()
             w.writerows(rows)
     (out / "merged-from.txt").write_text("\n".join(r.name for r in runs) + "\n")
