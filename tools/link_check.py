@@ -2,6 +2,7 @@
 
     python tools/link_check.py scan --inventory <inv>                 # every link of the rack, root cause per problem
     python tools/link_check.py scan --inventory <inv> --interval 60   # longer error sample (default 30 s)
+    python tools/link_check.py pingmap --inventory <inv> --rounds 6 --wait 300   # loss per port / ASIC, sticky or moving
     python tools/link_check.py path --inventory <inv> --src <tray> --src-bdf 0004:01:00.1 --dst-acc 8 --ports 25,26
     python tools/link_check.py path ... --no-ping                      # one path, without the L2 ping
 
@@ -351,10 +352,22 @@ code,details div{{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:12
 """)
 
 
-def scan_cmd(a) -> int:
-    from helios import linkdiag
+def _filtered_rack(a):
     inv = load_inventory(a.inventory)
     rack = Rack(inv)
+    for attr, want in (("switches", getattr(a, "switches", None)), ("computes", getattr(a, "trays", None))):
+        if want:
+            keep = {x.strip() for x in want.split(",") if x.strip()}
+            unknown = keep - set(getattr(rack, attr))
+            if unknown:
+                raise SystemExit(f"unknown {attr}: {sorted(unknown)} (inventory: {sorted(getattr(rack, attr))})")
+            setattr(rack, attr, {k: v for k, v in getattr(rack, attr).items() if k in keep})
+    return inv, rack
+
+
+def scan_cmd(a) -> int:
+    from helios import linkdiag
+    inv, rack = _filtered_rack(a)
     stamp = time.strftime("%Y%m%d-%H%M%S", time.gmtime())
     out = a.out or ROOT / "results" / "link-check" / (inv.rack or "rack") / f"scan-{stamp}"
     (out / "raw").mkdir(parents=True, exist_ok=True)
@@ -373,6 +386,15 @@ def scan_cmd(a) -> int:
         if g["count"] > 6:
             lines.append(f"{'':15}... {g['count'] - 6} more")
         lines.append(f"{'':15}next: {g['links'][0].action}")
+    per_asic = {}
+    for ln in links:
+        if ln.state != "ok" and ln.kind not in ("tray_quarantined", "tray_unreachable", "tray_missing"):
+            k = f"{ln.switch} {ln.asic}".strip()
+            per_asic[k] = per_asic.get(k, 0) + 1
+    if per_asic:
+        lines.append("")
+        lines.append("problem links per switch ASIC (trays out of service left out): " +
+                     ", ".join(f"{k} {n}" for k, n in sorted(per_asic.items(), key=lambda x: -x[1])))
     if not groups:
         lines.append("All links ok.")
     lines.append(f"\nreport: {out / 'report.html'}")
@@ -389,6 +411,44 @@ def scan_cmd(a) -> int:
     return 1 if groups else 0
 
 
+def pingmap_cmd(a) -> int:
+    from helios import linkdiag
+    inv, rack = _filtered_rack(a)
+    stamp = time.strftime("%Y%m%d-%H%M%S", time.gmtime())
+    out = a.out or ROOT / "results" / "link-check" / (inv.rack or "rack") / f"pingmap-{stamp}"
+    out.mkdir(parents=True, exist_ok=True)
+    try:
+        sw = [linkdiag.collect_switch(x) for x in rack.switches.values()]
+        owner = linkdiag.plane_owner([x for x in sw if not x.get("error")])
+        pm = linkdiag.ping_map(list(rack.computes.values()), a.rounds, a.wait)
+    finally:
+        rack.close()
+    reading = linkdiag.judge_ping_map(pm, owner)
+    lines = [f"Scale-up ping map {time.strftime('%Y-%m-%d %H:%M:%S', time.gmtime())} UTC  rack {inv.rack}",
+             f"{a.rounds} rounds, {a.wait:.0f} s apart, {len(pm['pairs'])} GPU pairs (each GPU to the same position on the next tray)", ""]
+    lines += reading
+    lines.append("")
+    lines.append(f"{'port':>4}  {'switch ASIC':<12} {'failed / pings':>14}  checks")
+    for p, v in sorted(pm["ports"].items()):
+        lines.append(f"{p:>4}  {owner.get(p, '?'):<12} {v['fails']:>6} / {v['pings']:<6}  {v['checks'] or ''}")
+    print("\n".join(lines))
+    (out / "report.txt").write_text("\n".join(lines) + "\n")
+    (out / "pingmap.json").write_text(json.dumps({"time_utc": stamp, "rack": inv.rack, "plane_owner": owner, **pm,
+                                                  "reading": reading}, indent=1, default=str))
+    rows = "".join(f"<tr><td>{p}</td><td>{esc(owner.get(p, '?'))}</td><td>{v['fails']} / {v['pings']}</td>"
+                   f"<td>{esc(', '.join(f'{k} {n}' for k, n in v['checks'].items()))}</td><td>{esc('; '.join(v['pairs'][:6]))}</td></tr>"
+                   for p, v in sorted(pm["ports"].items()) if v["fails"])
+    (out / "report.html").write_text(f"""<!doctype html><html lang='en'><head><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'>
+<title>Scale-up ping map - {esc(inv.rack)}</title><style>body{{font:14px/1.5 -apple-system,'Segoe UI',Arial,sans-serif;margin:0;padding:24px max(16px,4vw);background:#f6f7f9;color:#1b2129}}
+@media (prefers-color-scheme:dark){{body{{background:#12161b;color:#e6eaef}}}}table{{border-collapse:collapse;min-width:700px}}th,td{{text-align:left;padding:6px 8px;border-bottom:1px solid #8884}}.wrap{{overflow-x:auto}}</style></head><body>
+<h1>Scale-up ping map: {esc(inv.rack)}</h1><p>{esc(time.strftime('%Y-%m-%d %H:%M', time.gmtime()))} UTC · {a.rounds} rounds, {a.wait:.0f} s apart · {len(pm['pairs'])} GPU pairs</p>
+{''.join(f'<p>{esc(x)}</p>' for x in reading)}
+<div class='wrap'><table><tr><th>GPU port</th><th>Switch ASIC</th><th>Failed / pings</th><th>Checks</th><th>Pairs (first 6)</th></tr>{rows or "<tr><td colspan=5>No loss.</td></tr>"}</table></div>
+</body></html>
+""")
+    return 1 if any(v["fails"] for v in pm["ports"].values()) else 0
+
+
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = ap.add_subparsers(dest="cmd", required=True)
@@ -398,6 +458,16 @@ def main(argv=None) -> int:
     s.add_argument("--inventory", **inv_kw)
     s.add_argument("--interval", type=float, default=30.0, help="seconds between the two counter samples (default 30)")
     s.add_argument("--out", type=Path, help="report folder (default results/link-check/<rack>/scan-<UTC time>)")
+    for x in (s,):
+        x.add_argument("--switches", help="only these switches (comma-separated inventory names)")
+        x.add_argument("--trays", help="only these compute trays (comma-separated inventory names)")
+    m = sub.add_parser("pingmap", help="repeat a ring of L2 pings and map the loss to GPU port numbers / switch ASICs")
+    m.add_argument("--inventory", **inv_kw)
+    m.add_argument("--rounds", type=int, default=3, help="rounds (default 3)")
+    m.add_argument("--wait", type=float, default=60, help="seconds between rounds (default 60)")
+    m.add_argument("--switches", help="only these switches")
+    m.add_argument("--trays", help="only these compute trays")
+    m.add_argument("--out", type=Path, help="report folder (default results/link-check/<rack>/pingmap-<UTC time>)")
     p = sub.add_parser("path", help="one GPU-to-GPU path, port by port, with an L2 ping")
     p.add_argument("--inventory", **inv_kw)
     p.add_argument("--src", required=True, help="source compute tray (inventory name)")
@@ -411,7 +481,7 @@ def main(argv=None) -> int:
     p.add_argument("--no-ping", action="store_true", help="check everything except the L2 ping")
     p.add_argument("--out", type=Path, help="evidence folder (default results/link-check/<rack>/<UTC time>)")
     a = ap.parse_args(argv)
-    return scan_cmd(a) if a.cmd == "scan" else path_cmd(a)
+    return {"scan": scan_cmd, "pingmap": pingmap_cmd, "path": path_cmd}[a.cmd](a)
 
 
 if __name__ == "__main__":

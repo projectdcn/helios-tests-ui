@@ -7,6 +7,7 @@ Used by tools/link_check.py (`scan` and `path`). Read-only: SSH + `afmctl show`,
 """
 from __future__ import annotations
 
+import re
 import time
 from dataclasses import asdict, dataclass, field
 
@@ -35,6 +36,7 @@ KINDS = {
     "bit_errors": "bit errors growing on a link that is up",
     "ifcp": "physical link up but no IFCP session",
     "not_programmed": "link up but not programmed by AFM",
+    "miscabled": "GPU port reaches a different switch port than described",
 }
 
 
@@ -213,7 +215,40 @@ def _dur(ms) -> str:
     return f"{s / 86400:.1f} d" if s >= 86400 else f"{s / 3600:.1f} h" if s >= 3600 else f"{s / 60:.0f} min" if s >= 60 else f"{s:.0f} s"
 
 
-def diagnose(ln: Link, trays: dict, optics_reported: bool, interval_s: float) -> Link:
+def learn_ifcp(links: list[Link]) -> dict:
+    """How IFCP names the peer: {switch: device id} by majority over links matched by MAC, and whether peer_port_id
+    is the EthernetN number (>= 90 % of those links). g02-g17: device id = switch number, port id = EthernetN."""
+    votes, same, total = {}, 0, 0
+    for ln in links:
+        i = (ln.gpu or {}).get("ifcp") or {}
+        if ln.matched_by != "mac" or i.get("peer_device_id") in (None, ""):
+            continue
+        votes.setdefault(ln.switch, {}).setdefault(str(i["peer_device_id"]), 0)
+        votes[ln.switch][str(i["peer_device_id"])] += 1
+        m = re.fullmatch(r"Ethernet(\d+)", ln.sw_port)
+        total += 1
+        same += bool(m and str(i.get("peer_port_id")) == m.group(1))
+    dev = {sw: max(v, key=v.get) for sw, v in votes.items()}
+    return {"device": dev, "port_is_ethernet": bool(total) and same / total >= 0.9, "checked_links": total}
+
+
+def ifcp_peer_problem(ln: Link, ifcp_map: dict) -> str | None:
+    """None when the GPU port's IFCP peer is this link's switch port (or cannot be judged), else what it reaches."""
+    i = (ln.gpu or {}).get("ifcp") or {}
+    dev, pid = i.get("peer_device_id"), i.get("peer_port_id")
+    if dev in (None, "") or not ifcp_map.get("device"):
+        return None
+    by_dev = {v: k for k, v in ifcp_map["device"].items()}
+    peer_sw = by_dev.get(str(dev))
+    wrong_sw = peer_sw is not None and peer_sw != ln.switch
+    wrong_port = ifcp_map.get("port_is_ethernet") and f"Ethernet{pid}" != ln.sw_port
+    if wrong_sw or wrong_port:
+        return f"IFCP peer is {peer_sw or 'device ' + str(dev)} Ethernet{pid}" if ifcp_map.get("port_is_ethernet") \
+            else f"IFCP peer is {peer_sw or 'device ' + str(dev)} port {pid}"
+    return None
+
+
+def diagnose(ln: Link, trays: dict, optics_reported: bool, interval_s: float, ifcp_map: dict | None = None) -> Link:
     """Set state / cause / evidence / owner / action. First matching rule wins (bottom layer first)."""
     up = lambda v: str(v or "").lower() == "up"  # noqa: E731
     g, ev = ln.gpu, ln.evidence
@@ -268,6 +303,12 @@ def diagnose(ln: Link, trays: dict, optics_reported: bool, interval_s: float) ->
         return set_("down", "one_sided", f"one-sided link: switch port {'up' if up(ln.sw_oper) else 'down'}, GPU port {g['link']}",
                     SITE, "The two ends disagree: verify the cable lands where the switch port description says "
                           "(the IFCP peer of the GPU port names the switch port it really reaches).")
+    wrong = ifcp_peer_problem(ln, ifcp_map or {})
+    if wrong:
+        return set_("degraded", "miscabled", f"{wrong}, but this link is {ln.switch} {ln.sw_port} by the forwarding table / "
+                                             f"description ('{ln.desc}')", SITE,
+                    "Trace the cable: either it is in another switch port than the description says, or the description "
+                    "is wrong. Fix the cabling (or the description) so both agree.")
     fec_bad = ln.deltas.get("FEC_UNCORR", 0) > 0
     err_bad = any(ln.deltas.get(k, 0) > 0 for k in ("RX_ERR",))
     if fec_bad or err_bad:
@@ -328,6 +369,7 @@ def scan(rack, interval_s: float = 30.0, log=print) -> dict:
     for name, s in sw_res.items():
         vals = [v for a in s["asics"].values() for v in a["presence"].values()]
         optics[name] = bool(vals) and any(str(v).lower() == "present" for v in vals)
+    ifcp_map = learn_ifcp(links)
     for ln in links:
         a0 = sw_res[ln.switch]["asics"].get(ln.asic, {})
         a1 = (again.get(ln.switch) or {}).get(ln.asic, {})
@@ -344,7 +386,8 @@ def scan(rack, interval_s: float = 30.0, log=print) -> dict:
             ln.fdb_static_late = any(r.get("Port") == ln.sw_port and str(r.get("Type", "")).lower() == "static" for r in a1["fdb"])
         t = tr_res.get(ln.tray) or {}
         ln.vpod_accelerators = next((g.get("vpod_accelerators") for g in t.get("gpus", []) if g["bdf"] == ln.bdf), None)
-        diagnose(ln, tr_res, optics.get(ln.switch, False), span)
+        diagnose(ln, tr_res, optics.get(ln.switch, False), span, ifcp_map)
+    learned["ifcp"] = ifcp_map
     return {"switches": sw_res, "trays": tr_res, "links": links, "learned": learned, "optics_reported": optics,
             "interval_s": span}
 
@@ -373,3 +416,110 @@ def link_dict(ln: Link) -> dict:
     d = asdict(ln)
     d.pop("gpu", None)
     return d
+
+
+# ---------------------------------------------------------------------------------------------- repeat-ping map
+
+def plane_owner(switches: list[dict]) -> dict[int, str]:
+    """{GPU port number: 'switch asic'} from the port descriptions: one ASIC carries one port number for every GPU."""
+    votes: dict[int, dict] = {}
+    for s in switches:
+        for ns, a in s["asics"].items():
+            for desc in a["desc"].values():
+                cab = parse_port_description(desc)
+                if cab:
+                    k = f"{s['name']} {ns}".strip()
+                    votes.setdefault(cab[3], {}).setdefault(k, 0)
+                    votes[cab[3]][k] += 1
+    return {p: max(v, key=v.get) for p, v in votes.items()}
+
+
+def ping_map(trays: list, rounds: int = 3, wait_s: float = 60, afmctl=Afmctl, log=print, sleep=time.sleep) -> dict:
+    """Ring of L2 pings - each GPU to the GPU in the same position on the next tray, over every port that is up on
+    both - repeated ``rounds`` times, ``wait_s`` apart. Returns per pair and per GPU port number how often each check
+    failed, so a loss that stays on one link can be told from one that moves."""
+    info = {}
+    for t, val, exc in fan_out(lambda t: _ping_targets(t, afmctl), trays):
+        if exc:
+            log(f"{t.host.name}: afmctl not readable: {str(exc)[:120]}")
+        else:
+            info[t.host.name] = val
+    names = [t.host.name for t in trays if t.host.name in info]
+    jobs = {}
+    for i, n in enumerate(names):
+        peer = names[(i + 1) % len(names)] if len(names) > 1 else None
+        if not peer:
+            continue
+        for g, (bdf, acc, up) in enumerate(info[n]["gpus"]):
+            if g < len(info[peer]["gpus"]):
+                pbdf, pacc, pup = info[peer]["gpus"][g]
+                common = sorted(up & pup)
+                if common:
+                    jobs.setdefault(n, []).append((bdf, peer, pbdf, pacc, common))
+    pairs: dict[str, dict] = {}
+    by_port: dict[int, dict] = {}
+    tray_obj = {t.host.name: t for t in trays}
+    for r in range(rounds):
+        log(f"ping round {r + 1}/{rounds} ({sum(len(v) for v in jobs.values())} pairs) ...")
+
+        def run(n):
+            a, out = afmctl(tray_obj[n]), []
+            for bdf, peer, pbdf, pacc, ports in jobs.get(n, []):
+                res, cmd = a.ping(bdf, pacc, ports)
+                out.append((n, bdf, peer, pbdf, pacc, ports, res, cmd))
+            return out
+        for _, val, exc in fan_out(run, list(jobs)):
+            for n, bdf, peer, pbdf, pacc, ports, res, cmd in (val or []):
+                key = f"{n} {bdf} -> {peer} {pbdf} (acc {pacc})"
+                pr = pairs.setdefault(key, {"rounds": 0, "ports": len(ports), "fails": {}, "busy": 0})
+                pr["rounds"] += 1
+                pr["busy"] += bool(res.busy)
+                for p in ports:
+                    bp = by_port.setdefault(p, {"pings": 0, "fails": 0, "checks": {}, "pairs": set()})
+                    bp["pings"] += 1
+                    failed = res.port_checks.get(str(p)) or []
+                    if failed:
+                        bp["fails"] += 1
+                        bp["pairs"].add(key)
+                        for c in failed:
+                            bp["checks"][c] = bp["checks"].get(c, 0) + 1
+                        pr["fails"].setdefault(p, []).append(r + 1)
+        if r + 1 < rounds:
+            sleep(wait_s)
+    for v in by_port.values():
+        v["pairs"] = sorted(v["pairs"])
+    return {"rounds": rounds, "wait_s": wait_s, "pairs": pairs, "ports": by_port}
+
+
+def _ping_targets(tray, afmctl=Afmctl) -> dict:
+    a = afmctl(tray)
+    accels = a.vpod_accels()
+    gpus = []
+    for d in a.devices():
+        up = {p.id for p in a.ports(d.bdf) if p.up}
+        gpus.append((d.bdf, accels.get(d.bdf, ("", set()))[0], up))
+    return {"gpus": gpus}
+
+
+def judge_ping_map(pm: dict, owner: dict[int, str]) -> list[str]:
+    """Plain-language reading of a ping map: which port numbers (and so which switch ASICs) fail, sticky or moving."""
+    out = []
+    bad = {p: v for p, v in pm["ports"].items() if v["fails"]}
+    if not bad:
+        return [f"No ping loss in {pm['rounds']} rounds over {len(pm['pairs'])} GPU pairs."]
+    per_asic: dict[str, int] = {}
+    for p, v in bad.items():
+        per_asic[owner.get(p, "?")] = per_asic.get(owner.get(p, "?"), 0) + v["fails"]
+    out.append("Failing GPU port numbers: " + ", ".join(
+        f"{p} ({v['fails']}/{v['pings']} pings, {owner.get(p, '?')})" for p, v in sorted(bad.items())))
+    out.append("Failures per switch ASIC: " + ", ".join(f"{k} {n}" for k, n in sorted(per_asic.items(), key=lambda x: -x[1])))
+    sticky = [(k, p, r) for k, pr in pm["pairs"].items() for p, r in pr["fails"].items() if len(r) == pr["rounds"] > 1]
+    moving = [(k, p, r) for k, pr in pm["pairs"].items() for p, r in pr["fails"].items() if len(r) < pr["rounds"]]
+    if sticky:
+        out.append(f"Sticky (every round): {len(sticky)} pair-ports, e.g. " + "; ".join(f"{k} port {p}" for k, p, _ in sticky[:4])
+                   + " - points at those links.")
+    if moving:
+        out.append(f"Moving (some rounds only): {len(moving)} pair-ports - points at the fabric / AFM rather than one link.")
+    if len(per_asic) == 1 and "?" not in per_asic:
+        out.append(f"All loss is on one switch ASIC ({next(iter(per_asic))}): check that ASIC first.")
+    return out

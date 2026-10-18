@@ -93,3 +93,49 @@ def test_vpod_change_in_progress_is_not_a_fault():
     ln = links[0]
     ln.fdb_static_late, ln.vpod_accelerators = False, 0   # GPU in no vPOD: nothing to program
     assert ld.diagnose(ln, {"ct03": _tray(slot=2)}, False, 30).state == "ok"
+
+
+def test_ifcp_peer_check_learns_mapping_and_flags_a_miscabled_port():
+    tr = _tray()
+    tr["gpus"][0]["ports"][0]["ifcp"] |= {"peer_device_id": "3", "peer_port_id": "25"}
+    links, _ = ld.join([_switch()], [tr])
+    m = ld.learn_ifcp(links)
+    assert m == {"device": {"st3": "3"}, "port_is_ethernet": True, "checked_links": 1}
+    assert ld.diagnose(links[0], {"ct03": tr}, False, 30, m).state == "ok"
+    tr2 = copy.deepcopy(tr)
+    tr2["gpus"][0]["ports"][0]["ifcp"]["peer_port_id"] = "29"          # the cable really lands on Ethernet29
+    links2, _ = ld.join([_switch()], [tr2])
+    ln = ld.diagnose(links2[0], {"ct03": tr2}, False, 30, m)
+    assert ln.kind == "miscabled" and "st3 Ethernet29" in ln.cause
+
+
+def test_ping_map_tells_sticky_from_moving_loss():
+    from types import SimpleNamespace
+    from helios.afmctl import Device, PingResult, Port
+    calls = {"n": 0}
+
+    class FakeAfmctl:
+        def __init__(self, tray):
+            self.t = tray.host.name
+
+        def vpod_accels(self):
+            base = {"ct01": 0, "ct02": 4}[self.t]
+            return {"0001:01:00.1": (str(base), set())}
+
+        def devices(self):
+            return [Device("0001:01:00.1", "x", "ACTIVE")]
+
+        def ports(self, bdf):
+            return [Port(p, "enabled", "LINK_UP") for p in (0, 1, 2)]
+
+        def ping(self, bdf, acc, ports):
+            calls["n"] += 1
+            res = PingResult(port_checks={"1": ["req"]})            # port 1 always fails (sticky)
+            if self.t == "ct02" and calls["n"] <= 2:
+                res.port_checks["2"] = ["rsp"]                      # port 2 fails in the first round only (moving)
+            return res, SimpleNamespace(stdout="")
+    trays = [SimpleNamespace(host=SimpleNamespace(name=n)) for n in ("ct01", "ct02")]
+    pm = ld.ping_map(trays, rounds=2, wait_s=0, afmctl=FakeAfmctl, log=lambda *a: None, sleep=lambda s: None)
+    assert pm["ports"][1]["fails"] == 4 and pm["ports"][0]["fails"] == 0
+    text = " ".join(ld.judge_ping_map(pm, {0: "st6 asic1", 1: "st5 asic1", 2: "st6 asic1"}))
+    assert "Sticky" in text and "port 1" in text and "Moving" in text and "st5 asic1" in text

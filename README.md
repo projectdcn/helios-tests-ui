@@ -287,6 +287,12 @@ Works on any rack with a helios inventory (switch trays + compute trays reachabl
   step; links with one cause are grouped.
 - Output in `results/link-check/<rack>/scan-<UTC time>/`: `report.html` (self-contained, to share with a customer),
   `report.txt`, `link_check.json`, `raw/` (everything read). Exit code 1 when any link is down or degraded.
+- Cabling is checked against IFCP: each GPU port's IFCP peer (device + port) must be the switch port the forwarding
+  table / description names (the device-to-switch mapping is learned by majority; g02-g17: device n = st n, peer port
+  = EthernetN); a mismatch is `miscabled`.
+- `pingmap --rounds N --wait S` pings a ring (each GPU to the same position on the next tray, every common port) N
+  times and maps the loss to GPU port numbers and so to the switch ASIC carrying each, sticky (every round) or moving.
+- `--switches` / `--trays` limit a scan or ping map to part of the rack.
 - `path` checks one GPU-to-GPU path port by port: both GPU ports, IFCP, the forwarding entries of both MACs (static,
   on a described, oper-up port, one ASIC per GPU port number), then the ping and the switch counters around it.
 - Platforms that report no transceiver presence / optic power (g02-g17's QFX5252) are detected; the report then says
