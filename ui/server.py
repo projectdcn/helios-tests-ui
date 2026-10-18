@@ -29,7 +29,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, unquote, urlparse
 
-from . import defaults, inventory_edit, plan, presets, sessions
+from . import defaults, inventory_edit, plan, presets, sessions, sshkeys
 from .config import ROOT, afm_username, inventory_rack_name, load_config
 from .keychain import Keychain, KeychainError, account
 from .runner import JobError, NAME_RX, TC_RX
@@ -412,6 +412,18 @@ class Handler(BaseHTTPRequestHandler):
             m = re.fullmatch(r"/api/racks/([^/]+)/inventory", path)
             if m:
                 return self.json(inventory_edit.read(self.app.profile(m.group(1)).inventory))
+            m = re.fullmatch(r"/api/racks/([^/]+)/sshkey", path)
+            if m:                                  # Setup tab: the server's keys; public keys only, never a private one
+                p = self.app.profile(m.group(1))
+                try:
+                    tg = sshkeys.targets(p)
+                except Exception as e:  # noqa: BLE001 - e.g. no inventory yet
+                    tg, err = [], str(e)
+                else:
+                    err = None
+                return self.json({"using": sshkeys.using(p), "chosen": sshkeys.chosen(p), "keys": sshkeys.list_keys(),
+                                  "targets": tg, "targets_error": err, "runner": p.runner,
+                                  "server": socket.gethostname().split(".")[0]})
             m = re.fullmatch(r"/api/racks/([^/]+)/access", path)
             if m:                                  # the latest Check access result (tools/access_check.py)
                 return self.json(latest_access(self.app.profile(m.group(1))))
@@ -580,6 +592,26 @@ class Handler(BaseHTTPRequestHandler):
                     if m.group(2) == "check":
                         return self.json(inventory_edit.prepare(p.inventory, body))
                     return self.json(inventory_edit.save(p.inventory, body))
+            m = re.fullmatch(r"/api/racks/([^/]+)/sshkey/(create|use|install)", path)
+            if m:                                  # Setup tab; an install password is used once, never kept or logged
+                p = self.app.profile(m.group(1))
+                if m.group(2) == "create":
+                    k = sshkeys.create(str(body.get("name") or sshkeys.DEFAULT_NAME))
+                    if body.get("use", True):
+                        sshkeys.choose(p, k["path"])
+                    return self.json(k)
+                if m.group(2) == "use":
+                    sshkeys.choose(p, body.get("key") or None)
+                    return self.json({"chosen": sshkeys.chosen(p), "using": sshkeys.using(p)})
+                pws = body.pop("passwords", None) or {}
+                if not isinstance(pws, dict) or not all(isinstance(v, str) for v in pws.values()):
+                    raise JobError("passwords: {user: password}")
+                try:
+                    res = sshkeys.install(p, str(body.get("key") or sshkeys.chosen(p) or ""), pws,
+                                          body.get("nodes") or None)
+                finally:
+                    del pws
+                return self.json({"results": res})
             m = re.fullmatch(r"/api/racks/([^/]+)/presets(/delete)?", path)
             if m:
                 p = self.app.profile(m.group(1))

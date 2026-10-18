@@ -281,6 +281,10 @@ class LocalRunner(Runner):
         pw_env = password_env(p.inventory)
         env = {k: v for k, v in os.environ.items() if k != pw_env and not SECRET_ENV.search(k)}
         env["PYTHONUNBUFFERED"] = "1"
+        from .sshkeys import chosen
+        key = chosen(p)
+        if key:                              # the SSH key chosen for this rack in the UI's Setup tab
+            env["HELIOS_SSH_KEY"], env["HELIOS_SSH_KEY_FROM"] = key, "chosen in the UI's Setup tab"
         if password:
             env[password_env(p.inventory)] = password
         argv = self.command(job)
@@ -347,6 +351,10 @@ class SshRunner(Runner):
              "-o", "ControlPersist=120"]
         for opt in s.options:
             o += ["-o", opt]
+        from .sshkeys import chosen
+        key = chosen(self.profile)
+        if key:                              # the key chosen for this rack in the UI's Setup tab
+            o += ["-i", key, "-o", "IdentitiesOnly=yes"]
         return o + [s.target]
 
     def _remote(self, cmd: str, input: bytes | None = None, timeout: float = 600, check: bool = True):

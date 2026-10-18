@@ -27,8 +27,35 @@
   <button data-tab="results">Results</button>
   <button data-tab="inventory">Inventory &amp; quarantine</button>
   <button data-tab="history">Case history</button>
+  <button data-tab="setup">Setup</button>
 </nav>
 <main>
+<section id="tab-setup" class="tab">
+  <div class="box">
+    <h3>SSH key of this UI server for <span class="setup-rack"></span></h3>
+    <p>Runs log in with: <b id="key-using"></b></p>
+    <div class="row">
+      <label class="inline">Key <select id="key-select"></select></label>
+      <button type="button" id="key-use">Use for this rack</button>
+      <button type="button" id="key-create">Create a new key on this server…</button>
+      <span id="key-msg" class="muted" role="status" aria-live="polite"></span>
+    </div>
+    <label>Public key (safe to share: add it to an account's <code>~/.ssh/authorized_keys</code> yourself, or install it below)
+      <textarea id="key-pub" rows="2" readonly></textarea></label>
+    <button type="button" id="key-copy">Copy public key</button>
+    <p class="muted small">The private key stays on this server (<span id="key-dir"></span>) and never reaches the page. A key chosen here is used by this rack's runs ahead of HELIOS_SSH_KEY, the inventory's <code>key_file</code> and the server's default keys.</p>
+  </div>
+  <div class="box">
+    <h3>Install the key on <span id="inst-where"></span></h3>
+    <p class="muted small">Each account's password is used once to add the key to its <code>~/.ssh/authorized_keys</code>, then key-only login is checked. The password is not saved or logged; nodes where key login already works need none.</p>
+    <table id="inst-targets"><thead><tr><th>Node</th><th>Account</th><th>Result</th></tr></thead><tbody></tbody></table>
+    <form id="inst-form" class="row" autocomplete="off">
+      <span id="inst-pw"></span>
+      <button type="submit" class="primary" id="inst-go">Install key</button>
+      <span id="inst-msg" class="muted" role="status" aria-live="polite"></span>
+    </form>
+  </div>
+</section>
 <section id="tab-run" class="tab active">
   <div id="session-box" class="box row">
     <span>Session <b id="sess-name">(none yet)</b></span>
@@ -42,13 +69,14 @@
       <span id="acc-summary" class="muted">not checked yet</span>
       <button type="button" id="acc-run" title="read-only check of this machine, the AFM controller and every switch and compute tray (SSH key login, passwordless sudo, GPUs, tools); a few seconds per node">Check access</button>
       <button type="button" id="acc-log" hidden>Open log</button>
+      <button type="button" id="acc-setup-btn" title="create / choose this server's SSH key and install it on the rack">SSH key setup…</button>
       <label class="inline"><input type="checkbox" id="acc-all"> show every check</label>
     </div>
     <pre id="acc-tail" class="small" hidden></pre>
     <table id="acc-table" hidden><thead><tr><th></th><th>Where</th><th>Node</th><th>Check</th><th>Result / what to do</th></tr></thead><tbody></tbody></table>
     <details id="acc-setup"><summary>One-time setup a rack needs before tests (Check access verifies these)</summary>
       <ul class="small">
-        <li><b>SSH key on the machine that runs the tests</b> (this UI server, or the jump host for a jump-host rack), with no passphrase, accepted by <span id="acc-ssh-who">every switch and compute tray</span>. Install it with <code>ssh-copy-id</code>; the inventory's <code>key_file</code> names it. No switch / compute passwords are used.</li>
+        <li><b>SSH key on the machine that runs the tests</b> (this UI server, or the jump host for a jump-host rack), with no passphrase, accepted by <span id="acc-ssh-who">every switch and compute tray</span>. Install it with <code>ssh-copy-id</code>. Which key: <code>HELIOS_SSH_KEY</code> on that machine (UI server: <code>config/ui.env</code>), else the inventory's <code>key_file</code>, else the machine's own <code>~/.ssh</code> setup - so an inventory does not need to name one person's key. No switch / compute passwords are used.</li>
         <li><b>Network path</b> from that machine to the nodes and to the AFM controller.</li>
         <li><b>The rack's inventory</b> (Inventory tab): hosts, users, <code>key_file</code>.</li>
         <li><b>Passwordless sudo</b> for the SSH users on switches and computes (<code>NOPASSWD</code> in <code>/etc/sudoers.d/</code>): checks run as <code>sudo -n</code> and never answer a prompt.</li>

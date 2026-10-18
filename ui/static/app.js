@@ -71,6 +71,7 @@ function showTab(t) {
   if (t === "results") loadResults();
   if (t === "inventory") loadInventory();
   if (t === "run") loadSession();
+  if (t === "setup") loadSetup();
 }
 
 // ---------------------------------------------------------------- case history (results/index.csv)
@@ -120,6 +121,7 @@ function rackChanged() {
     loadPlan();
     loadSession();
     loadAccess();
+    if ($("#tab-setup").classList.contains("active")) loadSetup();
   }
 }
 
@@ -189,6 +191,85 @@ $("#acc-run").addEventListener("click", async () => {
   } catch (e) { sum.textContent = e.message; sum.className = "err"; }
   finally { $("#acc-run").disabled = false; }
 });
+
+// ---------------------------------------------------------------- Setup tab: the server's SSH key for this rack
+let setup = null;
+async function loadSetup() {
+  const r = rack.name;
+  $$(".setup-rack").forEach(e => { e.textContent = rack.title; });
+  try { setup = await api("GET", `/api/racks/${enc(r)}/sshkey`); }
+  catch (e) { $("#key-msg").textContent = e.message; $("#key-msg").className = "err"; return; }
+  if (rack.name !== r) return;
+  const u = setup.using;
+  $("#key-using").textContent = (u.path ? u.path + " - " : "") + u.source;
+  $("#key-using").className = u.exists ? "" : "err";
+  $("#key-dir").textContent = setup.keys.length ? setup.keys[0].path.replace(/[^/]+$/, "") : "~/.ssh/";
+  const sel = $("#key-select");
+  sel.replaceChildren(h("option", { value: "" }, "(none chosen: HELIOS_SSH_KEY / inventory key_file / server defaults)"),
+    ...setup.keys.map(k => h("option", { value: k.path }, `${k.path.split("/").pop()}  (${k.type.replace("ssh-", "")}${k.comment ? ", " + k.comment : ""})`)));
+  sel.value = setup.chosen || "";
+  showPub();
+  const jump = setup.runner === "ssh";
+  $("#inst-where").textContent = jump ? `the jump host of ${rack.title} (its own key reaches the rack's nodes)` : `every switch and compute of ${rack.title}`;
+  $("#inst-targets tbody").replaceChildren(...(setup.targets_error ? [h("tr", {}, h("td", { colspan: 3, class: "err" }, setup.targets_error))] : []),
+    ...setup.targets.map(t => h("tr", { "data-node": t.name }, h("td", {}, t.name), h("td", {}, `${t.user}@${t.host}${t.port !== 22 ? ":" + t.port : ""}`),
+      h("td", { class: "muted inst-res" }, ""))));
+  const users = [...new Set(setup.targets.map(t => t.user))];
+  $("#inst-pw").replaceChildren(...users.map(u => h("label", { class: "inline" }, `Password of ${u} `,
+    h("input", { type: "password", "data-user": u, autocomplete: "off" }))));
+  $("#inst-go").disabled = !setup.targets.length;
+}
+function showPub() {
+  const k = setup && setup.keys.find(x => x.path === $("#key-select").value);
+  $("#key-pub").value = k ? k.pub : "";
+  $("#key-copy").disabled = !k;
+}
+$("#key-select").addEventListener("change", showPub);
+$("#key-use").addEventListener("click", async () => {
+  try {
+    await api("POST", `/api/racks/${enc(rack.name)}/sshkey/use`, { key: $("#key-select").value || null });
+    $("#key-msg").textContent = $("#key-select").value ? "this rack's runs use the chosen key" : "no key chosen: the server's usual lookup applies";
+    $("#key-msg").className = "ok";
+  } catch (e) { $("#key-msg").textContent = e.message; $("#key-msg").className = "err"; }
+  loadSetup();
+});
+$("#key-create").addEventListener("click", async () => {
+  const name = prompt("Name of the new key file in the server's ~/.ssh (ed25519, no passphrase):", "id_ed25519_helios");
+  if (!name) return;
+  try {
+    const k = await api("POST", `/api/racks/${enc(rack.name)}/sshkey/create`, { name, use: true });
+    $("#key-msg").textContent = `created ${k.path} and chose it for this rack - now install it below`; $("#key-msg").className = "ok";
+  } catch (e) { $("#key-msg").textContent = e.message; $("#key-msg").className = "err"; }
+  await loadSetup();
+});
+$("#key-copy").addEventListener("click", async () => {
+  const ta = $("#key-pub");
+  try { await navigator.clipboard.writeText(ta.value); }
+  catch (e) { ta.select(); document.execCommand("copy"); }     // plain http to a server: no clipboard API
+  $("#key-msg").textContent = "public key copied"; $("#key-msg").className = "ok";
+});
+$("#inst-form").addEventListener("submit", async ev => {
+  ev.preventDefault();
+  const key = $("#key-select").value || setup.chosen;
+  if (!key) { $("#inst-msg").textContent = "choose (or create) a key first"; $("#inst-msg").className = "err"; return; }
+  const passwords = {};
+  $$("#inst-pw input").forEach(i => { if (i.value) passwords[i.dataset.user] = i.value; i.value = ""; });
+  $("#inst-go").disabled = true;
+  $("#inst-msg").textContent = "installing…"; $("#inst-msg").className = "muted";
+  try {
+    const d = await api("POST", `/api/racks/${enc(rack.name)}/sshkey/install`, { key, passwords });
+    for (const res of d.results) {
+      const td = $(`#inst-targets tr[data-node="${CSS.escape(res.name)}"] .inst-res`);
+      if (td) { td.textContent = `${res.status === "failed" ? "✗" : "✓"} ${res.detail}`; td.className = "inst-res " + (res.status === "failed" ? "err" : "ok"); }
+    }
+    const bad = d.results.filter(x => x.status === "failed").length;
+    $("#inst-msg").textContent = bad ? `${bad} failed - fix and Install again` : "done: key login works everywhere - run Check access";
+    $("#inst-msg").className = bad ? "err" : "ok";
+    if (!bad && !setup.chosen) await api("POST", `/api/racks/${enc(rack.name)}/sshkey/use`, { key });
+  } catch (e) { $("#inst-msg").textContent = e.message; $("#inst-msg").className = "err"; }
+  finally { $("#inst-go").disabled = false; }
+});
+$("#acc-setup-btn").addEventListener("click", () => showTab("setup"));
 
 // ---------------------------------------------------------------- sessions (per rack, ui-sessions.json)
 let sessData = null;
