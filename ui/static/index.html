@@ -45,7 +45,7 @@
       <label class="inline"><input type="checkbox" id="acc-all"> show every check</label>
     </div>
     <pre id="acc-tail" class="small" hidden></pre>
-    <table id="acc-table" hidden><thead><tr><th></th><th>Where</th><th>Node</th><th>Check</th><th>Result</th><th>What to do</th></tr></thead><tbody></tbody></table>
+    <table id="acc-table" hidden><thead><tr><th></th><th>Where</th><th>Node</th><th>Check</th><th>Result / what to do</th></tr></thead><tbody></tbody></table>
     <details id="acc-setup"><summary>One-time setup a rack needs before tests (Check access verifies these)</summary>
       <ul class="small">
         <li><b>SSH key on the machine that runs the tests</b> (this UI server, or the jump host for a jump-host rack), with no passphrase, accepted by <span id="acc-ssh-who">every switch and compute tray</span>. Install it with <code>ssh-copy-id</code>; the inventory's <code>key_file</code> names it. No switch / compute passwords are used.</li>

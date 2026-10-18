@@ -149,8 +149,9 @@ async function loadAccess() {
     .sort((a, b) => order[a.status] - order[b.status]);
   body.replaceChildren(...rows.map(i => h("tr", {},
     h("td", { class: ACC_MARK[i.status][1], title: i.status }, ACC_MARK[i.status][0]), h("td", {}, i.area), h("td", {}, i.node),
-    h("td", {}, i.check), h("td", { class: "small" }, i.detail), h("td", { class: "small" }, i.fix || ""))));
-  if (!rows.length) body.append(h("tr", {}, h("td", { colspan: 6, class: "ok" }, "nothing to fix (tick 'show every check' for the details)")));
+    h("td", {}, i.check), h("td", { class: "acc-res" }, i.detail,
+      i.fix && i.status !== "ok" ? h("div", { class: "acc-fix" }, "→ " + i.fix) : null))));   // fix under the result
+  if (!rows.length) body.append(h("tr", {}, h("td", { colspan: 5, class: "ok" }, "nothing to fix (tick 'show every check' for the details)")));
   $("#acc-table").hidden = false;
   $("#acc-setup").open = d.verdict === "FAIL";
 }
