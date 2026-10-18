@@ -59,6 +59,19 @@ def test_restore_system_vpod(ops, checks, record_property, request):
         # operator's way back is ReconfigureDataFabric, sent once
         r = ops.afm.raw("POST", f"{CLUSTER}/vpods/{sysv}/ReconfigureDataFabric", {})
         record_property("reconfigure_data_fabric", f"{ops.vpod_state(sysv)} -> HTTP {r.status_code} {r.text[:160]}")
+    if ops.wait_vpod(sysv, timeout=600) not in TERMINAL:
+        # still failed: Reconfigure the computes whose GPUs are not Ready (g02-g17 18 Oct 03:25: configurationfailed
+        # with 68 members, no pending ops, after a ReconfigureDataFabric)
+        bad = {}
+        for c in ops.active_computes():
+            gi = ops.gpu_info(ops.compute(c["meta"]["name"]))
+            st = sorted({g.get("oper-state") for g in gi.values()})
+            if st != ["Ready"]:
+                bad[c["meta"]["name"]] = st
+        record_property("gpus_not_ready", bad)
+        for name in bad:
+            r = ops.reconfigure(name)
+            record_property(f"reconfigure_{name}", f"HTTP {r.status_code} {r.text[:160]}")
     checks.check(ops.wait_vpod(sysv, timeout=600) in TERMINAL, f"{sysv} not online/degraded")
     after = _state(ops)
     record_property("vpods_after", after)
