@@ -798,9 +798,11 @@ def test_switch_drain_agent_down(ops, afm_ready, checks, record_property):
 
 @pytest.mark.tc("TC-AFM-032")
 def test_switch_decommission_agent_down(ops, afm_ready, checks, record_property):
-    """Decommission with the agent stopped -> decommission_failed (not decommissioned); force-decommission ->
-    decommissioned; agent started, DELETE, readmit."""
+    """Drain, stop the agent, Decommission -> decommission_failed (not decommissioned); force-decommission ->
+    decommissioned; agent started, DELETE, readmit (the plan's order: g02-g17 17 Oct 23:47 the test skipped the drain
+    and AFM refused the Decommission with 412 'not allowed ... in admission phase admitted')."""
     def steps(name, sw):
+        _drain(ops, checks, name)
         ops.afm_agent(sw, "stop")
         ops.wait(lambda: not conditions_ok(ops.switch(name)), float(ops.th("agent_down_detect_s", 600)), 20)
         _post(ops, name, "DecommissionSwitchNode")
