@@ -287,11 +287,14 @@ class AfmOps:
                              10, f"{name} admitted+healthy+GPUs Ready"))
 
     def reconfigure(self, name: str, retry_412_s: float = 180):
+        """POST Reconfigure, retrying 412 (another Reconfigure in flight) and 500 'resource version ... is outdated,
+        please retry' (a concurrent update of the ComputeNode - g02-g17 18 Oct 03:56, TC-AFM-RC-028)."""
         end = time.monotonic() + retry_412_s
         while True:
             r = self.afm.raw("POST", f"{CN}/{name}/Reconfigure", {})
             final = any(k in r.text.lower() for k in ("decommission", "scaleup info", "failed to find"))
-            if r.status_code != 412 or final or time.monotonic() >= end:  # 412 = another Reconfigure in flight
+            stale = r.status_code == 500 and "is outdated" in r.text
+            if (r.status_code != 412 and not stale) or final or time.monotonic() >= end:
                 return r
             time.sleep(float(self.th("retry_interval_s", 10)))
 

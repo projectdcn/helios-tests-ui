@@ -61,7 +61,9 @@ def _wait_recovered(afm, inventory, names, checks, baseline_planes):
 
 
 def _computes(afm, pytestconfig) -> list[str]:
-    names = [c["meta"]["name"] for c in afm.computes()]
+    # quarantined trays left out (g02-g17 18 Oct 03:50: TC-AFM-RC-002 / 003 sent Reconfigure to pod-1-4 = ct05, Down -> 412)
+    inv = getattr(pytestconfig, "_helios_inventory", None)
+    names = [c["meta"]["name"] for c in afm.computes() if inv is None or not inv.is_quarantined_afm(c)]
     if not names:
         pytest.fail("no compute nodes in AFM")
     return names
