@@ -470,6 +470,8 @@ class Handler(BaseHTTPRequestHandler):
             return self.err(500, str(e))
         except (BrokenPipeError, ConnectionResetError):
             return None
+        except OSError as e:                   # a folder / file the server cannot read: say so, do not drop the request
+            return self.err(500, f"server: {e.strerror or e}{': ' + str(e.filename) if e.filename else ''}")
 
     def _stream(self, rid: str, start: int) -> None:
         """Server-sent events: one 'data:' per log line, 'event: end' with the run record when it is over."""
@@ -595,6 +597,10 @@ class Handler(BaseHTTPRequestHandler):
             return self.err(400, str(e))
         except (LookupError, KeyError) as e:
             return self.err(404, str(e))
+        except (BrokenPipeError, ConnectionResetError):
+            return None
+        except OSError as e:                   # e.g. a results folder the server cannot create: an answer, not a drop
+            return self.err(500, f"server: {e.strerror or e}{': ' + str(e.filename) if e.filename else ''}")
 
 
 LOOPBACK = ("127.0.0.1", "::1", "localhost")

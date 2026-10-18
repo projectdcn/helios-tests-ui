@@ -125,7 +125,7 @@ function rackChanged() {
 
 // ---------------------------------------------------------------- prerequisites (Check access: tools/access_check.py)
 const ACC_MARK = { ok: ["✓", "ok"], fail: ["✗", "err"], warn: ["!", "warn"], skip: ["–", "muted"] };
-let accRun = null;
+let accRun = null, accFolder = null;
 async function loadAccess() {
   const r = rack.name;
   $("#acc-ssh-who").textContent = rack.runner === "ssh"
@@ -135,11 +135,12 @@ async function loadAccess() {
   if (!rack || rack.name !== r) return;
   const sum = $("#acc-summary"), body = $("#acc-table tbody");
   if (!d.found) {
-    sum.textContent = d.error || "not checked yet: Check access before the first run on this rack";
+    sum.textContent = d.error || "Not checked yet - click Check access to verify this rack's prerequisites";
     sum.className = d.error ? "err" : "muted";
     $("#acc-table").hidden = true; $("#acc-setup").open = true;
     return;
   }
+  accFolder = d.folder;
   const c = d.counts || {};
   sum.textContent = `${d.verdict} - ${c.fail || 0} fail, ${c.warn || 0} warn, ${c.ok || 0} ok · checked ${d.at} from ${d.checked_from}`;
   sum.className = d.verdict === "OK" ? "ok" : d.verdict === "WARN" ? "warn" : "err";
@@ -162,16 +163,28 @@ $("#acc-run").addEventListener("click", async () => {
     accRun = run.id;
     $("#acc-log").hidden = false; $("#acc-run").disabled = true;
     sum.textContent = run.status === "queued" ? "queued behind the rack's current run…" : "checking…"; sum.className = "muted";
+    const before = accFolder;
+    let s;
     for (;;) {
       await new Promise(res => setTimeout(res, 2000));
-      const s = await api("GET", `/api/runs/${enc(run.id)}`);
-      if (!["queued", "running"].includes(s.status)) {
-        if (s.status !== "finished") { sum.textContent = `check ${s.status}${s.error ? ": " + s.error : ""} (Open log)`; sum.className = "err"; }
-        break;
-      }
+      s = await api("GET", `/api/runs/${enc(run.id)}`);
+      if (!["queued", "running"].includes(s.status)) break;
       sum.textContent = s.status === "queued" ? "queued behind the rack's current run…" : "checking…";
     }
-    if (rack.name === r) await loadAccess();
+    if (rack.name !== r) return;
+    await loadAccess();
+    if (accFolder === before) {   // no new result: say why instead of the old (or 'not checked') state
+      let tail = "";
+      try {
+        const txt = await (await fetch(`/api/runs/${enc(run.id)}/log.txt`)).text();
+        tail = txt.trim().split("\n").slice(-8).join("\n");
+      } catch (e) { /* the log link stays */ }
+      sum.textContent = `the check ${s.status === "finished" ? "wrote no result" : s.status}`
+        + `${s.rc !== null && s.rc !== undefined ? " (exit " + s.rc + ")" : ""}${s.error ? ": " + s.error : ""} - Open log for the details`;
+      sum.className = "err";
+      $("#acc-table").hidden = true;
+      $("#acc-tail").textContent = tail; $("#acc-tail").hidden = !tail;
+    } else $("#acc-tail").hidden = true;
   } catch (e) { sum.textContent = e.message; sum.className = "err"; }
   finally { $("#acc-run").disabled = false; }
 });

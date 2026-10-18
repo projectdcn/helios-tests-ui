@@ -93,3 +93,14 @@ def test_access_run_kind_and_latest_result(tmp_path):
         app.shutdown()
         srv.shutdown()
         srv.server_close()
+
+
+def test_a_crashing_check_still_writes_a_result(monkeypatch, tmp_path):
+    """17 Oct, UI server: Check access left the panel at 'not checked yet' - a result is always written now."""
+    def boom(inv):
+        raise RuntimeError("something unexpected")
+    monkeypatch.setattr(ac, "check", boom)
+    rc = ac.main(["--inventory", str(ROOT / "selftest" / "inventory.yaml"), "--results-dir", str(tmp_path)])
+    out = json.loads(next(tmp_path.glob("selftest-access-*/access.json")).read_text())
+    assert rc == 1 and out["verdict"] == "FAIL"
+    assert out["items"][0]["check"] == "the check itself" and "something unexpected" in out["items"][0]["detail"]

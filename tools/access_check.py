@@ -194,11 +194,19 @@ def main(argv=None) -> int:
     ap.add_argument("--inventory", required=True, type=Path)
     ap.add_argument("--results-dir", type=Path, default=ROOT / "results")
     a = ap.parse_args(argv)
-    inv = load_inventory(a.inventory)
     t0 = time.time()
-    items = check(inv)
+    rack = a.inventory.stem
+    try:                     # whatever goes wrong, a result is written: the UI shows it instead of 'not checked'
+        inv = load_inventory(a.inventory)
+        rack = inv.rack
+        items = check(inv)
+    except Exception as e:  # noqa: BLE001
+        import traceback
+        traceback.print_exc()
+        items = [item("this machine", socket.gethostname().split(".")[0], "the check itself", FAIL,
+                      f"{type(e).__name__}: {str(e)[:300]}", "see the log of this check (Runs tab)")]
     counts = {s: sum(i["status"] == s for i in items) for s in (OK, FAIL, WARN, SKIP)}
-    print(f"\nPrerequisites of rack {inv.rack} (checked from {socket.gethostname().split('.')[0]}):")
+    print(f"\nPrerequisites of rack {rack} (checked from {socket.gethostname().split('.')[0]}):")
     for i in items:
         print(f"  {MARK[i['status']]}  {i['area']:<12} {i['node']:<14} {i['check']:<30} {i['detail']}")
         if i["fix"] and i["status"] in (FAIL, WARN):
@@ -206,10 +214,10 @@ def main(argv=None) -> int:
     verdict = "FAIL" if counts[FAIL] else "WARN" if counts[WARN] else "OK"
     print(f"\n{verdict}: {counts[OK]} ok, {counts[FAIL]} fail, {counts[WARN]} warn, {counts[SKIP]} skip "
           f"({time.time() - t0:.0f} s)")
-    out = a.results_dir / f"{inv.rack}-access-{time.strftime('%Y%m%d-%H%M%S')}"
+    out = a.results_dir / f"{rack}-access-{time.strftime('%Y%m%d-%H%M%S')}"
     out.mkdir(parents=True, exist_ok=True)
     (out / "access.json").write_text(json.dumps({
-        "rack": inv.rack, "checked_from": socket.gethostname().split(".")[0],
+        "rack": rack, "checked_from": socket.gethostname().split(".")[0],
         "at": time.strftime("%Y-%m-%d %H:%M:%S %Z"), "verdict": verdict, "counts": counts, "items": items},
         indent=1) + "\n")
     print(f"- helios access check: {out / 'access.json'} -")
