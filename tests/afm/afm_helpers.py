@@ -20,27 +20,61 @@ def _baseline(ops, vpod, record_property):
 
 
 class Links:
-    """Shut ports and always bring them back."""
+    """Shut ports and always bring them back. Records which other ports of the same switch ASIC were up before the
+    shut and reports any that are down after the restore (collateral): g02-g17 17-18 Oct, shutting st6 Ethernet257
+    also took Ethernet261 down, st4 Ethernet70 took Ethernet66 - and the re-flap meant to recover a port that stayed
+    down took more neighbours with it. thresholds.afm.reflap_on_restore (true) turns that re-flap off;
+    thresholds.afm.collateral_wait_s (90) is how long a neighbour may take to come back."""
 
     def __init__(self, ops):
-        self.ops, self.down = ops, []
+        self.ops, self.down, self.before, self.collateral, self.shut_ports = ops, [], {}, [], set()
+
+    def _up(self, sw, ns) -> set[str]:
+        try:
+            return {r.get("Interface") for r in sw.interfaces_status(ns) if r.get("Oper") == "up"}
+        except Exception:                     # noqa: BLE001 - the neighbour check must never break a restore
+            return set()
 
     def shut(self, sw, ns, port):
+        self.before.setdefault((sw.name, ns), (sw, self._up(sw, ns)))
         r = self.ops.port_admin(sw, ns, port, up=False)
         if r.ok:
             self.down.append((sw, ns, port))
+            self.shut_ports.add((sw.name, ns, port))
         return r
 
     def restore(self, sw, ns, port, checks=None):
         self.ops.port_admin(sw, ns, port, up=True)
-        if not self.ops.wait_oper(sw, ns, port, "up", 60):   # full rack: startup did not always stick -> re-flap
-            self.ops.port_admin(sw, ns, port, up=False)
-            self.ops.port_admin(sw, ns, port, up=True)
-            ok = self.ops.wait_oper(sw, ns, port, "up", 60)
+        if not self.ops.wait_oper(sw, ns, port, "up", 60):
+            ok = False
+            if self.ops.th("reflap_on_restore", True):   # MR3: startup did not always stick -> re-flap once
+                self.ops.port_admin(sw, ns, port, up=False)
+                self.ops.port_admin(sw, ns, port, up=True)
+                ok = self.ops.wait_oper(sw, ns, port, "up", 60)
             if checks is not None:
-                checks.check(ok, f"{sw.name} {ns} {port} not oper up after startup (re-flapped once)")
+                how = "re-flapped once" if self.ops.th("reflap_on_restore", True) else "not re-flapped: reflap_on_restore false"
+                checks.check(ok, f"{sw.name} {ns} {port} not oper up after startup ({how})")
         if (sw, ns, port) in self.down:
             self.down.remove((sw, ns, port))
+        self._neighbours(sw, ns, checks)
+
+    def _neighbours(self, sw, ns, checks=None):
+        """After the last shut port of this ASIC is back: ports up before the shut and down now (still shut ones
+        excluded), given collateral_wait_s to recover."""
+        if any(s.name == sw.name and n == ns for s, n, _ in self.down) or (sw.name, ns) not in self.before:
+            return
+        _, before = self.before.pop((sw.name, ns))
+        mine = {p for s_, n_, p in self.shut_ports if s_ == sw.name and n_ == ns}   # reported by restore itself
+        lost = lambda: sorted(before - mine - self._up(sw, ns))  # noqa: E731
+        gone = lost()
+        if gone:
+            self.ops.wait(lambda: not lost(), float(self.ops.th("collateral_wait_s", 90)), 10)
+            gone = lost()
+        if gone:
+            self.collateral.append((sw.name, ns, gone))
+            if checks is not None:
+                checks.check(False, f"{sw.name} {ns}: {', '.join(gone)} up before the shut, still down after the "
+                                    f"restore (coupled ports? add them to thresholds.afm.avoid_ports)")
 
     def restore_all(self):
         for sw, ns, port in list(self.down):

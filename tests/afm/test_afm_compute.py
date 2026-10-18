@@ -357,13 +357,29 @@ def test_reconfigure_only_when_healthy(ops, afm_ready, checks, record_property):
 @pytest.mark.disruptive
 @pytest.mark.tc("TC-NA-040")
 def test_reconfigure_multiple_computes(ops, afm_ready, checks, record_property):
-    """Reconfigure of several computes at once (thresholds.afm.na040_computes, 2): all accepted, all Ready."""
-    names = [c["meta"]["name"] for c in ops.afm.computes()][-int(ops.th("na040_computes", 2)):]
+    """Reconfigure of several computes at once (thresholds.afm.na040_computes, 2): all accepted, each tray's journal
+    shows the afmctl reset of the reconfiguration, then all Ready. g02-g17 18 Oct: the old check read Ready 0.09 s
+    after the POSTs, before the trays had left Ready, so it passed without seeing a reconfiguration and left two
+    Reconfigures in flight for the next case (TC-NA-022)."""
+    ready = sorted((c for c in ops.active_computes() if ops.compute_ready(c["meta"]["name"])),
+                   key=lambda c: c["spec"].get("slot-id", 0))
+    names = [c["meta"]["name"] for c in ready][-int(ops.th("na040_computes", 2)):]
+    if len(names) < 2:
+        pytest.fail(f"need 2 Ready computes outside the quarantine, have {names}")
+    trays = {n: ops.tray(n) for n in names}
+    t0 = {n: ops.tray_time(t) for n, t in trays.items()}
     with ThreadPoolExecutor(len(names)) as ex:
         res = dict(zip(names, ex.map(lambda n: ops.reconfigure(n), names)))
     record_property("status", {n: r.status_code for n, r in res.items()})
+    seen_t = float(ops.th("reconfigure_seen_s", 180))
+    seen = {}
     for n, r in res.items():
         checks.check(r.status_code == 200, f"Reconfigure {n} -> HTTP {r.status_code}")
+        if r.status_code == 200:
+            seen[n] = bool(ops.wait(lambda: ops.reset_logged_since(trays[n], t0[n]), seen_t, 10))
+            checks.check(seen[n], f"{n}: no afmctl reset logged within {seen_t:.0f}s of the Reconfigure")
+    record_property("reconfigure_seen", seen)
+    for n in names:
         checks.check(ops.wait_compute_ready(n, 300), f"{n} not Ready")
     checks.check(ops.wait_vpod(ops.system_vpod_name()) in TERMINAL, "system vPOD not online/degraded")
     checks.assert_all()
