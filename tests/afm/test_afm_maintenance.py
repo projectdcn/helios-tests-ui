@@ -4,7 +4,8 @@ did not finish. DISRUPTIVE (changes vPOD membership); run on its own, by ID:
     pytest tests/afm/test_afm_maintenance.py --inventory <inv> --allow-disruptive --tc MAINT-SYSVPOD
 
 Deletes leftover test vPODs (helios-*), puts every GPU of every admitted, non-quarantined compute back into the system
-vPOD and waits for its pending operations to clear. The state before and after is recorded (vpods_before / _after).
+vPOD, waits for its pending operations to clear and, if it is still configurationfailed / needdatafabricreconfiguration,
+sends ReconfigureDataFabric once. The state before and after is recorded (vpods_before / _after).
 g02-g17 18 Oct 01:00 UTC: after batch 4 the system vPOD held 60 of 68 GPUs and an add_vpod for pod-1-17 stayed pending.
 """
 from __future__ import annotations
@@ -13,6 +14,7 @@ from collections import Counter
 
 import pytest
 
+from helios.afm import CLUSTER
 from helios.afm_ops import TERMINAL
 
 pytestmark = [pytest.mark.disruptive]
@@ -52,6 +54,11 @@ def test_restore_system_vpod(ops, checks, record_property, request):
     if want:
         ops.add_gpus(sysv, want)
     checks.check(ops.wait_pending_clear(sysv, 900), f"{sysv} pending ops not cleared: {_state(ops).get(sysv)}")
+    if ops.vpod_state(sysv) in ("configurationfailed", "needdatafabricreconfiguration"):
+        # stuck with every GPU a member and nothing pending (g02-g17 18 Oct 02:44-03:14 after TC-AFM-RC-005): the
+        # operator's way back is ReconfigureDataFabric, sent once
+        r = ops.afm.raw("POST", f"{CLUSTER}/vpods/{sysv}/ReconfigureDataFabric", {})
+        record_property("reconfigure_data_fabric", f"{ops.vpod_state(sysv)} -> HTTP {r.status_code} {r.text[:160]}")
     checks.check(ops.wait_vpod(sysv, timeout=600) in TERMINAL, f"{sysv} not online/degraded")
     after = _state(ops)
     record_property("vpods_after", after)
