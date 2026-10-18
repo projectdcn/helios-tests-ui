@@ -348,6 +348,23 @@ def _flap(ops, links, checks, sw, ns, port):
     links.restore(sw, ns, port, checks)
 
 
+def _warn_policy_spec(ops) -> dict:
+    """An event alert policy matching warn-severity events, built from AFM's own default event policy (which raises
+    alerts on this rack - 270 open on 17 Oct, matched requirement 'equals critical') with only the matched value
+    changed to warn, so its keys / format are what AFM accepts. Falls back to severity == warn."""
+    import copy
+    for p in ops.afm.items(f"{MONITORING}/alertPolicies"):
+        sp = p.get("spec") or {}
+        reqs = sp.get("requirements") or []
+        if (p.get("meta") or {}).get("name", "").startswith("default-event") and any(r.get("values") == ["critical"] for r in reqs):
+            out = copy.deepcopy(sp)
+            out["requirements"] = [dict(r, values=["warn"]) if r.get("values") == ["critical"] else r for r in reqs]
+            out["enable"] = True
+            return out
+    return {"resource": "Event", "enable": True, "severity": "info",
+            "requirements": [{"key": "severity", "operator": "equals", "values": ["warn"]}]}
+
+
 @pytest.mark.l3
 @pytest.mark.tc("TC-CTL-098")
 def test_alerts_from_alert_policy(ops, afm_ready, uniq, cleanup, links, checks, record_property):
@@ -356,16 +373,24 @@ def test_alerts_from_alert_policy(ops, afm_ready, uniq, cleanup, links, checks, 
     goes down (held until oper down, then restored). g02-g17 17 Oct: the policy had no requirements - AFM API: 'a
     selector with no Requirements does not select anything' - so no alert could come (alerts stayed at 236)."""
     name = uniq("ap")
-    spec = ops.th("alert_policy_spec", {"resource": "Event", "enable": True, "severity": "info",
-                                        "requirements": [{"key": "severity", "operator": "equals", "values": ["warn"]}]})
+    spec = ops.th("alert_policy_spec", None) or _warn_policy_spec(ops)
+    record_property("policy_spec", spec)
     cleanup(f"{MONITORING}/alertPolicies/{name}")
     ops.afm.post(f"{MONITORING}/alertPolicies", {"meta": {"name": name}, "spec": spec})
     slot = ops.compute(ops.pick_compute())["spec"]["slot-id"]
     sw, ns, port, _ = ops.gpu_links(slot)[0]
-    _flap(ops, links, checks, sw, ns, port)
+    since = ops.controller_now()
+    # held down long enough for AFM's link events (17 Oct 23:11: 1.5 s down, no alert, events not recorded)
+    links.shut(sw, ns, port)
+    checks.check(ops.wait_oper(sw, ns, port, "down", 60), f"{sw.name} {ns} {port} never went oper down")
+    time.sleep(float(ops.th("alert_hold_s", 30)) * float(ops.th("time_scale", 1)))
+    links.restore(sw, ns, port, checks)
     got = ops.wait(lambda: [a for a in ops.afm.items(f"{MONITORING}/alerts") if name in json.dumps(a)], 300, 10)
+    warn = [e.get("type") for e in ops.events(since=since) if e.get("severity") == "warn"]
     record_property("alerts", len(got or []))
-    checks.check(got, f"no alert referencing policy {name} after a link flap")
+    record_property("warn_events_during_flap", sorted(set(warn)))
+    checks.check(got, f"no alert referencing policy {name} after a link flap (warn events meanwhile: "
+                      f"{sorted(set(warn)) or 'none'})")
     checks.assert_all()
 
 
