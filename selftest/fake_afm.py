@@ -476,6 +476,10 @@ class Handler(BaseHTTPRequestHandler):
             force = bool(body.get("force-decommission"))
             if ph == "admitted" and "force_decom_admitted_rejected" in st.f:
                 return self._err(412, f"switch {name} is admitted: drain it first")
+            if ph == "admitted" and not force and "decom_admitted_ok" not in st.f:
+                # as the g02-g17 controller answers (17 Oct 21:49 / 23:47): a regular decommission needs a drained switch
+                return self._send(412, {**status_env(412, "action decommission is not allowed for switch node in "
+                                                          "admission phase admitted", "Failed pre conditions")})
             ok = force or sim.agent_up[i] or "decom_with_agent_down_ok" in st.f
             sw["status"]["admission-phase"] = "decommissioned" if ok else "decommission_failed"
             sim.event("switchnode_decommissioned", f"switch {name} {sw['status']['admission-phase']}")

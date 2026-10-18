@@ -611,6 +611,17 @@ def _switch_recover(ops, name, sw, checks):
     ops.wait(lambda: ops.switch_ready(name), 600, 15)
 
 
+def _unstick_switch(ops, name, sw, record_property):
+    """The failure is already recorded; get the rack usable again for the next cases: one more afm-agent restart
+    (g02-g17 17 Oct 19:33 and 22:10: after an agent-down case st6 stayed health 'unknown' with its agent running,
+    every following case was BLOCKED, and only a second restart brought it back - finding F2)."""
+    if ops.wait(lambda: ops.switch_ready(name), 120, 15):
+        return
+    ops.afm_agent(sw, "restart")
+    ok = ops.wait(lambda: ops.switch_ready(name), 600, 15)
+    record_property("extra_agent_restart", {"switch": name, "healthy_after": bool(ok)})
+
+
 def _switch_case(ops, checks, record_property, steps, *, controller=False):
     _need_switches(ops.afm, 2)
     sysv, base = _baseline(ops, checks, record_property)
@@ -625,7 +636,8 @@ def _switch_case(ops, checks, record_property, steps, *, controller=False):
         _switch_recover(ops, name, sw, checks)
         for s in ops.rack.switches.values():
             ops.afm_agent(s, "start")
-    checks.check(ops.switch_ready(name), f"{name} not admitted+healthy at the end")
+    if not checks.check(ops.switch_ready(name), f"{name} not admitted+healthy at the end"):
+        _unstick_switch(ops, name, sw, record_property)
     checks.check(ops.wait(lambda: ops.vlan_count(sw) >= vlans0, 300, 15),
                  f"{name}: {ops.vlan_count(sw)} VLANs, {vlans0} before (AIFM-1901 VLAN wipe?)")
     _all_computes_ready(ops, checks)

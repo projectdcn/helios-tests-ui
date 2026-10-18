@@ -349,6 +349,11 @@ def test_switch_decommission_readmit_with_port_down(ops, afm_ready, links, check
             elif ph != "admitted":
                 ops.afm.raw("DELETE", f"{CLUSTER}/switchnodes/{name}")
                 ops.reset_switch_identity(sw)
-            ops.wait(lambda: ops.switch_ready(name), 600, 15)
+            if not ops.wait(lambda: ops.switch_ready(name), 600, 15):
+                # admitted with health 'unknown' and the agent running (g02-g17 17 Oct 22:10, finding F2): one more
+                # agent restart so the next cases are not blocked (the failure is already recorded)
+                ops.afm_agent(sw, "restart")
+                ok = ops.wait(lambda: ops.switch_ready(name), 600, 15)
+                record_property("extra_agent_restart", {"switch": name, "healthy_after": bool(ok)})
     _restored(ops, checks, sysv, base)
     checks.assert_all()
