@@ -323,6 +323,14 @@ def write_html(path: Path, rack_name: str, when: str, res: dict, groups: list[di
                         + "".join(f"<div>{esc(e)}</div>" for e in ln.evidence) + "</details></td></tr>")
     summary = "".join(f"<tr class='{g['state']}'><td>{esc(g['state'])}</td><td>{g['count']}</td><td>{esc(g['cause'])}</td>"
                       f"<td>{esc(g['owner'])}</td></tr>" for g in groups)
+    per_asic = {}
+    for ln in links:
+        if ln.state != "ok" and ln.kind not in ("tray_quarantined", "tray_unreachable", "tray_missing"):
+            k = f"{ln.switch} {ln.asic}".strip()
+            per_asic[k] = per_asic.get(k, 0) + 1
+    asic_rows = "".join(f"<tr><td>{esc(k)}</td><td>{n}</td></tr>" for k, n in sorted(per_asic.items(), key=lambda x: -x[1]))
+    cab = res["learned"].get("ifcp") or {}
+    cab_txt = (f"checked against IFCP on {cab.get('checked_links', 0)} links" if cab.get("device") else "not checked (no IFCP peer data)")
     unreach = [t["name"] for t in res["trays"].values() if t.get("error")] + \
               [s["name"] for s in res["switches"].values() if s.get("error")]
     optics = "yes" if any(res["optics_reported"].values()) else "no (this platform reports no transceiver presence or optic power)"
@@ -343,8 +351,9 @@ code,details div{{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:12
 <div class='k'><span><b>{len(links)}</b>GPU links</span><span><b style='color:var(--ok)'>{n['ok']}</b>ok</span>
 <span><b style='color:var(--deg)'>{n['degraded']}</b>degraded</span><span><b style='color:var(--down)'>{n['down']}</b>down</span></div>
 {('<p><b>Not reachable:</b> ' + esc(', '.join(unreach)) + '</p>') if unreach else ''}
-<p class='mut'>Optic data from the switches: {esc(optics)}.</p>
+<p class='mut'>Optic data from the switches: {esc(optics)}. Cabling: {esc(cab_txt)}.</p>
 <h2>Root causes</h2><div class='wrap'><table><tr><th>State</th><th>Links</th><th>Cause</th><th>Owner</th></tr>{summary or "<tr><td colspan=4>No problem links.</td></tr>"}</table></div>
+{("<h2>Problem links per switch ASIC</h2><p class='mut'>Trays out of service left out. Problems spread over many ASICs point at the trays or cabling; many on one ASIC point at that ASIC.</p><div class='wrap'><table style='min-width:320px'><tr><th>Switch ASIC</th><th>Problem links</th></tr>" + asic_rows + "</table></div>") if asic_rows else ""}
 <h2>Problem links</h2><div class='wrap'><table><tr><th>State</th><th>Switch port</th><th>GPU port</th><th>Cause</th><th>Owner</th><th>Next step</th><th>Evidence</th></tr>
 {''.join(rows) or "<tr><td colspan=7>All links ok.</td></tr>"}</table></div>
 <p class='mut'>Each link is one switch port and the GPU port cabled to it, matched by the GPU port's MAC in the switch forwarding table (or by the switch port description). Bit errors count only when they grow during the sample.</p>
