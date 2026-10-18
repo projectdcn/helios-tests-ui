@@ -74,6 +74,12 @@ class Sim:
         self.reconf_at: dict[str, float] = {}
         self.configfailed: set[str] = set()
         self.stale_macs = 0
+        # FDB mismatch cases: (sw, ns, vlan, mac) -> (None = deleted | port = foreign entry, monotonic time); AFM
+        # repairs an edit after FDB_RECONCILE_S unless fault no_fdb_reconcile
+        self.fdb_edits: dict[tuple, tuple] = {}
+        # congestion case: TransferBench last seen per compute slot, watermark clears per (sw, ns)
+        self.tb_at: dict[int, float] = {}
+        self.wm_cleared: dict[tuple, float] = {}
         # links: (sw, ns, port) -> {"since", "known", "coupled"}; a link fails after the vPOD policy's threshold
         self.links_down: dict[tuple[int, str, str], dict] = {}
         self.time_scale = 1.0                  # fake seconds per policy second (selftest shrinks timers)
@@ -632,6 +638,30 @@ class FakeSwitchTransport:
     def _res(self, cmd, out="", rc=0):
         return CmdResult(self.host.name, cmd, rc, out, "")
 
+    FDB_RECONCILE_S = 2.0
+
+    def _fdb_apply(self, ns, lines):
+        """Static FDB lines with this switch's edits: deleted entries left out, foreign ones added; AFM repairs an
+        edit after FDB_RECONCILE_S (fault no_fdb_reconcile: never)."""
+        sim, now = self.st.sim, time.monotonic()
+        for key, (port, t) in list(sim.fdb_edits.items()):
+            if key[0] == self.i and now - t >= self.FDB_RECONCILE_S * sim.time_scale and "no_fdb_reconcile" not in self.st.f:
+                sim.fdb_edits.pop(key)
+        out = []
+        for ln in lines:
+            _, vlan, mac, _p = ln.split("|")
+            if sim.fdb_edits.get((self.i, ns, vlan, mac), (0,))[0] is None:
+                continue
+            out.append(ln)
+        for (i, ns_, vlan, mac), (port, _t) in sim.fdb_edits.items():
+            if i == self.i and ns_ == ns and port:
+                out.append(f"FDB|{vlan}|{mac}|{port}")
+        return out
+
+    def _fdb_lines(self, ns):
+        r = self.run(f"for k in $(sonic-db-cli -n {ns} CONFIG_DB keys 'FDB|*'); do :; done")
+        return [ln for ln in r.stdout.splitlines() if ln.startswith("FDB|")]
+
     def run(self, cmd: str, *, timeout: float = 120, sudo: bool = False, env=None) -> CmdResult:
         st, sim, i = self.st, self.st.sim, self.i
         res = None
@@ -777,7 +807,42 @@ class FakeSwitchTransport:
                         lines.append(f"FDB|Vlan100|02:00:00:{acc:02x}:{pid:02x}:01|{p}")
                 if "stale_fdb" in st.f and lines:
                     lines.append(f"FDB|Vlan2|02:00:00:ff:00:01|{lines[0].rsplit('|', 1)[1]}")
+                lines = self._fdb_apply(ns, lines)
                 res = self._res(cmd, "\n".join(lines) + "\n")
+            elif m := re.fullmatch(r"sonic-db-cli -n (asic\d+) CONFIG_DB hgetall 'FDB\|(Vlan\d+)\|([0-9a-f:]+)'", cmd):
+                ns, vlan, mac = m.groups()
+                port = next((ln.rsplit("|", 1)[1] for ln in self._fdb_lines(ns) if ln.split("|")[1:3] == [vlan, mac]), None)
+                res = self._res(cmd, repr({"port": port, "type": "static"}) + "\n" if port else "{}\n")
+            elif m := re.fullmatch(r"sonic-db-cli -n (asic\d+) CONFIG_DB del 'FDB\|(Vlan\d+)\|([0-9a-f:]+)'", cmd):
+                ns, vlan, mac = m.groups()
+                had = any(ln.split("|")[1:3] == [vlan, mac] for ln in self._fdb_lines(ns))
+                key = (i, ns, vlan, mac)
+                if sim.fdb_edits.get(key, (0,))[0] not in (None, 0):      # removing our own foreign entry
+                    sim.fdb_edits.pop(key)
+                elif had:
+                    sim.fdb_edits[key] = (None, time.monotonic())
+                res = self._res(cmd, "1\n" if had else "0\n")
+            elif m := re.fullmatch(r"sonic-db-cli -n (asic\d+) CONFIG_DB hset 'FDB\|(Vlan\d+)\|([0-9a-f:]+)' port (Ethernet\d+) type static", cmd):
+                ns, vlan, mac, port = m.groups()
+                key = (i, ns, vlan, mac)
+                if sim.fdb_edits.get(key, (0,))[0] is None:                  # putting back a deleted entry
+                    sim.fdb_edits.pop(key)
+                else:
+                    sim.fdb_edits[key] = (port, time.monotonic())
+                res = self._res(cmd, "1\n")
+            elif m := re.fullmatch(r"show queue watermark unicast -n (asic\d+)", cmd):
+                ns = m.group(1)
+                clr = sim.wm_cleared.get((i, ns), 0.0)
+                rows = []
+                for p, (slot, *_r) in sorted(sim.ports(i, ns).items(), key=lambda x: int(x[0][8:])):
+                    hot = sim.tb_at.get(slot, -1) > clr and "no_congestion_watermark" not in st.f
+                    rows.append(f"{p:>11}  {6000000 if hot else 2000:>7}  {1000:>6}      0      0      0      0      0    420")
+                res = self._res(cmd, f"Egress shared pool occupancy per unicast queue: (Namespace {ns})\n"
+                                     "       Port      UC0     UC1    UC2    UC3    UC4    UC5    UC6    UC7\n"
+                                     "-----------  -------  ------  -----  -----  -----  -----  -----  -----\n" + "\n".join(rows) + "\n")
+            elif m := re.fullmatch(r"sonic-clear queue watermark unicast -n (asic\d+)", cmd):
+                sim.wm_cleared[(i, m.group(1))] = time.monotonic()
+                res = self._res(cmd, "Cleared\n")
             elif m := re.fullmatch(r"docker exec afm-agent curl -s -m 5 localhost:(\d+)/api/runtime/requests", cmd):
                 slot = int(m.group(1)) - 13000
                 ok = sim.agent_up[i] and sim.slot_host(slot) == i and "no_agent_requests" not in st.f
@@ -912,6 +977,8 @@ class FakeComputeTransport:
         out, rc = None, 0
         with st.lock:
             st.sim.refresh(st.objs)
+            if "TransferBench" in c:
+                sim.tb_at[self.slot] = time.monotonic()      # the congestion case's watermarks rise on these ports
             if c == "afmctl show device --json":
                 local = [str(self._acc(g)) for g in range(4)]
                 out = json.dumps({"device": [{"bdf": self.bdf(g), "spec": {

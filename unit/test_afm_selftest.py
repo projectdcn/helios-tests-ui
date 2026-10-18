@@ -203,6 +203,9 @@ SIDEBAND_FAULTS = [
     # added switch-vs-AFM cases (tests/afm/test_afm_switch_fabric.py)
     ("desc_acc_off_by_one", {"TC-SWH-048"}),
     ("stale_fdb", {"TC-SWH-050"}),
+    # switch failure injection (tests/afm/test_afm_switch_faults.py)
+    ("no_fdb_reconcile", {"TC-SWH-061", "TC-SWH-062"}),
+    ("no_congestion_watermark", {"TC-SWH-060"}),
 ]
 # MCH (tests/afm/test_afm_mch.py) on the heliosmch fake (inventory-mch.yaml) unless another inventory is named;
 # MCH-045/047 (traffic over replayed tools) have no controller fault

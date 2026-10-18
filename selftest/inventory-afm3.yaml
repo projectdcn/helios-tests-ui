@@ -67,6 +67,7 @@ thresholds:
     event_window_min: 0
   afm:
     quorum_members: 3
+    fdb_reconcile_s: 15      # the fake AFM repairs an FDB edit after 2 s (fault no_fdb_reconcile: never)
     max_not_ready_ports_per_compute: 0
     poll_s: 0.2
     time_scale: 0.05
@@ -90,3 +91,11 @@ thresholds:
     vpod_timeout_s: 5
     membership_timeout_s: 5
     aggwatch: {event_wait_s: 5, settle_s: 0.5, quiet_s: 2, idle_s: 3, cycles: 5, burst: 10, concurrent: 3, no_options_s: 5}
+  # TC-SWH-060 on the fake: watermarks are live (no telemetry interval), the load is one round
+  datapath:
+    congestion_traffic_s: 0
+
+  switch:
+    watermark_interval_s: 0
+    watermark_margin_s: 0.5
+    queue_window_s: 1

@@ -380,6 +380,25 @@ class SonicSwitch:
                 out.append((parts[1], parts[2].lower(), parts[3]))
         return out
 
+    # -- one static FDB entry (CONFIG_DB FDB|<vlan>|<mac>, where AFM programs them) - FDB mismatch cases
+    def fdb_entry(self, vlan: str, mac: str, ns: str | None) -> dict[str, str]:
+        """{'port': ..., 'type': ...} of CONFIG_DB FDB|<vlan>|<mac>, {} when absent."""
+        return self.db_hash("CONFIG_DB", f"FDB|{vlan}|{mac.lower()}", ns)
+
+    def fdb_delete(self, vlan: str, mac: str, ns: str | None) -> CmdResult:
+        return self.run(f"sonic-db-cli{_ns_flag(ns)} CONFIG_DB del 'FDB|{vlan}|{mac.lower()}'", sudo=True, timeout=60)
+
+    def fdb_set(self, vlan: str, mac: str, port: str, ns: str | None, kind: str = "static") -> CmdResult:
+        if not re.fullmatch(r"Ethernet\d+", port):
+            raise ValueError(f"refusing a static FDB entry on {port!r}: fabric ports (EthernetN) only")
+        return self.run(f"sonic-db-cli{_ns_flag(ns)} CONFIG_DB hset 'FDB|{vlan}|{mac.lower()}' port {port} type {kind}",
+                        sudo=True, timeout=60)
+
+    def clear_queue_watermarks(self, ns: str | None) -> CmdResult:
+        """Reset the user (periodic) unicast-queue watermarks - counters only, no traffic effect. They are then the
+        peak since this clear, refreshed every 'show watermark telemetry interval' (120 s on g02-g17)."""
+        return self.run(f"sonic-clear queue watermark unicast{_ns_flag(ns)}", sudo=True, timeout=120)
+
     def vlan_hash(self, vlan: str, ns: str | None) -> dict[str, str]:
         return self.db_hash("CONFIG_DB", f"VLAN|{vlan}", ns)
 

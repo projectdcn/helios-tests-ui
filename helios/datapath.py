@@ -9,6 +9,7 @@ from __future__ import annotations
 import ipaddress
 import re
 import socket
+import time
 import uuid
 from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor, wait
 
@@ -273,6 +274,40 @@ def _tb_multirank(pairs, inventory, checks, regexes, kw, timeout, min_bw) -> dic
         _, r0, exc0 = res[0]
         out[tag] = _tb_check(tag, r0, exc0, regexes, min_bw, checks)
     return out
+
+
+def transferbench_incast(dst, srcs, inventory, checks: Checks, duration_s: float, size: str | None = None) -> dict:
+    """Many-to-one load for congestion cases: every source runs a 2-rank TransferBench job with ``dst`` at the same
+    time (rank 0 on the source, rank 1 on ``dst``), round after round until ``duration_s`` has passed, so the switch
+    ports towards ``dst`` carry the sum. Needs commands.transferbench.rank_cmd. Returns {"rounds": n, "bw_gbps":
+    [{pair: GB/s}, ...], "seconds": s}; a failed job is recorded in ``checks`` and ends the load."""
+    tmpl = inventory.cmd("transferbench.rank_cmd")
+    if not tmpl:
+        pytest.skip("commands.transferbench.rank_cmd not set (multi-rank TransferBench needed for an incast)")
+    regexes, kw, timeout = _tb_common(inventory, size)
+    t0 = time.monotonic()
+    rounds: list[dict] = []
+
+    def one(src):
+        jobs = [(node, render(tmpl, rank=r, num_ranks=2, master_addr=addr(src), name=node.name, gpus=node.gpus, **kw))
+                for r, node in enumerate((src, dst))]
+        return run_ranks(jobs, timeout, sudo=use_sudo(inventory))
+    while True:
+        bw = {}
+        for src, res, exc in fan_out(one, srcs, len(srcs)):
+            tag = f"{src.name}->{dst.name}"
+            if exc:
+                checks.fail(f"{tag}: TransferBench job failed: {exc}")
+                bw[tag] = None
+                continue
+            for node, r, e in res[1:]:
+                checks.check(not e and r.ok, f"{tag}: rank on {node.name} failed: {e or f'rc={r.rc} {r.tail()!r}'}")
+            _, r0, e0 = res[0]
+            bw[tag] = _tb_check(tag, r0, e0, regexes, None, checks)
+        rounds.append(bw)
+        if any(v is None for v in bw.values()) or time.monotonic() - t0 >= duration_s:
+            break
+    return {"rounds": len(rounds), "bw_gbps": rounds, "seconds": round(time.monotonic() - t0, 1)}
 
 
 def require_transferbench_cross(inventory) -> None:
