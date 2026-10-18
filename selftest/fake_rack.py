@@ -786,6 +786,10 @@ class FakeSwitchTransport:
             elif m := re.fullmatch(r"config vlan (add|del) -n (asic\d+) (\d+)", cmd):
                 (sim.user_vlans.setdefault(i, set()).add if m.group(1) == "add" else sim.user_vlans.setdefault(i, set()).discard)(int(m.group(3)))
                 res = self._res(cmd)
+            elif m := re.fullmatch(r"sonic-db-cli -n asic\d+ CONFIG_DB (hset|del) 'VLAN\|Vlan(\d+)'( vlanid \d+)?", cmd):
+                # TC-SWA-037's default user-VLAN commands (CONFIG_DB write, as on the g02-g17 switches)
+                (sim.user_vlans.setdefault(i, set()).add if m.group(1) == "hset" else sim.user_vlans.setdefault(i, set()).discard)(int(m.group(2)))
+                res = self._res(cmd, "1\n")
             elif m := re.fullmatch(r"docker exec afm-agent curl -s -m 5 localhost:(\d+)/api/health", cmd):
                 slot = int(m.group(1)) - 13000
                 c = sim.computes.get(sim.cname(slot))

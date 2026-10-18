@@ -1,8 +1,9 @@
 """Switch agent behaviour driven through AFM (DISRUPTIVE): VLAN ownership on decommission, data-fabric update on
 vPOD CRUD, switch state reporting, automatic data-fabric reconfigure on the policy timer.
 
-The user VLAN for TC-SWA-037 is created with commands.switch.user_vlan_add / _del
-(default ``config vlan add|del -n {ns} {vlan}``, VLAN thresholds.afm.user_vlan, 3999).
+The user VLAN for TC-SWA-037 is created with commands.switch.user_vlan_add / _del (placeholders {ns}, {nsflag} =
+' -n asicN' or '', {vlan}; default: write / delete VLAN|Vlan<id> in the ASIC's CONFIG_DB with sonic-db-cli - this
+SONiC's ``config vlan add`` has no -n option, g02-g17 17 Oct), VLAN thresholds.afm.user_vlan, 3999.
 """
 from __future__ import annotations
 
@@ -29,14 +30,16 @@ def test_decommission_keeps_user_vlans(ops, afm_ready, inventory, checks, record
     t = ops.pick_switch(controller=False)
     name, sw = t["meta"]["name"], ops.ssh_switch(t)
     vid = int(ops.th("user_vlan", 3999))
-    add = inventory.cmd("switch.user_vlan_add", "config vlan add -n {ns} {vlan}")
-    delete = inventory.cmd("switch.user_vlan_del", "config vlan del -n {ns} {vlan}")
+    add = inventory.cmd("switch.user_vlan_add", "sonic-db-cli{nsflag} CONFIG_DB hset 'VLAN|Vlan{vlan}' vlanid {vlan}")
+    delete = inventory.cmd("switch.user_vlan_del", "sonic-db-cli{nsflag} CONFIG_DB del 'VLAN|Vlan{vlan}'")
     ns = sw.namespaces()[0] or ""
+    fmt = {"ns": ns, "nsflag": f" -n {ns}" if ns else "", "vlan": vid}
+    non_afm = {f"Vlan{int(v)}" for v in (ops.th("non_afm_vlans", []) or [])}   # e.g. the stale ARC Vlan2
     before = _vlans(sw)
     try:
-        r = sw.run(add.format(ns=ns, vlan=vid), sudo=True, timeout=60)
+        r = sw.run(add.format(**fmt), sudo=True, timeout=60)
         checks.check(r.ok, f"creating user VLAN {vid} failed: {r.tail()!r}")
-        afm_vlans = before - {f"Vlan{vid}"}
+        afm_vlans = before - {f"Vlan{vid}"} - non_afm
         ops.afm.post(f"{SN}/{name}/DrainSwitchNode", {})
         ops.wait_switch_phase(name, "drained", 900)
         ops.afm.post(f"{SN}/{name}/DecommissionSwitchNode", {})
@@ -50,7 +53,7 @@ def test_decommission_keeps_user_vlans(ops, afm_ready, inventory, checks, record
         ops.reset_switch_identity(sw)
         checks.check(ops.wait(lambda: ops.switch_ready(name), float(ops.th("switch_readmit_s", 600)), 15), f"{name} not readmitted")
     finally:
-        sw.run(delete.format(ns=ns, vlan=vid), sudo=True, timeout=60)
+        sw.run(delete.format(**fmt), sudo=True, timeout=60)
         if not ops.switch_ready(name):
             ph = ops.switch_phase(name)
             if ph == "drained":
