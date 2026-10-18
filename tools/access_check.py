@@ -4,7 +4,8 @@ switch and every compute tray - read-only, a few seconds per node, nothing is ch
     python tools/access_check.py --inventory inventory/mr3.local.yaml [--results-dir results/runs/mr3]
 
 Checks (each OK / FAIL / WARN / SKIP with what to do about a problem):
-  this machine   the SSH key files the inventory names exist; the AFM password is given (else AFM cases skip)
+  this machine   which SSH key each node gets ($HELIOS_SSH_KEY, else the inventory's key_file, else this machine's
+                 own ~/.ssh setup) and that it exists; the AFM password is given (else AFM cases skip)
   AFM            the controller answers; the login works with the given password
   every node     SSH login with the inventory's user and key (no password prompt); passwordless sudo (sudo -n)
   switches       SONiC containers readable (sudo docker ps)
@@ -46,19 +47,32 @@ def _unknown(r) -> bool:
 
 
 def runner_checks(inv) -> list[dict]:
-    from helios.transport import key_path
-    out, seen = [], set()
-    for h in [*inv.switches, *inv.computes]:
-        if not h.key_file or h.key_file in seen or inv.transport.get("kind") == "replay":
-            continue
-        seen.add(h.key_file)
-        try:
-            out.append(item("this machine", socket.gethostname().split(".")[0], f"SSH key {h.key_file}", OK,
-                            key_path(h.key_file, h.name)))
-        except FileNotFoundError as e:
-            out.append(item("this machine", socket.gethostname().split(".")[0], f"SSH key {h.key_file}", FAIL, str(e),
-                            "copy the private key here (chmod 600), or create a key here, ssh-copy-id it to the nodes "
-                            "and set key_file"))
+    from helios.transport import KEY_ENV, resolve_keys
+    here = socket.gethostname().split(".")[0]
+    out, groups = [], {}
+    if inv.transport.get("kind") != "replay":
+        for h in [*inv.switches, *inv.computes]:        # which key each node gets, grouped
+            try:
+                files, src = resolve_keys(h.key_file, h.name, h.host)
+                k = (OK, src, ", ".join(files) if files else "")
+            except FileNotFoundError as e:
+                k = (FAIL, "missing", str(e).replace(f"of {h.name})", "of ...)"))
+            groups.setdefault(k, []).append(h.name)
+    for (status, src, what), nodes in groups.items():
+        names = ", ".join(nodes) if len(nodes) <= 6 else f"{len(nodes)} nodes"
+        if status == FAIL:
+            out.append(item("this machine", here, f"SSH key for {names}", FAIL, what,
+                            f"copy the key here (chmod 600), or set {KEY_ENV}=<a key this machine has> (UI server: "
+                            f"config/ui.env + restart), or remove key_file so this machine's own ~/.ssh setup is used"))
+        elif what:
+            out.append(item("this machine", here, f"SSH key for {names}", OK, f"{what} ({src})"))
+        else:
+            found = [k for k in ("id_ed25519", "id_ecdsa", "id_rsa") if (Path.home() / ".ssh" / k).is_file()]
+            agent = bool(os.environ.get("SSH_AUTH_SOCK"))
+            have = ", ".join([f"~/.ssh/{k}" for k in found] + (["ssh-agent"] if agent else []))
+            out.append(item("this machine", here, f"SSH key for {names}", OK if have else FAIL,
+                            f"this machine's own SSH setup: {have}" if have else "no key in ~/.ssh and no ssh-agent",
+                            "" if have else "create a key (ssh-keygen -t ed25519), ssh-copy-id it to the nodes"))
     auth = (inv.afm or {}).get("auth") or {}
     if inv.afm.get("url"):
         var = auth.get("password_env", "HELIOS_AFM_PASSWORD")
@@ -109,10 +123,17 @@ def node_checks(node, role: str, inv) -> list[dict]:
         r = node.run("true", timeout=30)
     except Exception as e:  # noqa: BLE001
         if isinstance(e, FileNotFoundError):
-            return [item(area, h.name, f"SSH login as {h.user}", FAIL, f"no SSH key {h.key_file} on this machine",
+            return [item(area, h.name, f"SSH login as {h.user}", FAIL, "the SSH key it needs is not on this machine",
                          "see the 'SSH key' check of this machine")]
+        if type(e).__name__ in ("AuthenticationException", "BadAuthenticationType"):
+            from helios.transport import KEY_ENV, resolve_keys
+            files, src = resolve_keys(h.key_file, h.name, h.host)
+            tried = f"{', '.join(files)} ({src})" if files else "this machine's default keys / ssh-agent"
+            return [item(area, h.name, f"SSH login as {h.user}", FAIL, f"key rejected by {h.user}@{h.host} (tried {tried})",
+                         f"add this machine's public key to {h.user}@{h.host} (ssh-copy-id), or set {KEY_ENV} to a key "
+                         "the node already accepts")]
         return [item(area, h.name, f"SSH login as {h.user}", FAIL, f"{type(e).__name__}: {str(e)[:200]}",
-                     f"check that this machine reaches {h.host} and that {h.user} accepts the key (ssh-copy-id)")]
+                     f"check that this machine reaches {h.host} (network / firewall)")]
     if _unknown(r):
         out.append(item(area, h.name, f"SSH login as {h.user}", SKIP, "replayed rack: not judged"))
     elif not r.ok:

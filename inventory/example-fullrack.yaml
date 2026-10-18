@@ -7,13 +7,15 @@ transport:
   kind: ssh            # ssh | replay
   connect_timeout: 15
 
+# SSH keys: leave key_file out - each machine that runs the tests then uses its own SSH setup (its ~/.ssh/config
+# IdentityFile for the host, ssh-agent, ~/.ssh/id_ed25519 / id_rsa), or $HELIOS_SSH_KEY if set (the UI server:
+# config/ui.env). Name a key_file only when every machine using this inventory has that file.
 defaults:
   switch:
     user: admin
-    password_env: HELIOS_SWITCH_PASSWORD   # or key_file: ~/.ssh/helios
+    # password_env: HELIOS_SWITCH_PASSWORD   # command-line runs only: UI runs pass no *PASSWORD* variables
   compute:
     user: root
-    key_file: ~/.ssh/id_ed25519
     gpus: 4
 
 switches:

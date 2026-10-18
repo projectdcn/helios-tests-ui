@@ -80,8 +80,11 @@ cp inventory/example-fullrack.yaml inventory/rack1.local.yaml
 
 **Step 2: edit `inventory/rack1.local.yaml`.**
 - Under `switches:` and `computes:`, set each `host:` to the real hostname or IP.
-- Under `defaults:`, set the SSH user, and either `key_file` (recommended: install your
-  key with `ssh-copy-id`, then no passwords are needed) or `password_env` for each node type.
+- Under `defaults:`, set the SSH user for each node type. Install the key of the machine that runs the tests with
+  `ssh-copy-id` (no passwords needed). Leave `key_file` out so the inventory works on any machine: each one uses
+  its own SSH setup (`~/.ssh/config` IdentityFile, ssh-agent, `~/.ssh/id_ed25519`), or `$HELIOS_SSH_KEY` when set.
+  Name a `key_file` only if every machine using the inventory has that file. (`password_env` works for command-line
+  runs; UI runs pass no `*PASSWORD*` variables.)
 - The SSH users need **passwordless sudo** on switches and computes (`afmctl`, `dmesg`,
   `docker` and resets run under `sudo -n`).
 - Fill in the `VERIFY` items (see [Calibrate on the first rack run](#calibrate-on-the-first-rack-run)).

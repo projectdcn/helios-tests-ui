@@ -53,16 +53,18 @@ def test_gpu_not_active_fails_with_what_to_do(no_afm, tmp_path):
     assert _items(work / "inventory.yaml")[("c1", "GPUs ACTIVE (afmctl)")]["status"] == "ok"
 
 
-def test_missing_key_is_one_clear_fail_per_node(no_afm, tmp_path):
+def test_missing_key_is_one_clear_fail_per_node(no_afm, tmp_path, monkeypatch):
+    monkeypatch.delenv("HELIOS_SSH_KEY", raising=False)
     inv = tmp_path / "inv.yaml"
     inv.write_text("rack: r1\ntransport: {kind: ssh, connect_timeout: 2}\n"
                    "defaults: {common: {key_file: ~/.ssh/id_helios_test_not_here}, switch: {user: admin}}\n"
                    "switches: [{name: s1, host: 192.0.2.1}]\ncomputes: []\n")
     items = ac.check(load_inventory(inv))
     key = next(i for i in items if i["check"].startswith("SSH key"))
-    assert key["status"] == "fail" and "does not exist on" in key["detail"] and "ssh-copy-id" in key["fix"]
+    assert key["status"] == "fail" and "does not exist on" in key["detail"] and "HELIOS_SSH_KEY" in key["fix"]
+    assert key["check"] == "SSH key for s1"
     login = next(i for i in items if i["node"] == "s1")
-    assert login["status"] == "fail" and login["detail"] == "no SSH key ~/.ssh/id_helios_test_not_here on this machine"
+    assert login["status"] == "fail" and login["detail"] == "the SSH key it needs is not on this machine"
 
 
 def test_access_run_kind_and_latest_result(tmp_path):

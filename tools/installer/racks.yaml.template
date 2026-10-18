@@ -10,7 +10,8 @@
 #   @PREFIX@/data/testplan/full_rack_testplan.xlsx         test-plan workbook (for "Pick from the test plan")
 # SSH keys of the user the UI runs as (~/.ssh; the UI service has no ssh-agent, so a key it can use without a prompt):
 #   g02-g17: a key the jump host accepts:  ssh -p 8059 tenant-hpe@165.204.38.103 true   must work with no prompt
-#   mr3:     the keys / key_file the MR3 inventory names for its switches and computes (direct SSH from this server)
+#   mr3:     a key its switch and computes accept (direct SSH from this server): HELIOS_SSH_KEY in config/ui.env,
+#            else the inventory's key_file, else this server's own ~/.ssh setup
 racks:
   mr3:
     title: MR3 mini rack (direct)

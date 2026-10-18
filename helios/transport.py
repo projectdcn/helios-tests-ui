@@ -19,24 +19,65 @@ log = logging.getLogger("helios.cmd")
 
 
 
-def key_path(key_file: str | None, who: str) -> str | None:
-    """The inventory's key_file with ~ expanded (paramiko does not), or a clear FileNotFoundError when this machine
-    does not have it. 17 Oct: the MR3 inventory copied from a laptop to the UI server still named the laptop's key;
-    every node then showed as 'unreachable/unresponsive (FileNotFoundError: ...)'."""
-    if not key_file:
-        return None
-    path = os.path.expanduser(key_file)
-    if not os.path.isfile(path):
-        import getpass
-        import socket
-        try:
-            user = getpass.getuser()
-        except Exception:  # noqa: BLE001
-            user = "?"
-        raise FileNotFoundError(
-            f"SSH key {path} (inventory key_file of {who}) does not exist on {socket.gethostname().split('.')[0]} "
-            f"(user {user}): copy that key there (chmod 600) or set key_file to a key this machine has")
-    return path
+KEY_ENV = "HELIOS_SSH_KEY"      # this machine's SSH key for every node, whatever the inventory says
+
+
+def _where() -> str:
+    import getpass
+    import socket
+    try:
+        user = getpass.getuser()
+    except Exception:  # noqa: BLE001
+        user = "?"
+    return f"{socket.gethostname().split('.')[0]} (user {user})"
+
+
+def ssh_config_identities(host: str) -> list[str]:
+    """IdentityFile entries of ~/.ssh/config for ``host`` that exist on this machine (what plain ssh would use)."""
+    f = Path.home() / ".ssh" / "config"
+    if not f.is_file():
+        return []
+    try:
+        import paramiko
+        ids = paramiko.SSHConfig.from_path(str(f)).lookup(host).get("identityfile") or []
+    except Exception:  # noqa: BLE001 - a config paramiko cannot read: fall back to the defaults
+        return []
+    return [p for p in (os.path.expanduser(i) for i in ids) if os.path.isfile(p)]
+
+
+def resolve_keys(key_file: str | None, who: str, host: str | None = None) -> tuple[list[str] | None, str]:
+    """(key files to offer, where they come from) for one node, in this order:
+      1. $HELIOS_SSH_KEY - this machine's key (e.g. the UI server's, in config/ui.env), for every node
+      2. the inventory's key_file, if it names one
+      3. this machine's own SSH setup: ~/.ssh/config IdentityFile for the host, else None = ssh-agent and the
+         default ~/.ssh/id_* keys (paramiko's look_for_keys) - what plain 'ssh user@host' uses
+    A key named in 1 or 2 that does not exist is a clear FileNotFoundError. 17 Oct: the laptop's MR3 inventory named
+    the laptop's own key file; on the UI server every node failed - an inventory should not need to name one."""
+    env = (os.environ.get(KEY_ENV) or "").strip()
+    if env:
+        path = os.path.expanduser(env)
+        if not os.path.isfile(path):
+            raise FileNotFoundError(f"SSH key {path} (${KEY_ENV}) does not exist on {_where()}: fix {KEY_ENV} "
+                                    "(e.g. in the UI's config/ui.env) or unset it")
+        return [path], os.environ.get("HELIOS_SSH_KEY_FROM") or f"${KEY_ENV}"   # e.g. "chosen in the UI"
+    if key_file:
+        path = os.path.expanduser(key_file)
+        if not os.path.isfile(path):
+            raise FileNotFoundError(
+                f"SSH key {path} (inventory key_file of {who}) does not exist on {_where()}: copy that key there "
+                f"(chmod 600), set {KEY_ENV} to a key this machine has, or remove key_file to use this machine's "
+                "own SSH setup")
+        return [path], "inventory key_file"
+    ids = ssh_config_identities(host) if host else []
+    if ids:
+        return ids, "~/.ssh/config"
+    return None, "default SSH keys / ssh-agent"
+
+
+def key_path(key_file: str | None, who: str, host: str | None = None) -> str | list[str] | None:
+    """The key file(s) to hand to paramiko for one node (see resolve_keys); None = agent + default keys."""
+    files, _ = resolve_keys(key_file, who, host)
+    return files[0] if files and len(files) == 1 else files
 
 @dataclass
 class CmdResult:
@@ -148,7 +189,7 @@ class SshTransport:
         # Lab racks get reimaged constantly; host-key pinning would just break runs.
         client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
         use_keys = h.password is None or bool(h.key_file)
-        key_file = key_path(h.key_file, h.name)
+        key_file = key_path(h.key_file, h.name, h.host)
         sock = None
         if self.jump:
             sock = _jump_client(self.jump, self.connect_timeout).get_transport().open_channel(
@@ -352,7 +393,8 @@ def _jump_client(jump: dict, timeout: float, tag: str = ""):
         c = paramiko.SSHClient()
         c.load_system_host_keys()
         c.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-        c.connect(key[0], port=key[1], username=key[2], key_filename=key_path(jump.get("key_file"), "transport.jump"),
+        kf = key_path(jump.get("key_file"), "transport.jump", key[0])
+        c.connect(key[0], port=key[1], username=key[2], key_filename=kf,
                   timeout=timeout, banner_timeout=timeout, auth_timeout=timeout, look_for_keys=True, allow_agent=True)
         c.get_transport().set_keepalive(30)
         log.debug("jump host %s@%s:%s connected", key[2], key[0], key[1])

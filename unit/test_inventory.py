@@ -40,14 +40,28 @@ def test_example_inventory_loads():
     assert len(inv.switches) == 6 and len(inv.computes) == 18
 
 
-def test_missing_ssh_key_is_a_clear_error(tmp_path):
-    """17 Oct: the MR3 inventory copied to the UI server named the laptop's key; every node showed only as
-    'unreachable/unresponsive (FileNotFoundError ...)'. The error names the key, the node and this machine."""
+def test_ssh_key_lookup_order(tmp_path, monkeypatch):
+    """17 Oct: an inventory naming one laptop's key file failed on the UI server. Order now: $HELIOS_SSH_KEY (this
+    machine's key), the inventory's key_file, this machine's ~/.ssh/config IdentityFile, then agent + default keys."""
     import pytest
-    from helios.transport import key_path
-    assert key_path(None, "c1") is None
-    k = tmp_path / "id_test"
-    k.write_text("x")
-    assert key_path(str(k), "c1") == str(k)
-    with pytest.raises(FileNotFoundError, match=r"SSH key .*id_missing \(inventory key_file of c1\) does not exist on "):
-        key_path(str(tmp_path / "id_missing"), "c1")
+    from helios.transport import key_path, resolve_keys
+    home = tmp_path / "home"
+    (home / ".ssh").mkdir(parents=True)
+    monkeypatch.setenv("HOME", str(home))
+    monkeypatch.delenv("HELIOS_SSH_KEY", raising=False)
+    inv_key, cfg_key, env_key = (home / ".ssh" / n for n in ("id_inv", "id_cfg", "id_env"))
+    for k in (inv_key, cfg_key, env_key):
+        k.write_text("x")
+    assert resolve_keys(None, "c1", "10.0.0.1") == (None, "default SSH keys / ssh-agent")
+    (home / ".ssh" / "config").write_text("Host 10.0.0.*\n  IdentityFile ~/.ssh/id_cfg\n")
+    assert resolve_keys(None, "c1", "10.0.0.1") == ([str(cfg_key)], "~/.ssh/config")
+    assert resolve_keys(None, "c1", "192.0.2.9") == (None, "default SSH keys / ssh-agent")
+    assert resolve_keys("~/.ssh/id_inv", "c1", "10.0.0.1") == ([str(inv_key)], "inventory key_file")
+    with pytest.raises(FileNotFoundError, match=r"id_missing \(inventory key_file of c1\) does not exist on .*HELIOS_SSH_KEY"):
+        resolve_keys("~/.ssh/id_missing", "c1", "10.0.0.1")
+    monkeypatch.setenv("HELIOS_SSH_KEY", "~/.ssh/id_env")           # wins, even over a key_file that is missing here
+    assert resolve_keys("~/.ssh/id_missing", "c1", "10.0.0.1") == ([str(env_key)], "$HELIOS_SSH_KEY")
+    assert key_path("~/.ssh/id_missing", "c1", "10.0.0.1") == str(env_key)
+    monkeypatch.setenv("HELIOS_SSH_KEY", "~/.ssh/nope")
+    with pytest.raises(FileNotFoundError, match=r"\$HELIOS_SSH_KEY\) does not exist"):
+        resolve_keys(None, "c1", "10.0.0.1")

@@ -33,8 +33,11 @@ Copy these yourself (the installer copies no secrets and creates no keys)
     ~/helios-ui/data/inventories/fullrack-jump-afm.local.yaml   (copy of the jump host's ~/helios/fullrack-jump-afm.yaml)
     ~/helios-ui/data/testplan/full_rack_testplan.xlsx
     SSH keys in ~/.ssh: one the jump host accepts (ssh -p 8059 tenant-hpe@165.204.38.103 true must work without a
-    prompt) for g02-g17, and the keys the MR3 inventory uses. The service has no ssh-agent: use a key it can read
-    without a passphrase prompt (or ~/.ssh/config IdentityFile).
+    prompt) for g02-g17, and one the MR3 switch and computes accept. The service has no ssh-agent: use a key it can
+    read without a passphrase prompt. Which key is used, per node: HELIOS_SSH_KEY=/root/.ssh/<key> in
+    ~/helios-ui/config/ui.env (this server's key for every node - an inventory copied from a laptop that names the
+    laptop's key_file then still works; restart after setting it), else the inventory's key_file, else this
+    server's ~/.ssh/config IdentityFile / ~/.ssh/id_ed25519 / id_rsa.
 Then reload the page; a rack whose inventory is missing shows it as MISSING.
 Then click "Check access" on the Run tab: a read-only checklist of what the tests need (SSH key and key login,
 passwordless sudo on every switch and compute, GPUs ACTIVE and openable, traffic tools, AFM reachable and the login)
