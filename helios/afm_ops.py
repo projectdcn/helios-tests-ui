@@ -303,8 +303,12 @@ class AfmOps:
         want = self.th("target_compute", None)
         if want:
             return want
-        nodes = sorted((c for c in self.afm.computes() if self.compute_ready(c["meta"]["name"])),
-                       key=lambda c: (c.get("spec") or {}).get("slot-id", 0))
+        def ready():
+            return sorted((c for c in self.afm.computes() if self.compute_ready(c["meta"]["name"])),
+                          key=lambda c: (c.get("spec") or {}).get("slot-id", 0))
+        # a previous test's Reconfigure can leave no compute Ready for a while (g02-g17 18 Oct 04:00: TC-AFM-051
+        # right after TC-AFM-RC-028 failed 'no ready compute'): wait for one
+        nodes = ready() or self.wait(ready, float(self.th("pick_ready_wait_s", 300)), 10, "a Ready compute")
         if not nodes:
             raise AfmError("GET", CN, 0, "no ready compute")
         return nodes[-1 if prefer_last else 0]["meta"]["name"]
