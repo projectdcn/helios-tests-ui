@@ -101,3 +101,5 @@ fieldset { min-width: 0; }
 #key-pub { font-size: 12px; }
 #tab-setup h3 { margin: 4px 0 8px; font-size: 15px; }
 #inst-pw label { margin-right: 10px; }
+#inst-targets td { overflow-wrap: anywhere; vertical-align: top; }
+.inst-cmd { display: block; margin-top: 3px; font-size: 11.5px; user-select: all; }

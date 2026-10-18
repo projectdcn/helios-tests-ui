@@ -260,7 +260,14 @@ $("#inst-form").addEventListener("submit", async ev => {
     const d = await api("POST", `/api/racks/${enc(rack.name)}/sshkey/install`, { key, passwords });
     for (const res of d.results) {
       const td = $(`#inst-targets tr[data-node="${CSS.escape(res.name)}"] .inst-res`);
-      if (td) { td.textContent = `${res.status === "failed" ? "✗" : "✓"} ${res.detail}`; td.className = "inst-res " + (res.status === "failed" ? "err" : "ok"); }
+      if (td) {
+        td.className = "inst-res " + (res.status === "failed" ? "err" : "ok");
+        td.replaceChildren(`${res.status === "failed" ? "✗" : "✓"} ${res.detail}`);
+        const pub = $("#key-pub").value;
+        if (res.status === "failed" && pub)      // from any machine that can already log in (e.g. with its own key)
+          td.append(h("div", { class: "muted small" }, "or add it from a machine that can already log in:",
+            h("code", { class: "inst-cmd" }, `echo '${pub}' | ssh ${res.user}@${res.host} 'umask 077; mkdir -p ~/.ssh; cat >> ~/.ssh/authorized_keys'`)));
+      }
     }
     const bad = d.results.filter(x => x.status === "failed").length;
     $("#inst-msg").textContent = bad ? `${bad} failed - fix and Install again` : "done: key login works everywhere - run Check access";

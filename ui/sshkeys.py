@@ -154,6 +154,40 @@ def _key_login(t: dict, key: str) -> str | None:
         c.close()
 
 
+def _auth_methods(t: dict) -> list[str] | None:
+    """The login methods the account's server offers (no credentials sent), or None when it cannot be asked."""
+    import paramiko
+    try:
+        tr = paramiko.Transport((t["host"], t["port"]))
+        tr.start_client(timeout=10)
+    except Exception:  # noqa: BLE001
+        return None
+    try:
+        tr.auth_none(t["user"])
+        return []
+    except paramiko.BadAuthenticationType as e:
+        return list(e.allowed_types)
+    except Exception:  # noqa: BLE001
+        return None
+    finally:
+        tr.close()
+
+
+def _password_failure(t: dict, e: Exception) -> str:
+    """Why the one-time password login failed, with what to try. 17 Oct, MR3 st1: 'wrong password?' while the user's
+    own 'ssh admin@st1' worked - that ssh used a key, so it never checked the password."""
+    acct = f"{t['user']}@{t['host']}"
+    if type(e).__name__ not in ("AuthenticationException", "BadAuthenticationType"):
+        return f"cannot log in to {acct} ({type(e).__name__}: {str(e)[:160]})"
+    methods = _auth_methods(t)
+    if methods is not None and "password" not in methods and "keyboard-interactive" not in methods:
+        return (f"{acct} does not accept password logins (it allows: {', '.join(methods) or 'none'}): add the public "
+                "key there by hand (Copy public key, then append it to ~/.ssh/authorized_keys of that account)")
+    return (f"{acct} refused this password (password login is enabled there): wrong password, or the account is "
+            "locked. If your own 'ssh' to it works without asking, it logs in with a key and never checks the "
+            f"password - test the password with: ssh -o PubkeyAuthentication=no {acct}")
+
+
 def install(p: RackProfile, key: str, passwords: dict[str, str], names: list[str] | None = None) -> list[dict]:
     """Add ``key``.pub to every target's authorized_keys (password login once per account), then check key login.
     ``passwords``: {user: password}. Per target {name, user, host, status: installed / already / failed, detail}."""
@@ -181,8 +215,7 @@ def install(p: RackProfile, key: str, passwords: dict[str, str], names: list[str
         try:
             c = _connect(t, password=pw)
         except Exception as e:  # noqa: BLE001 - the password never appears in paramiko's messages
-            why = "wrong password?" if type(e).__name__ == "AuthenticationException" else str(e)[:160]
-            out.append({**row, "status": "failed", "detail": f"password login failed ({type(e).__name__}): {why}"})
+            out.append({**row, "status": "failed", "detail": _password_failure(t, e)})
             continue
         try:
             _, so, se = c.exec_command(cmd, timeout=30)

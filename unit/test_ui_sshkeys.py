@@ -145,10 +145,12 @@ def test_install_with_one_time_passwords(home, tmp_path, monkeypatch):
     nodes = FakeNodes({"10.0.0.1": "sw-pw", "10.0.0.11": PW, "10.0.0.12": PW})
     nodes.keys["10.0.0.12"].append(Path(str(k) + ".pub").read_text().strip())     # c2 already has it
     monkeypatch.setattr(sshkeys, "_connect", nodes.connect)
+    monkeypatch.setattr(sshkeys, "_auth_methods", lambda t: ["publickey", "password"])
     res = {r["name"]: r for r in sshkeys.install(p, str(k), {"admin": "wrong", "ops": PW})}
     assert res["c2"]["status"] == "already"
     assert res["c1"]["status"] == "installed" and "key login works" in res["c1"]["detail"]
-    assert res["st1"]["status"] == "failed" and "wrong password" in res["st1"]["detail"]
+    assert res["st1"]["status"] == "failed" and "refused this password" in res["st1"]["detail"]
+    assert "ssh -o PubkeyAuthentication=no admin@10.0.0.1" in res["st1"]["detail"]
     assert all(PW not in json.dumps(r) for r in res.values())
     res = {r["name"]: r for r in sshkeys.install(p, str(k), {"admin": "sw-pw"})}
     assert res["st1"]["status"] == "installed" and res["c1"]["status"] == "already"
@@ -181,3 +183,13 @@ def test_api_never_returns_a_private_key_or_password(home, tmp_path, monkeypatch
         app.shutdown()
         srv.shutdown()
         srv.server_close()
+
+
+def test_account_without_password_login_says_add_by_hand(home, tmp_path, monkeypatch):
+    k = _fake_key(home)
+    p = _profile(tmp_path)
+    nodes = FakeNodes({"10.0.0.1": PW, "10.0.0.11": PW, "10.0.0.12": PW})
+    monkeypatch.setattr(sshkeys, "_connect", nodes.connect)
+    monkeypatch.setattr(sshkeys, "_auth_methods", lambda t: ["publickey"])
+    r = sshkeys.install(p, str(k), {"admin": "x"}, ["st1"])[0]
+    assert r["status"] == "failed" and "does not accept password logins (it allows: publickey)" in r["detail"]
