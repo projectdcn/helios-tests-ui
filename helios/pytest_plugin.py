@@ -374,7 +374,11 @@ def pytest_sessionfinish(session):
         else Path("results")                    # an installed UI keeps its results outside the code
     base = Path(cfg.getoption("--results-dir") or res / "runs" / rack)
     out = base / f"{rack}-{time.strftime('%Y%m%d-%H%M%S')}"
-    out.mkdir(parents=True, exist_ok=True)
+    n = 1
+    while out.exists():   # two runs ending in the same second (g02-g17 18 Oct 04:47: one overwrote the other's results)
+        n += 1
+        out = base / f"{rack}-{time.strftime('%Y%m%d-%H%M%S')}-{n}"
+    out.mkdir(parents=True)
     # one command-trace file per test item, referenced from tc_results.csv (used by tools/html_report.py)
     logs = cfg.__dict__.get("_helios_item_logs", {})
     (out / "logs").mkdir(exist_ok=True)

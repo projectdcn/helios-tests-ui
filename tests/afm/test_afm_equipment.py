@@ -19,7 +19,7 @@ import time
 
 import pytest
 
-from helios.afm import AUTH, CLUSTER, conditions_ok, rack_health
+from helios.afm import AUTH, CLUSTER, conditions_ok
 
 pytestmark = [pytest.mark.disruptive]
 

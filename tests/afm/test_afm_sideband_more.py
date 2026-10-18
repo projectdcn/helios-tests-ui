@@ -15,7 +15,7 @@ from collections import Counter
 
 import pytest
 
-from helios.afm import conditions_ok, rack_health
+from helios.afm import conditions_ok
 from helios.afm_ops import CN, SN, TERMINAL
 
 pytestmark = [pytest.mark.l3]

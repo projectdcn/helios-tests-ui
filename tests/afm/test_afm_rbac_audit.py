@@ -138,16 +138,23 @@ def test_reconfigure_rejected_readonly(afm, make_user, uniq, checks, record_prop
 
 # ------------------------------------------------------------------ audit
 
+def _ctime(e: dict) -> str:
+    return (e.get("meta") or {}).get("creation-time") or ""
+
+
 def _audit(afm, selector: str, page: int = 200) -> list[dict]:
-    return afm.items(f"/audit/v1/events?field-selector={selector}&sort-by=meta.creation-time"
-                     f"&sort-order=desc&page-size={page}")
+    """Audit records, newest first, sorted HERE: AFM ignores sort-by / sort-order / page-size on these lists and
+    returns them in uuid order (g02-g17 17 Oct, events - the same API family)."""
+    return sorted(afm.items(f"/audit/v1/events?field-selector={selector}&sort-by=meta.creation-time"
+                            f"&sort-order=desc&page-size={page}"), key=_ctime, reverse=True)
 
 
 def _controller_now(afm) -> str:
     """Newest audit record's creation-time: a cutoff on the controller's clock (MR3's controller is ~8 s behind
-    the runner, so a runner-clock cutoff missed fresh records)."""
-    evs = afm.items("/audit/v1/events?sort-by=meta.creation-time&sort-order=desc&page-size=1")
-    t = ((evs[0].get("meta") or {}).get("creation-time") if evs else "") or ""
+    the runner, so a runner-clock cutoff missed fresh records). Taken from the whole list sorted here - with the
+    sort ignored, 'page-size=1' was an arbitrary old record."""
+    evs = sorted(afm.items("/audit/v1/events?sort-by=meta.creation-time&sort-order=desc"), key=_ctime, reverse=True)
+    t = _ctime(evs[0]) if evs else ""
     return t.split(".")[0].rstrip("Z") + "Z" if t else datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 

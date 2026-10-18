@@ -12,7 +12,6 @@ is read from the variable the inventory names (afm.auth.password_env); it is nev
 from __future__ import annotations
 
 import argparse
-import json
 import re
 import sys
 from pathlib import Path

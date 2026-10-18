@@ -26,6 +26,9 @@ AUTH = "/configs/auth/v1"
 MONITORING = "/configs/monitoring/v1"
 WATCH = "/configs/aggwatch/v1/watch"
 LOG_BODY = 3000  # chars of each request/response body kept in the per-test log
+# ... and for requests that change state (PUT / POST / DELETE) and their responses: the full vPOD / node body (g02-g17
+# 18 Oct: the GPU lists of membership PUTs were cut at 3000 chars, which hid where GPUs were lost)
+LOG_BODY_CHANGE = 60000
 
 _SECRET_KEYS = re.compile(r'("(?:password|private-key|recovery-key|recoveryKey|key|token)"\s*:\s*)"[^"]*"', re.I)
 
@@ -117,7 +120,8 @@ class AfmClient:
     def _send(self, method: str, path: str, **kw) -> requests.Response:
         url = path if path.startswith("http") else self.base + path
         body = kw.get("json", kw.get("data"))
-        shown = "" if body is None else " " + redact(body if isinstance(body, str) else json.dumps(body))[:LOG_BODY]
+        cap = LOG_BODY if method.upper() == "GET" else LOG_BODY_CHANGE
+        shown = "" if body is None else " " + redact(body if isinstance(body, str) else json.dumps(body))[:cap]
         log.debug("AFM> %s %s%s%s", method, url, shown, " (no auth)" if self.anonymous else "")
         t0 = time.monotonic()
         try:
@@ -129,7 +133,7 @@ class AfmClient:
         text = r.text if "json" in ctype or "text" in ctype or len(r.content) < 2048 else \
             f"<{len(r.content)} bytes {ctype}>"
         log.debug("AFM< %s %s -> HTTP %s (%.2fs) %s", method, url, r.status_code, time.monotonic() - t0,
-                  redact(text)[:LOG_BODY])
+                  redact(text)[:cap])
         return r
 
     def raw(self, method: str, path: str, body: Any = None, *, relogin: bool = True, **kw) -> requests.Response:
