@@ -563,11 +563,13 @@ def test_system_vpod_fully_populated(ops, afm_ready, checks, record_property):
     entries = ops.remove_compute(sysv, name)
     ops.add_gpus(sysv, entries)
     ops.wait_vpod(sysv)
-    want = {(e["slot-id"], e["index"]) for c in ops.afm.computes() if (c.get("status") or {}).get("admission-phase") == "admitted"
-            for e in ops.gpu_entries(c["meta"]["name"])}
-    have = {(g.get("slot-id"), g.get("index")) for g in ops.vpod_gpus(sysv)}
+    # a tray quarantined in the inventory is not expected back (g02-g17 18 Oct: ct05 / slot 4, Down, was counted)
+    want = {(e["slot-id"], e["index"]) for c in ops.active_computes()
+            if (c.get("status") or {}).get("admission-phase") == "admitted" for e in ops.gpu_entries(c["meta"]["name"])}
+    quarantined = {(c.get("spec") or {}).get("slot-id") for c in ops.afm.computes() if ops.quarantined(c)}
+    have = {(g.get("slot-id"), g.get("index")) for g in ops.vpod_gpus(sysv) if g.get("slot-id") not in quarantined}
     record_property("gpus", {"system": len(have), "admitted": len(want)})
-    checks.check(have == want, f"{sysv} GPUs differ: missing {sorted(want - have)[:6]}, extra {sorted(have - want)[:6]}")
+    checks.check(have == want, f"{sysv} GPUs differ: missing {sorted(want - have)[:12]}, extra {sorted(have - want)[:12]}")
     before = ops.planes(sysv)
     ops.add_gpus(sysv, [])                      # PUT the same full list
     checks.check(ops.wait_vpod(sysv) in TERMINAL and ops.planes(sysv)[1] == before[1],

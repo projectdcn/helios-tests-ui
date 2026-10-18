@@ -126,13 +126,27 @@ class AfmOps:
                              float(self.th("poll_s", 10)), f"{name} pending-ops empty"))
 
     # ================================================================ vPOD membership
-    def _put_vpod_gpus(self, name: str, gpus: list[dict]) -> Any:
-        v = self.vpod(name)
-        spec = dict(v.get("spec") or {})
-        spec["GPUs"] = [{k: g[k] for k in ("slot-id", "index") if k in g} | ({"id": g["id"]} if g.get("id") else {})
-                        for g in gpus]
-        return self._retry_400(lambda: self.afm.raw("PUT", f"{VP}/{name}", {"kind": "VPod", "api-version": "v1",
-                                                                            "meta": v["meta"], "spec": spec}))
+    @staticmethod
+    def _keys(gpus) -> set:
+        return {(g.get("slot-id"), g.get("index")) for g in gpus}
+
+    def _put_vpod_gpus(self, name: str, gpus: list[dict], tries: int = 3) -> Any:
+        """PUT spec.GPUs = ``gpus`` and read the spec back: re-PUT (up to ``tries``) when it does not hold exactly
+        those GPUs (g02-g17 18 Oct: the system vPOD silently lost slots 8 / 9 between back-to-back PUTs)."""
+        want, out = self._keys(gpus), None
+        for _ in range(tries):
+            v = self.vpod(name)
+            spec = dict(v.get("spec") or {})
+            spec["GPUs"] = [{k: g[k] for k in ("slot-id", "index") if k in g} | ({"id": g["id"]} if g.get("id") else {})
+                            for g in gpus]
+            out = self._retry_400(lambda: self.afm.raw("PUT", f"{VP}/{name}", {"kind": "VPod", "api-version": "v1",
+                                                                                "meta": v["meta"], "spec": spec}))
+            got = self._keys((self.vpod(name).get("spec") or {}).get("GPUs") or [])
+            if got == want:
+                return out
+            log.warning("AFM: %s spec after the PUT differs: missing %s, extra %s - PUT again", name,
+                        sorted(want - got), sorted(got - want))
+        raise AfmError("PUT", name, 0, f"spec.GPUs not {sorted(want)} after {tries} PUTs")
 
     def _retry_400(self, call, timeout: float | None = None):
         """Retry while AFM answers 400 '... configuration failed state' (GPU just left a vPOD / reconfigured) or 400
@@ -150,8 +164,52 @@ class AfmOps:
                       else "GPU not registered yet")
             time.sleep(float(self.th("retry_interval_s", 10)))
 
+    def spec_gpus(self, name: str) -> list[dict]:
+        """spec.GPUs (what AFM was last told) as {slot-id, index[, id]}, ids from status.gpus-status where listed.
+        Every read-modify-write of a vPOD's GPU list starts from this, never from gpus-status: status lags a PUT
+        by ~10 s, so a list rebuilt from it drops the GPUs just added. g02-g17 18 Oct: TC-NA-016's clean-up re-added
+        slot 8 (00:54:38.731) and 6 ms later slot 9 from a status without slot 8 -> slot 8 in no vPOD; TC-E2E-033
+        (01:00:00) and TC-E2E-040 (01:10:38) dropped slots 8 / 9 the same way."""
+        v = self.vpod(name)
+        ids = {}
+        for gs in (v.get("status") or {}).get("gpus-status") or []:
+            g = gs.get("gpu") or {}
+            idx = g.get("gpu-index") or {}
+            ids[(idx.get("slot-id"), idx.get("index"))] = g.get("id")
+        out = []
+        for g in (v.get("spec") or {}).get("GPUs") or []:
+            e = {"slot-id": g.get("slot-id"), "index": g.get("index")}
+            gid = g.get("id") or ids.get((e["slot-id"], e["index"]))
+            out.append(e | ({"id": gid} if gid else {}))
+        return out
+
+    def wait_members(self, name: str, entries: list[dict], timeout: float | None = None) -> bool:
+        """Wait until every GPU of ``entries`` reports vpod-membership ``name`` (per GPU, on its compute). A GPU on
+        its way in reads '' like a free one: moving it on at once (TC-E2E-030 at 00:54:39, 0.8 s after TC-NA-016
+        re-added slot 9, g02-g17 18 Oct) handed AFM a GPU in transit and the new vPOD went configurationfailed."""
+        want = self._keys(entries)
+        slots = {s for s, _ in want}
+        names = [c["meta"]["name"] for c in self.afm.computes() if (c.get("spec") or {}).get("slot-id") in slots]
+
+        def missing():
+            out = []
+            for n in names:
+                c = self.compute(n)
+                slot = (c.get("spec") or {}).get("slot-id")
+                out += [(slot, g.get("index")) for g in self.gpu_info(c).values()
+                        if (slot, g.get("index")) in want and g.get("vpod-membership") != name]
+            return sorted(out)
+        ok = self.wait(lambda: not missing(), float(timeout or self.th("membership_timeout_s", 120)),
+                       float(self.th("poll_s", 10)), f"{sorted(want)} members of {name}")
+        if not ok:
+            st = self.vpod(name).get("status") or {}
+            log.warning("AFM: %s: GPUs %s not members after the PUT (state %s, pending-ops %s)", name, missing(),
+                        st.get("vpod-state"), st.get("pending-ops"))
+        return bool(ok)
+
     def vpod_gpus(self, name: str) -> list[dict]:
-        """Current members as spec entries {id, slot-id, index} (from status.gpus-status, which has the ids)."""
+        """Current members as spec entries {id, slot-id, index} (from status.gpus-status, which has the ids).
+        For checks only; a PUT is built from spec_gpus()."""
         out = []
         for gs in (self.vpod(name).get("status") or {}).get("gpus-status") or []:
             g = gs.get("gpu") or {}
@@ -165,7 +223,7 @@ class AfmOps:
         """Take a compute's GPUs out of ``vpod``; waits until every GPU reports no membership. Returns its entries."""
         mine = self.gpu_entries(compute)
         slot = mine[0]["slot-id"] if mine else None
-        keep = [g for g in self.vpod_gpus(vpod) if g.get("slot-id") != slot]
+        keep = [g for g in self.spec_gpus(vpod) if g.get("slot-id") != slot]
         self._put_vpod_gpus(vpod, keep)
         ok = self.wait(lambda: self.membership(compute) <= {""}, float(self.th("membership_timeout_s", 120)),
                       float(self.th("poll_s", 10)),
@@ -174,10 +232,12 @@ class AfmOps:
             raise AfmError("PUT", vpod, 0, f"{compute} GPUs still members: {self.membership(compute)}")
         return mine
 
-    def add_gpus(self, vpod: str, entries: list[dict]) -> None:
-        have = self.vpod_gpus(vpod)
-        keys = {(g.get("slot-id"), g.get("index")) for g in have}
+    def add_gpus(self, vpod: str, entries: list[dict]) -> bool:
+        """Add ``entries`` to the vPOD's spec and wait until AFM lists them as members (False if it did not)."""
+        have = self.spec_gpus(vpod)
+        keys = self._keys(have)
         self._put_vpod_gpus(vpod, have + [e for e in entries if (e["slot-id"], e["index"]) not in keys])
+        return self.wait_members(vpod, entries) if entries else True
 
     def create_vpod(self, name: str, entries: list[dict], policy: str = "system-failover-policy") -> Any:
         pod = (self.vpod(self.system_vpod_name()).get("spec") or {}).get("parent-pod", "pod-1")
@@ -189,7 +249,7 @@ class AfmOps:
         """Empty the vPOD, DELETE it (retrying 412 while GPUs drain out), wait for 404."""
         if self.afm.raw("GET", f"{VP}/{name}").status_code == 404:
             return True
-        if self.vpod_gpus(name):
+        if self.spec_gpus(name) or self.vpod_gpus(name):
             self._put_vpod_gpus(name, [])
         end = time.monotonic() + timeout
         while True:

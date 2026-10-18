@@ -376,12 +376,18 @@ def test_fabric_reconfigure_reported(ops, afm_ready, checks, record_property):
     """A data-fabric reconfiguration (ReconfigureDataFabric on the system vPOD) is reported: a vPOD event names
     the vPOD and the reconfiguration, and the vPOD returns to online/degraded."""
     sysv = ops.system_vpod_name()
+    # start from a settled vPOD so the events that follow are ours (g02-g17 18 Oct: TC-NA-040's two compute
+    # Reconfigures were 1 s old; the vpod_status_change / vpod_degraded seen could not be told apart from them)
+    ops.wait_vpod(sysv)
+    ops.wait_pending_clear(sysv)
     since = ops.controller_now()
     r = ops.afm.raw("POST", f"{VP}/{sysv}/ReconfigureDataFabric", {})
     checks.check(r.status_code == 200, f"ReconfigureDataFabric -> HTTP {r.status_code}")
     ev = ops.wait(lambda: [e for e in ops.events(None, since) if sysv in json.dumps(e)
                            and "reconfigure" in json.dumps(e).lower()], 180, 10)
     record_property("events", [e.get("type") for e in ev or []])
+    record_property("vpod_events_seen", [f"{e.get('type')}: {e.get('message') or (e.get('spec') or {}).get('message')}"
+                                         for e in ops.events(None, since) if sysv in json.dumps(e)][:10])
     checks.check(ev, "no event reporting the fabric reconfiguration")
     checks.check(ops.wait_vpod(sysv) in TERMINAL, f"{sysv} not online/degraded")
     checks.assert_all()
