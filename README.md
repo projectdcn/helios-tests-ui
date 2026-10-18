@@ -292,7 +292,11 @@ Works on any rack with a helios inventory (switch trays + compute trays reachabl
   = EthernetN); a mismatch is `miscabled`.
 - `pingmap --rounds N --wait S` pings a ring (each GPU to the same position on the next tray, every common port) N
   times and maps the loss to GPU port numbers and so to the switch ASIC carrying each, sticky (every round) or moving.
-- `--switches` / `--trays` limit a scan or ping map to part of the rack.
+- `--switches` / `--trays` limit a scan or ping map to part of the rack; `scan --compare <earlier link_check.json>`
+  lists what changed (new problems, recovered, other cause) - to follow a repair.
+- Patterns across problem links are named: several on one GPU (GPU / tray side, or either end when all on one ASIC),
+  the same GPU position (BDF) on several trays (something shared by that position), several / adjacent ports on one
+  switch ASIC (that ASIC / one connector).
 - `path` checks one GPU-to-GPU path port by port: both GPU ports, IFCP, the forwarding entries of both MACs (static,
   on a described, oper-up port, one ASIC per GPU port number), then the ping and the switch counters around it.
 - Platforms that report no transceiver presence / optic power (g02-g17's QFX5252) are detected; the report then says

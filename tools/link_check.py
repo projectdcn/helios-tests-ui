@@ -352,6 +352,8 @@ code,details div{{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:12
 <span><b style='color:var(--deg)'>{n['degraded']}</b>degraded</span><span><b style='color:var(--down)'>{n['down']}</b>down</span></div>
 {('<p><b>Not reachable:</b> ' + esc(', '.join(unreach)) + '</p>') if unreach else ''}
 <p class='mut'>Optic data from the switches: {esc(optics)}. Cabling: {esc(cab_txt)}.</p>
+{(("<h2>Changes since the earlier scan</h2><p>" + esc(f"{len(res['compare']['new_problems'])} new problem(s), {len(res['compare']['recovered'])} recovered, {res['compare']['still_bad']} still bad") + "</p>" + "".join(f"<div><code>new: {esc(x)}</code></div>" for x in res['compare']['new_problems']) + "".join(f"<div><code>recovered: {esc(x)}</code></div>" for x in res['compare']['recovered'])) if res.get('compare') else '')}
+{("<h2>Patterns</h2>" + "".join(f"<p>{esc(x)}</p>" for x in res.get('suspects') or [])) if res.get('suspects') else ''}
 <h2>Root causes</h2><div class='wrap'><table><tr><th>State</th><th>Links</th><th>Cause</th><th>Owner</th></tr>{summary or "<tr><td colspan=4>No problem links.</td></tr>"}</table></div>
 {("<h2>Problem links per switch ASIC</h2><p class='mut'>Trays out of service left out. Problems spread over many ASICs point at the trays or cabling; many on one ASIC point at that ASIC.</p><div class='wrap'><table style='min-width:320px'><tr><th>Switch ASIC</th><th>Problem links</th></tr>" + asic_rows + "</table></div>") if asic_rows else ""}
 <h2>Problem links</h2><div class='wrap'><table><tr><th>State</th><th>Switch port</th><th>GPU port</th><th>Cause</th><th>Owner</th><th>Next step</th><th>Evidence</th></tr>
@@ -400,12 +402,26 @@ def scan_cmd(a) -> int:
         if ln.state != "ok" and ln.kind not in ("tray_quarantined", "tray_unreachable", "tray_missing"):
             k = f"{ln.switch} {ln.asic}".strip()
             per_asic[k] = per_asic.get(k, 0) + 1
+    sus = linkdiag.suspects(links)
+    if sus:
+        lines.append("")
+        lines += [f"pattern: {x}" for x in sus]
+        res["suspects"] = sus
     if per_asic:
         lines.append("")
         lines.append("problem links per switch ASIC (trays out of service left out): " +
                      ", ".join(f"{k} {n}" for k, n in sorted(per_asic.items(), key=lambda x: -x[1])))
     if not groups:
         lines.append("All links ok.")
+    if getattr(a, "compare", None):
+        prev = json.loads(Path(a.compare).read_text())
+        diff = linkdiag.compare(prev.get("links") or [], links)
+        lines.append("")
+        lines.append(f"compared with {a.compare} ({prev.get('time_utc', '?')} UTC): {len(diff['new_problems'])} new problem(s), "
+                     f"{len(diff['recovered'])} recovered, {diff['still_bad']} still bad ({len(diff['changed'])} with another cause)")
+        lines += [f"  new:       {x}" for x in diff["new_problems"]] + [f"  recovered: {x}" for x in diff["recovered"]] + \
+                 [f"  changed:   {x}" for x in diff["changed"]]
+        res["compare"] = diff
     lines.append(f"\nreport: {out / 'report.html'}")
     print("\n".join(lines))
     (out / "report.txt").write_text("\n".join(lines) + "\n")
@@ -413,7 +429,7 @@ def scan_cmd(a) -> int:
     (out / "raw" / "trays.json").write_text(json.dumps(res["trays"], indent=1, default=str))
     (out / "link_check.json").write_text(json.dumps({
         "time_utc": stamp, "rack": inv.rack, "interval_s": res["interval_s"], "learned": res["learned"],
-        "optics_reported": res["optics_reported"], "links": [linkdiag.link_dict(x) for x in links],
+        "optics_reported": res["optics_reported"], "links": [linkdiag.link_dict(x) for x in links], "compare": res.get("compare"), "patterns": res.get("suspects"),
         "root_causes": [{k: v for k, v in g.items() if k != "links"} | {"links": [f"{x.switch} {x.sw_port}" for x in g["links"]]}
                         for g in groups]}, indent=1, default=str))
     write_html(out / "report.html", inv.rack or "rack", time.strftime("%Y-%m-%d %H:%M", time.gmtime()), res, groups)
@@ -467,6 +483,7 @@ def main(argv=None) -> int:
     s.add_argument("--inventory", **inv_kw)
     s.add_argument("--interval", type=float, default=30.0, help="seconds between the two counter samples (default 30)")
     s.add_argument("--out", type=Path, help="report folder (default results/link-check/<rack>/scan-<UTC time>)")
+    s.add_argument("--compare", type=Path, help="an earlier scan's link_check.json: list what changed since")
     for x in (s,):
         x.add_argument("--switches", help="only these switches (comma-separated inventory names)")
         x.add_argument("--trays", help="only these compute trays (comma-separated inventory names)")

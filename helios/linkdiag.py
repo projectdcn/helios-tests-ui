@@ -523,3 +523,65 @@ def judge_ping_map(pm: dict, owner: dict[int, str]) -> list[str]:
     if len(per_asic) == 1 and "?" not in per_asic:
         out.append(f"All loss is on one switch ASIC ({next(iter(per_asic))}): check that ASIC first.")
     return out
+
+
+def compare(prev_links: list[dict], links: list[Link]) -> dict:
+    """What changed since an earlier scan (its link_check.json "links"), keyed by switch port: newly down / degraded,
+    recovered, still bad with another cause."""
+    key = lambda d: f"{d['switch']} {d['asic']} {d['sw_port']}".replace("  ", " ")  # noqa: E731
+    before = {key(d): d for d in prev_links}
+    out = {"new_problems": [], "recovered": [], "changed": [], "still_bad": 0}
+    for ln in links:
+        k = key({"switch": ln.switch, "asic": ln.asic, "sw_port": ln.sw_port})
+        b = before.get(k)
+        was = (b or {}).get("state", "ok")
+        if was == "ok" and ln.state != "ok":
+            out["new_problems"].append(f"{k} <-> {ln.tray} port {ln.gpu_port}: {ln.state}, {ln.cause}")
+        elif was != "ok" and ln.state == "ok":
+            out["recovered"].append(f"{k} <-> {ln.tray} port {ln.gpu_port} (was {was}: {b.get('cause', '')})")
+        elif was != "ok" and ln.state != "ok":
+            out["still_bad"] += 1
+            if b.get("kind") != ln.kind:
+                out["changed"].append(f"{k}: {b.get('kind')} -> {ln.kind}")
+    return out
+
+
+def suspects(links: list[Link], min_links: int = 2) -> list[str]:
+    """Patterns across problem links (trays out of service left out), as plain sentences:
+    - several on one GPU: that GPU / tray side (or, all on one ASIC, either end)
+    - the same GPU position (BDF) on several trays: something shared by that position (cable bundle / cartridge)
+    - several on one switch ASIC: that ASIC, the more so on adjacent ports (one connector / cage)."""
+    bad = [x for x in links if x.state != "ok" and x.kind not in ("tray_quarantined", "tray_unreachable", "tray_missing")]
+    out = []
+    per_gpu: dict[str, list] = {}
+    for x in bad:
+        if x.tray and x.bdf:
+            per_gpu.setdefault(f"{x.tray} {x.bdf}", []).append(x)
+    for g, v in sorted(per_gpu.items(), key=lambda kv: -len(kv[1])):
+        if len(v) >= min_links:
+            ports = ", ".join(str(x.gpu_port) for x in sorted(v, key=lambda x: x.gpu_port or 0))
+            sws = sorted({f"{x.switch} {x.asic}".strip() for x in v})
+            where = (f"on {len(sws)} different switch ASICs - suspect the GPU / tray side rather than separate cables"
+                     if len(sws) > 1 else f"all on {sws[0]} - could be either end; compare with other GPUs on that ASIC")
+            out.append(f"GPU {g}: {len(v)} problem links (ports {ports}), {where}.")
+    per_pos: dict[str, set] = {}
+    for x in bad:
+        if x.bdf:
+            per_pos.setdefault(x.bdf, set()).add(x.tray)
+    for bdf, trays in sorted(per_pos.items(), key=lambda kv: -len(kv[1])):
+        if len(trays) >= 3:
+            out.append(f"GPU position {bdf}: problem links on {len(trays)} trays ({', '.join(sorted(trays))}) and on no other "
+                       f"position - suspect something shared by that GPU position (cabling bundle / cartridge / tray "
+                       f"slot) rather than {len(trays)} separate faults." if len(per_pos) == 1 else
+                       f"GPU position {bdf}: problem links on {len(trays)} trays ({', '.join(sorted(trays))}).")
+    per_asic: dict[str, list] = {}
+    for x in bad:
+        per_asic.setdefault(f"{x.switch} {x.asic}".strip(), []).append(x)
+    for k, v in sorted(per_asic.items(), key=lambda kv: -len(kv[1])):
+        if len(v) < 3:
+            continue
+        nums = sorted(int(m.group(1)) for x in v if (m := re.fullmatch(r"Ethernet(\d+)", x.sw_port)))
+        near = bool(nums) and nums[-1] - nums[0] <= 8
+        out.append(f"{k}: {len(v)} problem links (" + ", ".join(f"Ethernet{n}" for n in nums) + ")" +
+                   (" on adjacent ports - suspect one connector / cage on that switch" if near else " - suspect that switch ASIC") + ".")
+    return out

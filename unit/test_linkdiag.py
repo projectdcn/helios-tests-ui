@@ -139,3 +139,30 @@ def test_ping_map_tells_sticky_from_moving_loss():
     assert pm["ports"][1]["fails"] == 4 and pm["ports"][0]["fails"] == 0
     text = " ".join(ld.judge_ping_map(pm, {0: "st6 asic1", 1: "st5 asic1", 2: "st6 asic1"}))
     assert "Sticky" in text and "port 1" in text and "Moving" in text and "st5 asic1" in text
+
+
+def test_compare_lists_new_recovered_and_changed():
+    prev = [{"switch": "st3", "asic": "asic0", "sw_port": "Ethernet25", "state": "down", "kind": "phys_went_down", "cause": "x"},
+            {"switch": "st3", "asic": "asic0", "sw_port": "Ethernet26", "state": "ok", "kind": "", "cause": ""}]
+    a = ld.Link("st3", "asic0", "Ethernet25", tray="ct03", gpu_port=25, state="ok")
+    b = ld.Link("st3", "asic0", "Ethernet26", tray="ct03", gpu_port=26, state="down", kind="phys_went_down", cause="no link")
+    d = ld.compare(prev, [a, b])
+    assert len(d["recovered"]) == 1 and "Ethernet25" in d["recovered"][0]
+    assert len(d["new_problems"]) == 1 and "Ethernet26" in d["new_problems"][0]
+
+
+def test_suspects_point_at_a_gpu_with_several_down_links():
+    mk = lambda sw, port: ld.Link(sw, "asic0", f"Ethernet{port}", tray="ct17", bdf="0002:01:00.1", gpu_port=port,  # noqa: E731
+                                  state="down", kind="phys_went_down")
+    s = ld.suspects([mk("st4", 24), mk("st4", 28), mk("st3", 25), ld.Link("st1", "asic0", "Ethernet1", state="ok")])
+    assert "ct17 0002:01:00.1: 3 problem links" in s[0] and "GPU / tray side" in s[0]
+    assert any("st4 asic0: 2" in x for x in s) is False          # 2 links on one ASIC is not yet a pattern
+
+
+def test_suspects_same_gpu_position_on_many_trays_and_adjacent_ports():
+    mk = lambda tray, sw, port, gp: ld.Link(sw, "asic0", f"Ethernet{port}", tray=tray, bdf="0002:01:00.1",  # noqa: E731
+                                            gpu_port=gp, state="down", kind="phys_went_down")
+    s = ld.suspects([mk("ct17", "st4", 70, 24), mk("ct18", "st4", 66, 28), mk("ct17", "st4", 69, 28), mk("ct13", "st6", 261, 0)])
+    text = " | ".join(s)
+    assert "GPU position 0002:01:00.1: problem links on 3 trays" in text and "shared by that GPU position" in text
+    assert "st4 asic0: 3 problem links (Ethernet66, Ethernet69, Ethernet70) on adjacent ports" in text
