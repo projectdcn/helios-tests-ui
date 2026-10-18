@@ -21,7 +21,7 @@ for both MACs (static, on a described, oper-up port, one ASIC), then the ping an
 number in a switch port description is reported only: descriptions may number a tray's GPUs differently from afmctl.
 
 Output (--out, default results/link-check/<rack>/<UTC time>/): report.html (self-contained, shareable),
-report.txt, link_check.json, and the raw outputs read.
+report.txt, link_check.json, and the raw outputs read (raw/*.json.gz). A scan needs ~50 MB free.
 """
 from __future__ import annotations
 
@@ -376,11 +376,24 @@ def _filtered_rack(a):
     return inv, rack
 
 
+def _room(folder: Path, need_mb: int = 50) -> None:
+    """Refuse before collecting when the report folder's disk is nearly full (g02-g17 18 Oct: the jump host's /home
+    filled up and a scan died at mkdir with a traceback)."""
+    import shutil
+    p = folder
+    while not p.exists():
+        p = p.parent
+    free = shutil.disk_usage(p).free // 2**20
+    if free < need_mb:
+        raise SystemExit(f"only {free} MB free under {p} - free some space or give --out on another disk (needs ~{need_mb} MB)")
+
+
 def scan_cmd(a) -> int:
     from helios import linkdiag
     inv, rack = _filtered_rack(a)
     stamp = time.strftime("%Y%m%d-%H%M%S", time.gmtime())
     out = a.out or ROOT / "results" / "link-check" / (inv.rack or "rack") / f"scan-{stamp}"
+    _room(out)
     (out / "raw").mkdir(parents=True, exist_ok=True)
     try:
         res = linkdiag.scan(rack, a.interval)
@@ -425,8 +438,10 @@ def scan_cmd(a) -> int:
     lines.append(f"\nreport: {out / 'report.html'}")
     print("\n".join(lines))
     (out / "report.txt").write_text("\n".join(lines) + "\n")
-    (out / "raw" / "switches.json").write_text(json.dumps(res["switches"], indent=1, default=str))
-    (out / "raw" / "trays.json").write_text(json.dumps(res["trays"], indent=1, default=str))
+    import gzip
+    for name, data in (("switches", res["switches"]), ("trays", res["trays"])):   # gzip: ~7 MB a scan uncompressed
+        with gzip.open(out / "raw" / f"{name}.json.gz", "wt") as fh:
+            json.dump(data, fh, default=str)
     (out / "link_check.json").write_text(json.dumps({
         "time_utc": stamp, "rack": inv.rack, "interval_s": res["interval_s"], "learned": res["learned"],
         "optics_reported": res["optics_reported"], "links": [linkdiag.link_dict(x) for x in links], "compare": res.get("compare"), "patterns": res.get("suspects"),
@@ -441,6 +456,7 @@ def pingmap_cmd(a) -> int:
     inv, rack = _filtered_rack(a)
     stamp = time.strftime("%Y%m%d-%H%M%S", time.gmtime())
     out = a.out or ROOT / "results" / "link-check" / (inv.rack or "rack") / f"pingmap-{stamp}"
+    _room(out, 10)
     out.mkdir(parents=True, exist_ok=True)
     try:
         sw = [linkdiag.collect_switch(x) for x in rack.switches.values()]
