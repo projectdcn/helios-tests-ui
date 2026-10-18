@@ -269,6 +269,25 @@ Read-only gate to run before every disruptive batch, after each one, and wheneve
 - On g02-g17: run it on the jump host (`ssh -t -p 8059 tenant-hpe@165.204.38.103 'bash ~/helios/run-health.sh'`,
   password typed there, ~30 min), copy the run folder back, and add it to the overall report with `--health-run`.
 
+#### Unattended runs on g02-g17 (queue runner)
+
+- `tools/jumphost/queue-runner.sh` (copy it to `~/helios/` on the jump host): start it once in tmux, type the AFM
+  password, detach (Ctrl-b d); it then runs every job file `~/helios/queue/<name>.tcs` (test-case ids only, run in
+  name order, `--allow-disruptive`, the jump-host inventory) one at a time. Status: `queue/state`, `queue/history`,
+  logs in `queue/logs/`, results in `~/helios/results/queue/`; `touch ~/helios/queue/STOP` ends it after the current
+  job. The password stays in that shell only.
+
+      ssh -t -p 8059 tenant-hpe@165.204.38.103 'tmux new -A -s helios-queue ~/helios/queue-runner.sh'
+
+- Sync code to the jump host only while `queue/state` says idle (`git archive HEAD | ssh ... tar -x`), copy result
+  folders back to `results/runs/g02-g17/`.
+- `MAINT-SYSVPOD` (tests/afm/test_afm_maintenance.py, runs only when named with `--tc`): deletes leftover `helios-*`
+  vPODs, puts every admitted, non-quarantined compute's GPUs back into the system vPOD, waits for pending ops, sends
+  one ReconfigureDataFabric if it is still configurationfailed and Reconfigures computes whose GPUs are not Ready;
+  records the state before / after.
+- `thresholds.afm.non_afm_vlans` (ids): VLANs on the switches that AFM does not own (g02-g17: `[2]`, left by the ARC
+  run); the decommission checks do not count them.
+
 #### Quarantine and merged re-runs
 
 - A switch / compute entry with `quarantine: {reason, since, until}` (and, for a compute, its AFM `slot:`) is left
