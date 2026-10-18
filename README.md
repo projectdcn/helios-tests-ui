@@ -269,6 +269,29 @@ Read-only gate to run before every disruptive batch, after each one, and wheneve
 - On g02-g17: run it on the jump host (`ssh -t -p 8059 tenant-hpe@165.204.38.103 'bash ~/helios/run-health.sh'`,
   password typed there, ~30 min), copy the run folder back, and add it to the overall report with `--health-run`.
 
+#### Link check (`tools/link_check.py`): down / degraded links and their root cause
+
+Works on any rack with a helios inventory (switch trays + compute trays reachable over SSH, sudo for `afmctl` and
+`show mac`); no AFM password, read-only (`path` also sends one L2 ping per run unless `--no-ping`).
+
+    python tools/link_check.py scan --inventory <inv>                  # every GPU link of the rack
+    python tools/link_check.py scan --inventory <inv> --interval 120   # longer error sample (default 30 s)
+    python tools/link_check.py path --inventory <inv> --src <tray> --src-bdf 0004:01:00.1 --dst-acc 8 --ports 25,26
+
+- `scan` matches every switch port to the GPU port cabled to it by the GPU port's own MAC in the switches'
+  forwarding tables (port descriptions and elimination as the fallback, so nothing rack-specific is assumed), then
+  names one root cause per problem link, bottom layer first: tray unreachable or quarantined, admin state on either
+  end, no physical link (never up since boot / went down), one-sided link, bit errors that grow during the sample,
+  no IFCP session, not programmed by AFM (confirmed by a second read, so a vPOD change in progress is not a fault).
+  Each cause comes with its evidence, the owner (operator, site cabling, switch vendor, GPU / AFM vendor) and the next
+  step; links with one cause are grouped.
+- Output in `results/link-check/<rack>/scan-<UTC time>/`: `report.html` (self-contained, to share with a customer),
+  `report.txt`, `link_check.json`, `raw/` (everything read). Exit code 1 when any link is down or degraded.
+- `path` checks one GPU-to-GPU path port by port: both GPU ports, IFCP, the forwarding entries of both MACs (static,
+  on a described, oper-up port, one ASIC per GPU port number), then the ping and the switch counters around it.
+- Platforms that report no transceiver presence / optic power (g02-g17's QFX5252) are detected; the report then says
+  a cable fault cannot be told from a port fault remotely and asks for a swap.
+
 #### Unattended runs on g02-g17 (queue runner)
 
 - `tools/jumphost/queue-runner.sh` (copy it to `~/helios/` on the jump host): start it once in tmux, type the AFM
