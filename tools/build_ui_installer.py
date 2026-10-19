@@ -11,6 +11,9 @@ The bundle (one top directory helios-ui-<version>/):
     wheelhouse/     every runtime dependency (pytest, paramiko, PyYAML, requests, websocket-client, openpyxl and
                     theirs) as wheels for Linux x86_64 (manylinux) and CPython 3.10 / 3.11 / 3.12; PYTHONS lists them
     requirements.txt, install.sh, uninstall.sh, README-INSTALL.txt (from tools/installer/ of <ref>), VERSION
+    helios-debug/   the committed HEAD of the separate helios-debug repo (link check, debug guide), when found next to
+                    this repo or given with --debug-repo (skip: --no-debug); installed next to app/, where the HC-012
+                    health check finds it; its inventories (*.local.yaml) and results/ are left out
 
 Version: ``git describe --tags`` when there is a tag, else <commit date YYYYmmdd>-<short sha>.
 Needs internet (PyPI) for the wheel download, unless --wheelhouse DIR gives a ready one.
@@ -174,8 +177,22 @@ def _info(name: str, data: bytes, mode: int, mtime: int) -> tarfile.TarInfo:
     return ti
 
 
+def debug_files(debug_repo: Path | None) -> tuple[list[tuple[str, bytes, int]], dict]:
+    """Files of the helios-debug repo's committed HEAD (minus local inventories / results) and its build info."""
+    if debug_repo is None or not (debug_repo / ".git").exists():
+        return [], {}
+    sha = git(debug_repo, "rev-parse", "HEAD^{commit}")
+    raw = git(debug_repo, "archive", "--format=tar", sha, binary=True)
+    out = []
+    with tarfile.open(fileobj=io.BytesIO(raw)) as t:
+        for m in t.getmembers():
+            if m.isfile() and not excluded(m.name):
+                out.append((m.name, t.extractfile(m).read(), 0o755 if m.mode & 0o111 else 0o644))
+    return out, {"commit": sha, "date": git(debug_repo, "log", "-1", "--format=%cd", "--date=format:%Y-%m-%d %H:%M:%S", sha)}
+
+
 def build(repo: Path, out_dir: Path, ref: str = "HEAD", wheelhouse: Path | None = None,
-          wheel_builder=build_wheelhouse, log=print) -> Path:
+          wheel_builder=build_wheelhouse, log=print, debug_repo: Path | None = None) -> Path:
     """Write <out_dir>/helios-ui-<version>.tar.gz and return its path. ``wheelhouse``: a ready folder (with PYTHONS)
     to put in as is; else ``wheel_builder(requirements.txt, dest)`` makes one."""
     ver, sha, when = version_of(repo, ref)
@@ -193,8 +210,11 @@ def build(repo: Path, out_dir: Path, ref: str = "HEAD", wheelhouse: Path | None 
         if f not in names:
             raise SystemExit(f"{ref} has no {f}: commit the UI and tools/installer/ first")
     reqs = requirements(repo, sha)
+    dfiles, dinfo = debug_files(debug_repo)
     info = {"version": ver, "commit": sha, "commit_date": when, "built": time.strftime("%Y-%m-%d %H:%M:%S %z"),
             "ref": ref, "requirements": reqs, "pythons": list(PYTHONS)}
+    if dinfo:
+        info["helios_debug"] = dinfo
     manifest = "# files of this bundle's code (git archive of the commit in BUILD_INFO.json, minus local files)\n" + \
         "".join(f"{n}\n" for n, _, _ in sorted(files))
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -216,6 +236,8 @@ def build(repo: Path, out_dir: Path, ref: str = "HEAD", wheelhouse: Path | None 
                 add(f"app/{n}", data, mode)
                 if n.startswith("tools/installer/") and n.rsplit("/", 1)[-1] in INSTALLER:
                     add(n.rsplit("/", 1)[-1], data, 0o755 if n.endswith(".sh") else 0o644)
+            for n, data, mode in sorted(dfiles):
+                add(f"helios-debug/{n}", data, mode)
             add("app/BUILD_INFO.json", (json.dumps(info, indent=1) + "\n").encode())
             add("app/MANIFEST.txt", manifest.encode())
             add("requirements.txt", req.read_bytes())
@@ -234,6 +256,9 @@ def main(argv=None) -> int:
     ap.add_argument("--wheelhouse", type=Path, help="use this ready wheelhouse (with PYTHONS) instead of downloading")
     ap.add_argument("--wheelhouse-cache", type=Path,
                     help="download the wheels into this folder (kept; pip skips what is there) and use it")
+    ap.add_argument("--debug-repo", type=Path, default=ROOT.parent / "helios-debug",
+                    help="the helios-debug repo to bundle (default ../helios-debug next to this repo)")
+    ap.add_argument("--no-debug", action="store_true", help="leave helios-debug out (HC-012 then skips on the server)")
     a = ap.parse_args(argv)
     if shutil.which("git") is None:
         raise SystemExit("git is needed")
@@ -249,11 +274,17 @@ def main(argv=None) -> int:
             req.write_text("".join(f"{r}\n" for r in requirements(ROOT, sha)))
             build_wheelhouse(req, a.wheelhouse_cache.expanduser())
         wh = a.wheelhouse_cache.expanduser()
-    out = build(ROOT, a.out, a.ref, wh)
+    dbg = None if a.no_debug else a.debug_repo.expanduser()
+    if dbg is not None and not (dbg / ".git").exists():
+        print(f"note: no helios-debug repo at {dbg} - bundle without it (HC-012 skips on the server)", file=sys.stderr)
+        dbg = None
+    out = build(ROOT, a.out, a.ref, wh, debug_repo=dbg)
     with tarfile.open(out) as t:
         names = t.getnames()
     wheels = [n for n in names if n.endswith(".whl")]
-    print(f"{out}  ({out.stat().st_size / 1e6:.1f} MB, {len(names)} files, {len(wheels)} wheels)")
+    dbgn = [n for n in names if "/helios-debug/" in n]
+    print(f"{out}  ({out.stat().st_size / 1e6:.1f} MB, {len(names)} files, {len(wheels)} wheels, "
+          f"{len(dbgn)} helios-debug files)")
     print(f"install: scp {out.name} <user>@<server>: && ssh <user>@<server> "
           f"'tar -xzf {out.name} && {out.name[:-7]}/install.sh'")
     return 0

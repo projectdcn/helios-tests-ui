@@ -79,3 +79,5 @@ Upgrade, roll back, uninstall
 Command-line runs on the server use the same code and venv:
     cd ~/helios-ui/app && export HELIOS_RESULTS_ROOT=~/helios-ui/data/results
     ../venv/bin/python -m pytest tests --inventory ~/helios-ui/data/inventories/mr3.local.yaml
+
+Link check (HC-012): when the bundle carries helios-debug/, install.sh puts it next to app/ (<prefix>/helios-debug); the rack health check's HC-012 then runs its link scan with the same venv. A bundle built with --no-debug leaves it out and HC-012 skips.

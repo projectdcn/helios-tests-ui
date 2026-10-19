@@ -502,3 +502,27 @@ def test_port_in_use_names_the_host(tmp_path):
     finally:
         s.close()
     assert r.returncode == 2 and "on 127.0.0.1 is already in use" in r.stderr
+
+
+def test_bundle_carries_helios_debug_next_to_app(tmp_path):
+    """The link check repo goes in as helios-debug/ (committed HEAD, minus local inventories and results), with its
+    commit in BUILD_INFO; install.sh copies it next to app/ where the HC-012 health check looks."""
+    import subprocess
+    dbg = tmp_path / "helios-debug"
+    (dbg / "tools").mkdir(parents=True)
+    (dbg / "inventory").mkdir()
+    (dbg / "tools" / "link_check.py").write_text("print('link check')\n")
+    (dbg / "inventory" / "example.yaml").write_text("rack: x\n")
+    (dbg / "inventory" / "lab.local.yaml").write_text("rack: secret\n")
+    for c in (["init", "-q"], ["add", "-A"], ["-c", "user.name=t", "-c", "user.email=t@t", "commit", "-qm", "x"]):
+        subprocess.run(["git", "-C", str(dbg), *c], check=True)
+    out = bi.build(_repo(tmp_path), tmp_path / "dist", wheelhouse=_fake_wheelhouse(tmp_path), log=lambda s: None,
+                   debug_repo=dbg)
+    with tarfile.open(out) as t:
+        names = t.getnames()
+        top = names[0].split("/")[0]
+        info = json.loads(t.extractfile(f"{top}/app/BUILD_INFO.json").read())
+    assert f"{top}/helios-debug/tools/link_check.py" in names and f"{top}/helios-debug/inventory/example.yaml" in names
+    assert not any(n.endswith("lab.local.yaml") for n in names)
+    assert len(info["helios_debug"]["commit"]) == 40
+    assert 'step "link check -> $PREFIX/helios-debug"' in (ROOT / "tools/installer/install.sh").read_text()

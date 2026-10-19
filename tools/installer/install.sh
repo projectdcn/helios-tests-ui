@@ -508,10 +508,11 @@ if [ "$ROLLBACK" = 1 ]; then
     prev=$(bundle_version "$PREFIX/venv.prev/bin/python" "$PREFIX/app.prev/BUILD_INFO.json")
     step "rollback $cur -> $prev"
     stop_ui
-    for d in app venv; do
-        run mv "$PREFIX/$d" "$PREFIX/$d.rollback-tmp"
-        run mv "$PREFIX/$d.prev" "$PREFIX/$d"
-        run mv "$PREFIX/$d.rollback-tmp" "$PREFIX/$d.prev"
+    for d in app venv helios-debug; do
+        if [ "$d" = helios-debug ] && ! { [ -d "$PREFIX/$d" ] || [ -d "$PREFIX/$d.prev" ]; }; then continue; fi
+        [ -d "$PREFIX/$d" ] && run mv "$PREFIX/$d" "$PREFIX/$d.rollback-tmp"
+        [ -d "$PREFIX/$d.prev" ] && run mv "$PREFIX/$d.prev" "$PREFIX/$d"
+        [ -d "$PREFIX/$d.rollback-tmp" ] && run mv "$PREFIX/$d.rollback-tmp" "$PREFIX/$d.prev"
     done
     write_state "$MODE" "$prev"
     [ "$MODE" != systemd ] || write_unit          # ExecStart matching the rolled-back code (--host or not)
@@ -589,8 +590,8 @@ stop_ui
 if [ "$DRY" = 0 ] && [ "$NO_START" = 0 ]; then check_port "$PYTHON" "Use --port N"; fi
 
 if [ "$UPGRADE" = 1 ] || [ -d "$PREFIX/venv" ]; then
-    step "keep the current code as app.prev / venv.prev (one rollback)"
-    for d in app venv; do
+    step "keep the current code as app.prev / venv.prev / helios-debug.prev (one rollback)"
+    for d in app venv helios-debug; do
         if [ -d "$PREFIX/$d" ]; then
             run rm -rf "$PREFIX/$d.prev"
             run mv "$PREFIX/$d" "$PREFIX/$d.prev"
@@ -598,8 +599,8 @@ if [ "$UPGRADE" = 1 ] || [ -d "$PREFIX/venv" ]; then
     done
 fi
 restore_prev() {
-    warn "install failed: restoring the previous app/ and venv/"
-    for d in app venv; do
+    warn "install failed: restoring the previous app/, venv/ and helios-debug/"
+    for d in app venv helios-debug; do
         if [ -d "$PREFIX/$d.prev" ]; then rm -rf "${PREFIX:?}/$d"; mv "$PREFIX/$d.prev" "$PREFIX/$d"; fi
     done
 }
@@ -614,6 +615,13 @@ done
 step "code -> $PREFIX/app"
 run mkdir -p "$PREFIX/app"
 if [ "$DRY" = 1 ]; then say "  [dry-run] copy $HERE/app/. -> $PREFIX/app/"; else (cd "$HERE/app" && tar -cf - .) | (cd "$PREFIX/app" && tar -xf -); fi
+
+if [ -d "$HERE/helios-debug" ]; then
+    # link check (HC-012 runs it): next to app/, where the health check looks for it; same venv (paramiko, PyYAML)
+    step "link check -> $PREFIX/helios-debug"
+    run mkdir -p "$PREFIX/helios-debug"
+    if [ "$DRY" = 1 ]; then say "  [dry-run] copy $HERE/helios-debug/. -> $PREFIX/helios-debug/"; else (cd "$HERE/helios-debug" && tar -cf - .) | (cd "$PREFIX/helios-debug" && tar -xf -); fi
+fi
 
 step "venv ($PYTHON) + dependencies"
 run "$PYTHON" -m venv "$PREFIX/venv"
