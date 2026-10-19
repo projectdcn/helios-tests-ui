@@ -283,6 +283,7 @@ def test_healthy_fake_3switch_all_pass(tmp_path):
     verdicts = _run(tmp_path, inventory="inventory-afm3.yaml")
     optional = {"TC-AFM-035A",       # one-switch racks only
                 "MAINT-SYSVPOD",     # maintenance: runs only when named with --tc
+                "MAINT-AUDIT",       # maintenance (read-only audit summary): runs only when named with --tc
                 "TC-AFM-AGGW-002",   # needs a bearer token (thresholds.afm.bearer_token_env)
                 "TC-CTL-055",        # one-time recovery key, opt-in (thresholds.afm.allow_recovery_key)
                 "HC-008"}            # critical-event window off here (the disruptive fakes raise critical events);
