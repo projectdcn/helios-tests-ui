@@ -152,6 +152,8 @@ def datapath_ready(rack, computes, inventory, pytestconfig, request):
     m = request.node.get_closest_marker("datapath")
     tools = tuple(sorted((m.kwargs.get("tools") if m else None) or ()))
     need = int((m.kwargs.get("min_computes") if m else None) or 1)
+    if len(computes) < need:    # the rack is too small for this test (not a rack problem): SKIP, not blocked
+        pytest.skip(f"needs {need} compute trays, the inventory has {len(computes)}")
     cache = pytestconfig.__dict__.setdefault("_helios_preflight", {})
     key = (tuple(sorted(c.name for c in computes)), tools, need)
     if key not in cache:

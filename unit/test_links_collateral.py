@@ -97,3 +97,34 @@ def test_neighbour_check_waits_for_the_last_shut_port_of_the_asic():
     assert c.failed == [] and ("st6", "asic1") in lk.before
     lk.restore(sw, "asic1", "Ethernet261", c)
     assert c.failed == [] and lk.before == {}
+
+
+def test_pick_prefers_a_plane_that_is_still_available(monkeypatch):
+    """MR3 19 Oct: GPU Port33's plane was already missing; picking a Port33 link meant the planes could not drop."""
+    import afm_helpers
+
+    class Sw:
+        name = "st1"
+
+        @staticmethod
+        def namespaces():
+            return ["asic0"]
+
+    class Ops:
+        @staticmethod
+        def link_candidates(sw, slots, nss):
+            return [("asic0", "Ethernet1", (0, 3, 3, 33)), ("asic0", "Ethernet5", (0, 3, 3, 34))]
+
+        @staticmethod
+        def active_computes():
+            return [{}]
+
+        @staticmethod
+        def gpu_info(c):
+            return {"u": {"ports": [{"id": 33, "oper-state": "PortFailed"}, {"id": 34, "oper-state": "PortReady"},
+                                    {"id": 35, "oper-state": "PortDisabled"}]}}
+
+    assert afm_helpers._pick(Ops, Sw)[1] == "Ethernet5"
+    Ops.gpu_info = staticmethod(lambda c: {"u": {"ports": [{"id": 33, "oper-state": "PortFailed"},
+                                                           {"id": 34, "oper-state": "PortDown"}]}})
+    assert afm_helpers._pick(Ops, Sw)[1] == "Ethernet1"      # all degraded: first candidate, with a warning

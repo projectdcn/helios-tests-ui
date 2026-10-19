@@ -206,6 +206,16 @@ SIDEBAND_FAULTS = [
     # switch failure injection (tests/afm/test_afm_switch_faults.py)
     ("no_fdb_reconcile", {"TC-SWH-061", "TC-SWH-062"}),
     ("no_congestion_watermark", {"TC-SWH-060"}),
+    # read-only observability cases (tests/afm/test_afm_observability.py)
+    ("agents_unbalanced", {"TC-SBM-139"}),
+    ("node_agent_first", {"TC-SBM-138"}),
+    ("compute_not_initialised", {"TC-SEQ-008"}),
+    ("plane_mismatch", {"TC-SWA-173"}),
+    ("log_unbounded", {"TC-STR-015"}),
+    ("cert_mismatch", {"TC-CTL-129"}),
+    ("agent_cert_expired", {"TC-CTL-136"}),
+    # GPU fault (tests/afm/test_afm_ifcp.py): another GPU's session drops with the faulted one
+    ("gpu_fault_collateral", {"TC-TRG-012"}),
 ]
 # MCH (tests/afm/test_afm_mch.py) on the heliosmch fake (inventory-mch.yaml) unless another inventory is named;
 # MCH-045/047 (traffic over replayed tools) have no controller fault

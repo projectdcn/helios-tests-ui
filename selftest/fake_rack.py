@@ -341,8 +341,11 @@ class Sim:
                     and not ("switch_stuck_unknown" in self.f and self.stops[i] >= 2) and i not in self.wedged
                 o["status"]["conditions"] = [{"type": "healthy", "status": "true" if ok else "unknown"}]
                 o["status"]["asic-info"] = {"asics": [{"name": ns, "ports": [
-                    {"name": p, "oper-state": "PortReady" if self._sw_port_ready(i, ns, p, cab[0]) else "PortDown"}
-                    for p, cab in self.ports(i, ns).items()]} for ns in ("asic0", "asic1")]}
+                    {"name": p, "oper-state": "PortReady" if self._sw_port_ready(i, ns, p, cab[0]) else "PortDown",
+                     "switching-plane-id": 0 if ("plane_mismatch" in self.f and i == 0 and ns == "asic1" and k == 0) else cab[3],
+                     "peer": {"slot-id": cab[0], "gpu-id": cab[1], "port-id": cab[3],
+                              "display": f"Slot{cab[0]}/GPU{cab[1]}/Port{cab[3]}"}}
+                    for k, (p, cab) in enumerate(self.ports(i, ns).items())]} for ns in ("asic0", "asic1")]}
         for name, o in self.computes.items():
             slot = o["spec"]["slot-id"]
             host = self.slot_host(slot)
@@ -351,6 +354,9 @@ class Sim:
                 (slot not in self.mgmt_down_ct or "mgmt_loss_unnoticed" in self.f) and \
                 not ("last_compute_unhealthy" in self.f and slot == len(self.computes) - 1)   # quarantine tests
             o["status"]["conditions"] = [{"type": "healthy", "status": "true" if ok else "unknown"}]
+            stuck = "compute_not_initialised" in self.f and slot == 0
+            o["status"]["init-phase"] = "in-progress" if stuck else "success"
+            o["status"]["is-connected-to-controller"] = host is not None and not stuck
             for u, g in o["status"]["scale-up-info"]["gpu-info"].items():
                 g["vpod-membership"] = member.get((slot, g["index"]), "")
                 for n, prt in enumerate(g["ports"]):
@@ -423,7 +429,7 @@ class Sim:
         c = self.computes.get(self.cname(slot))
         present = (c is not None and c["status"]["admission-phase"] == "admitted") or \
             "switch_ports_ready_after_delete" in self.f
-        return present and (i, ns, port) not in self.links_down
+        return present and (i, ns, port) not in self.links_down and (not self.mch or self.lane_used(i, ns, port))
 
     # ------------------------------------------------------------ vPOD membership
     def validate_gpus(self, gpus) -> str | None:
@@ -666,7 +672,13 @@ class FakeSwitchTransport:
         st, sim, i = self.st, self.st.sim, self.i
         res = None
         with st.lock:
-            if cmd == "docker exec afm-agent ps -eo pid,args":
+            if cmd == "docker exec afm-agent ps -eo pid,etimes,args":
+                body = self.run("docker exec afm-agent ps -eo pid,args").stdout
+                sa, na = (600, 900) if "node_agent_first" in st.f else (900, 600)
+                res = self._res(cmd, "".join(
+                    f"{ln.split(None, 1)[0]:>6} {sa + 1 if 'afm_agent.sh' in ln else sa if 'switch-agent' in ln else na:>6} "
+                    f"{ln.split(None, 1)[1]}\n" for ln in body.splitlines() if ln.strip()))
+            elif cmd == "docker exec afm-agent ps -eo pid,args":
                 lines = ["    1 /usr/bin/afm_agent.sh"] + ([] if "no_switch_agent_process" in st.f else ["   20 /switch-agent"]) \
                     if sim.agent_up[i] else []
                 if "split_gpu_set" in st.f and not all(sim.agent_up.values()) and sim.agent_up[i]:
@@ -695,6 +707,18 @@ class FakeSwitchTransport:
                 res = self._res(cmd, f"{int(time.time())}\n")
             elif cmd == "date -u +%Y-%m-%dT%H:%M:%S":
                 res = self._res(cmd, datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S") + "\n")
+            elif cmd == "find /opt/amd/afm/controller/logs -type f -printf '%s %f\\n'":
+                big = 3 * 2**30 if "log_unbounded" in st.f else 48 * 2**20
+                res = self._res(cmd, f"{big} afm_controller.log\n{50 * 2**20} afm_controller.log.1.gz\n"
+                                     f"{2 * 2**20} audit.log\n")
+            elif cmd.startswith("echo | openssl s_client -connect 127.0.0.1:443"):
+                fp = ":".join(["AB"] * 31 + [f"{i:02X}" if "cert_mismatch" in st.f else "CD"])
+                res = self._res(cmd, f"sha256 Fingerprint={fp}\n" if i in sim.ctrl_started else "")
+            elif cmd.startswith("for f in /opt/amd/afm/agent/sysconfig/config*/*.pem;"):
+                ok = "EXPIRED" if "agent_cert_expired" in st.f else "VALID"
+                res = self._res(cmd, "" if i in sim.identity_reset else
+                                f"== /opt/amd/afm/agent/sysconfig/config0/client.pem\nsubject=CN = {sim.sname(i)}\n"
+                                f"issuer=CN = AFM Root CA\n{ok}\n")
             elif m := re.fullmatch(r"find /opt/amd/afm/controller/logs -type f -newermt @(\d+)( -print)?", cmd):
                 newer = sim.ctrl_log[i] > int(m.group(1))
                 res = self._res(cmd, "/opt/amd/afm/controller/logs/afm_controller.log\n" if newer else "")
@@ -963,6 +987,13 @@ class FakeComputeTransport:
     def bdf(g):
         return f"000{g + 1}:01:00.1"
 
+    def _collateral(self, g):
+        """Fault gpu_fault_collateral: faulting GPU g also kills the IFCP session of one port of the next GPU."""
+        sim, o = self.st.sim, (g + 1) % 4
+        pid = next((p for p in sim.gpu_pids() if p in sim.used and (self.slot, o, p) not in sim.ifcp_stuck), None)
+        if pid is not None:
+            sim.ifcp_stuck.add((self.slot, o, pid))
+
     def _gpus(self, bdfs=None):
         gs = range(4)
         if bdfs:
@@ -979,7 +1010,10 @@ class FakeComputeTransport:
             st.sim.refresh(st.objs)
             if "TransferBench" in c:
                 sim.tb_at[self.slot] = time.monotonic()      # the congestion case's watermarks rise on these ports
-            if c == "afmctl show device --json":
+            if c == "amd-smi process --json":
+                out = json.dumps([{"gpu": g, "process_list": [{"process_info": {"name": "gpu-collectives", "pid": 4242 + g}}]
+                                   if "gpu_busy" in st.f else []} for g in range(4)])
+            elif c == "afmctl show device --json":
                 local = [str(self._acc(g)) for g in range(4)]
                 out = json.dumps({"device": [{"bdf": self.bdf(g), "spec": {
                     "accelerator_id": str(self._acc(g)), "config_phase": self._phase(g), "local_accelerators": local,
@@ -1035,6 +1069,8 @@ class FakeComputeTransport:
                     k = self._link(g, pid)
                     if m.group(4) == "idle":
                         sim.cmp_admin_down.add(key)
+                        if "gpu_fault_collateral" in st.f:
+                            self._collateral(g)
                         quiet = "no_compute_port_events" in st.f
                         if k:
                             sim.set_link(k[0], k[1], k[2], up=False, quiet=quiet)
@@ -1053,6 +1089,8 @@ class FakeComputeTransport:
                 out = f"({m.group(1)}) : port admin state updated\n"
             elif m := re.fullmatch(r"afmctl reset device (?:-b (\S+)|--datapath)", c):
                 gs = self._gpus(m.group(1)) if m.group(1) else range(4)
+                if m.group(1) and "gpu_fault_collateral" in st.f:
+                    self._collateral(gs[0])
                 if "reset_not_logged" not in st.f:
                     sim.journal.setdefault(self.slot, []).append(time.time())
                 if sim.mch and "mch_reset_loses_layout" in st.f:

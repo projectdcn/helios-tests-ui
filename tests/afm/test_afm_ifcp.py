@@ -8,6 +8,7 @@ afmctl or the node-agent API, so cases that need them are not automated.
 """
 from __future__ import annotations
 
+import re
 import time
 
 import pytest
@@ -31,6 +32,13 @@ def _recovered(ops, checks, base: dict, what: str, only=None):
         ok = ops.wait(lambda tray=tray, want=want: want <= ops.ifcp_up(tray), t, 5)
         missing = sorted(want - ops.ifcp_up(tray))
         checks.check(ok, f"{name}: {len(missing)} IFCP session(s) not back {t:.0f}s after {what}: {missing[:6]}")
+
+
+def _afm_gpu_index(ops, name: str, tray, bdf: str) -> int | None:
+    """AFM gpu-info index of the tray GPU at ``bdf``, matched by accelerator id (afmctl accelerator_id = AFM acc-id);
+    not derived from the PCI domain (TC-TRG-010 assumed domain 000N = GPU N-1)."""
+    acc = next((d.accel_id for d in ops.afmctl(tray).devices() if d.bdf == bdf), None)
+    return next((g.get("index") for g in ops.gpu_info(ops.compute(name)).values() if str(g.get("acc-id")) == str(acc)), None)
 
 
 def _agents_connected(ops) -> list[str]:
@@ -300,7 +308,7 @@ def test_compute_port_shut_link_down_recovery(ops, afm_ready, checks, record_pro
     name = ops.pick_compute()
     tray = ops.tray(name)
     bdf, port = sorted(base[name])[0]
-    want = {(name, int(bdf[3]) - 1, port)}
+    want = {(name, _afm_gpu_index(ops, name, tray, bdf), port)}
     since = ops.controller_now()
     sysv = ops.system_vpod_name()
     try:
@@ -312,4 +320,105 @@ def test_compute_port_shut_link_down_recovery(ops, afm_ready, checks, record_pro
         ops.compute_port_admin(tray, bdf, port, up=True)
     checks.check(ops.wait(lambda: not (want & ops.failed_gpu_ports()), 300, 10), "still PortFailed")
     _recovered(ops, checks, base, "the compute port restore", only={name})
+    checks.assert_all()
+
+
+# ------------------------------------------------------------------ GPU fault: other GPUs' control plane unaffected
+
+@pytest.fixture
+def gpu_fault_target(ops):
+    """(compute, tray, bdf, AFM GPU index) to fault: thresholds.afm.target_compute (else the highest ready slot), its
+    GPU with the most IFCP sessions up (thresholds.afm.fault_gpu_bdf to choose). Pre-flight: no other workload may be
+    using that tray's GPUs (amd-smi process) - g02-g17 18 Oct, CT12 GPUs were running HPE gpu-collectives."""
+    from helios import preflight
+
+    name = ops.pick_compute()
+    tray = ops.tray(name)
+    busy = preflight._gpu_users(tray, True) if ops.th("gpu_fault_busy_check", True) else ""
+    if busy:
+        pytest.fail(f"GPU fault pre-flight failed - not faulting a GPU in use: {busy}", pytrace=False)
+    sessions = ops.ifcp_up(tray)
+    per = {}
+    for bdf, _p in sessions:
+        per[bdf] = per.get(bdf, 0) + 1
+    bdf = ops.th("fault_gpu_bdf", None) or (max(sorted(per), key=lambda b: per[b]) if per else None)
+    if not bdf:
+        pytest.fail(f"GPU fault pre-flight failed - {name}: no GPU with an IFCP session up", pytrace=False)
+    return name, tray, bdf, _afm_gpu_index(ops, name, tray, bdf)
+
+
+def _watch_others(ops, base: dict, name: str, bdf: str, gidx, afm_before: set, window: float) -> tuple[list, list]:
+    """Poll every tray for ``window`` s: IFCP sessions lost on any GPU other than (name, bdf), and new PortFailed GPU
+    ports in AFM other than (name, gidx). Returns (lost sessions, new AFM failures), each de-duplicated."""
+    lost, afm_new = set(), set()
+    end = time.monotonic() + window
+    while True:
+        for n, want in base.items():
+            have = ops.ifcp_up(ops.tray(n))
+            lost |= {(n,) + k for k in want - have if not (n == name and k[0] == bdf)}
+        afm_new |= {f for f in ops.failed_gpu_ports() - afm_before if not (f[0] == name and f[1] == gidx)}
+        if time.monotonic() >= end:
+            return sorted(lost), sorted(afm_new)
+        time.sleep(5 * float(ops.th("time_scale", 1)))
+
+
+@pytest.mark.l3
+@pytest.mark.disruptive
+@pytest.mark.tc("TC-TRG-012")
+def test_gpu_reset_other_gpus_cp_unaffected(ops, afm_ready, gpu_fault_target, checks, record_property):
+    """GPU fault by device reset (afmctl reset device -b <bdf>, one GPU): no IFCP session of any OTHER GPU on any
+    tray drops and AFM marks no other GPU port PortFailed during thresholds.afm.gpu_fault_watch_s (90 s); the reset
+    GPU's sessions are back within ifcp_recover_s afterwards. Skipped if afmctl cannot reset a single device."""
+    name, tray, bdf, gidx = gpu_fault_target
+    base = _baseline(ops)
+    afm_before = ops.failed_gpu_ports()
+    since = ops.tray_time(tray)
+    record_property("target", {"compute": name, "tray": tray.name, "bdf": bdf, "afm_gpu": gidx,
+                               "sessions": len([k for k in base[name] if k[0] == bdf])})
+    r = tray.run(f"afmctl reset device -b {bdf}", sudo=True, timeout=300)
+    if not r.ok and re.search(r"unknown|usage|invalid|not supported", r.stdout + r.stderr, re.I):
+        pytest.skip(f"afmctl cannot reset one device on {tray.name}: {(r.stdout + r.stderr).strip()[:200]}")
+    checks.check(r.ok, f"{tray.name}: afmctl reset device -b {bdf} -> rc {r.rc}: {(r.stdout + r.stderr).strip()[:200]}")
+    lost, afm_new = _watch_others(ops, base, name, bdf, gidx, afm_before,
+                                  float(ops.th("gpu_fault_watch_s", 90)) * float(ops.th("time_scale", 1)))
+    record_property("other_gpus", {"sessions_lost": lost[:20], "afm_port_failed": afm_new[:20]})
+    checks.check(not lost, f"{len(lost)} IFCP session(s) of other GPUs dropped during the reset of {tray.name} {bdf}: {lost[:6]}")
+    checks.check(not afm_new, f"AFM marked {len(afm_new)} port(s) of other GPUs PortFailed: {afm_new[:6]}")
+    checks.check(ops.reset_logged_since(tray, since), f"{tray.name}: no completed afmctl reset in the journal since {since}")
+    _recovered(ops, checks, base, f"the reset of {bdf}", only={name})
+    checks.assert_all()
+
+
+@pytest.mark.l3
+@pytest.mark.disruptive
+@pytest.mark.tc("TC-TRG-012")
+def test_gpu_isolated_other_gpus_cp_unaffected(ops, afm_ready, gpu_fault_target, checks, record_property):
+    """GPU fault by isolation (every up port of one GPU set idle on the compute side, afmctl update port): that GPU's
+    sessions all go down and AFM marks its ports PortFailed, while no session of any OTHER GPU drops and no other GPU
+    port is PortFailed; ports enabled again -> every session back, nothing left PortFailed."""
+    name, tray, bdf, gidx = gpu_fault_target
+    base = _baseline(ops)
+    afm_before = ops.failed_gpu_ports()
+    mine = sorted(k for k in base[name] if k[0] == bdf)
+    record_property("target", {"compute": name, "tray": tray.name, "bdf": bdf, "afm_gpu": gidx, "ports": len(mine)})
+    sysv = ops.system_vpod_name()
+    want_failed = {(name, gidx, p) for _b, p in mine}
+    try:
+        for _b, port in mine:
+            ops.compute_port_admin(tray, bdf, port, up=False)
+        down = ops.wait(lambda: not (set(mine) & ops.ifcp_up(tray)), 120, 5)
+        checks.check(down, f"{tray.name} {bdf}: sessions still up after idling its ports: "
+                           f"{sorted(set(mine) & ops.ifcp_up(tray))[:6]}")
+        window = (ops.link_fail_threshold(sysv) + float(ops.th("gpu_fault_watch_s", 90))) * float(ops.th("time_scale", 1))
+        lost, afm_new = _watch_others(ops, base, name, bdf, gidx, afm_before, window)
+        record_property("other_gpus", {"sessions_lost": lost[:20], "afm_port_failed": afm_new[:20]})
+        checks.check(not lost, f"{len(lost)} IFCP session(s) of other GPUs dropped while {tray.name} {bdf} was isolated: {lost[:6]}")
+        checks.check(not afm_new, f"AFM marked {len(afm_new)} port(s) of other GPUs PortFailed: {afm_new[:6]}")
+        missing = sorted(want_failed - ops.failed_gpu_ports())
+        checks.check(gidx is None or not missing, f"isolated GPU ports not PortFailed in AFM: {missing[:6]}")
+    finally:
+        for _b, port in mine:
+            ops.compute_port_admin(tray, bdf, port, up=True)
+    _recovered(ops, checks, base, f"enabling {bdf} again", only={name})
+    checks.check(ops.wait(lambda: not (want_failed & ops.failed_gpu_ports()), 300, 10), "isolated GPU ports still PortFailed")
     checks.assert_all()

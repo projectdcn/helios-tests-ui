@@ -1,6 +1,8 @@
 """Shared helpers for the disruptive AFM suites (test_afm_links.py, test_afm_failover.py)."""
 from __future__ import annotations
 
+import logging
+
 import pytest
 
 from helios.afm import CLUSTER, wait_for
@@ -86,12 +88,26 @@ def _target_switch(ops):
     return t["meta"]["name"], ops.ssh_switch(t)
 
 
+def _degraded_port_ids(ops) -> set:
+    """GPU port ids (= switching planes) where some GPU of an active compute has the port failed / down."""
+    return {p.get("id", i) for c in ops.active_computes() for g in ops.gpu_info(c).values()
+            for i, p in enumerate(g.get("ports") or []) if p.get("oper-state") not in ("PortReady", "PortDisabled")}   # PortDisabled: unused MCH lane
+
+
 def _pick(ops, sw, slots=None, asics=None):
+    """First up trunk port cabled to a GPU, preferring a GPU port id whose plane is still available: shutting a port
+    on a plane that is already missing cannot drop the planes (MR3 19 Oct: 31 of 36 planes at baseline, every pick was
+    a GPU Port33 link and TC-AFM-012/014/015/016/041 saw no drop)."""
     nss = sw.namespaces()
     c = ops.link_candidates(sw, slots, [nss[a] for a in asics] if asics else None)
     if not c:
         pytest.fail(f"{sw.name}: no up trunk port cabled to slots {slots} (asics {asics})")
-    return c[0]
+    bad = _degraded_port_ids(ops)
+    good = [x for x in c if x[2][3] not in bad]
+    if not good:
+        logging.getLogger("helios").warning("%s: every candidate port is on a plane already degraded (%s)", sw.name,
+                                            sorted(bad))
+    return (good or c)[0]
 
 
 def _restored(ops, checks, vpod, base, what="after the link came back"):
