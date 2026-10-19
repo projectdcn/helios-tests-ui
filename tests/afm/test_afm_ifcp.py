@@ -333,7 +333,14 @@ def gpu_fault_target(ops):
     from helios import preflight
 
     name = ops.pick_compute()
-    tray = ops.tray(name)
+    try:
+        tray = ops.tray(name)
+    except RuntimeError as e:
+        pytest.fail(f"GPU fault pre-flight failed - {e}", pytrace=False)
+    bad = _not_active(ops, tray)
+    if bad:     # MR3 19 Oct: after the reset part, c2 0001:01:00.1 stayed PROVIDER / accelerator 0 for 11+ min
+        pytest.fail(f"GPU fault pre-flight failed - {tray.name}: GPU(s) not ACTIVE (an earlier fault not "
+                    f"recovered?): {bad}", pytrace=False)
     busy = preflight._gpu_users(tray, True) if ops.th("gpu_fault_busy_check", True) else ""
     if busy:
         pytest.fail(f"GPU fault pre-flight failed - not faulting a GPU in use: {busy}", pytrace=False)
@@ -345,6 +352,15 @@ def gpu_fault_target(ops):
     if not bdf:
         pytest.fail(f"GPU fault pre-flight failed - {name}: no GPU with an IFCP session up", pytrace=False)
     return name, tray, bdf, _afm_gpu_index(ops, name, tray, bdf)
+
+
+def _not_active(ops, tray) -> list[str]:
+    return [f"{d.bdf} accelerator {d.accel_id} {d.config_phase}" for d in ops.afmctl(tray).devices()
+            if d.config_phase != "ACTIVE"]
+
+
+def _device(ops, tray, bdf: str):
+    return next((d for d in ops.afmctl(tray).devices() if d.bdf == bdf), None)
 
 
 def _watch_others(ops, base: dict, name: str, bdf: str, gidx, afm_before: set, window: float) -> tuple[list, list]:
@@ -373,7 +389,8 @@ def test_gpu_reset_other_gpus_cp_unaffected(ops, afm_ready, gpu_fault_target, ch
     base = _baseline(ops)
     afm_before = ops.failed_gpu_ports()
     since = ops.tray_time(tray)
-    record_property("target", {"compute": name, "tray": tray.name, "bdf": bdf, "afm_gpu": gidx,
+    acc0 = getattr(_device(ops, tray, bdf), "accel_id", None)
+    record_property("target", {"compute": name, "tray": tray.name, "bdf": bdf, "afm_gpu": gidx, "accelerator": acc0,
                                "sessions": len([k for k in base[name] if k[0] == bdf])})
     r = tray.run(f"afmctl reset device -b {bdf}", sudo=True, timeout=300)
     if not r.ok and re.search(r"unknown|usage|invalid|not supported", r.stdout + r.stderr, re.I):
@@ -386,6 +403,13 @@ def test_gpu_reset_other_gpus_cp_unaffected(ops, afm_ready, gpu_fault_target, ch
     checks.check(not afm_new, f"AFM marked {len(afm_new)} port(s) of other GPUs PortFailed: {afm_new[:6]}")
     checks.check(ops.reset_logged_since(tray, since), f"{tray.name}: no completed afmctl reset in the journal since {since}")
     _recovered(ops, checks, base, f"the reset of {bdf}", only={name})
+    t = float(ops.th("gpu_reset_reprogram_s", 180))
+    back = lambda: (lambda d: d is not None and d.config_phase == "ACTIVE" and d.accel_id == acc0)(_device(ops, tray, bdf))  # noqa: E731
+    ok = ops.wait(back, t, 10)
+    d = _device(ops, tray, bdf)
+    record_property("after_reset", {"accelerator": getattr(d, "accel_id", None), "phase": getattr(d, "config_phase", None)})
+    checks.check(ok, f"{tray.name} {bdf}: not re-programmed {t:.0f}s after the reset - accelerator "
+                     f"{getattr(d, 'accel_id', None)} (was {acc0}), phase {getattr(d, 'config_phase', None)}")
     checks.assert_all()
 
 

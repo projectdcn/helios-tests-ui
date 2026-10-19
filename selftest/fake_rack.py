@@ -100,6 +100,7 @@ class Sim:
         self.flapped: set[tuple] = set()
         self.ifcp_stuck: set[tuple] = set()
         self.journal: dict[int, list[float]] = {}  # slot -> afmctl reset times
+        self.unprogrammed: set[tuple] = set()  # (slot, gpu) reset with afmctl and not re-programmed (fault)
         self.user_vlans: dict[int, set[int]] = {}
         self.readmit_at: dict[int, float] = {}
         self.ack: dict[str, set] = {}          # vPOD -> failed links acknowledged by ReconfigureDataFabric
@@ -1015,8 +1016,10 @@ class FakeComputeTransport:
                                    if "gpu_busy" in st.f else []} for g in range(4)])
             elif c == "afmctl show device --json":
                 local = [str(self._acc(g)) for g in range(4)]
+                lost = lambda g: (self.slot, g) in sim.unprogrammed  # noqa: E731 - reset, never re-programmed
                 out = json.dumps({"device": [{"bdf": self.bdf(g), "spec": {
-                    "accelerator_id": str(self._acc(g)), "config_phase": self._phase(g), "local_accelerators": local,
+                    "accelerator_id": "0" if lost(g) else str(self._acc(g)),
+                    "config_phase": "PROVIDER" if lost(g) else self._phase(g), "local_accelerators": local,
                     "vpod_accelerators": sorted({str(self._acc(g))} | {str(p) for p in self._peers(g)}, key=int)}}
                     for g in range(4)]})
             elif m := re.fullmatch(r"afmctl show port -b (\S+) --json", c):
@@ -1091,6 +1094,8 @@ class FakeComputeTransport:
                 gs = self._gpus(m.group(1)) if m.group(1) else range(4)
                 if m.group(1) and "gpu_fault_collateral" in st.f:
                     self._collateral(gs[0])
+                if m.group(1) and "gpu_reset_not_reprogrammed" in st.f:
+                    sim.unprogrammed |= {(self.slot, g) for g in gs}
                 if "reset_not_logged" not in st.f:
                     sim.journal.setdefault(self.slot, []).append(time.time())
                 if sim.mch and "mch_reset_loses_layout" in st.f:

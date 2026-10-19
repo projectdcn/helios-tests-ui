@@ -216,6 +216,7 @@ SIDEBAND_FAULTS = [
     ("agent_cert_expired", {"TC-CTL-136"}),
     # GPU fault (tests/afm/test_afm_ifcp.py): another GPU's session drops with the faulted one
     ("gpu_fault_collateral", {"TC-TRG-012"}),
+    ("gpu_reset_not_reprogrammed", {"TC-TRG-012"}),
 ]
 # MCH (tests/afm/test_afm_mch.py) on the heliosmch fake (inventory-mch.yaml) unless another inventory is named;
 # MCH-045/047 (traffic over replayed tools) have no controller fault

@@ -601,8 +601,15 @@ class AfmOps:
                 cache[afm_name] = c
                 return c
         t = self.tray_map().get(afm_name)
-        if t:                     # paired by elimination: the tray exists but its afmctl cannot be read
-            raise RuntimeError(f"{afm_name} ({t}): tray unreachable or afmctl not answering")
+        if t:                     # paired by elimination: afmctl not readable, or its ids differ from AFM's
+            try:
+                devs = Afmctl(self.rack.computes[t]).devices()
+            except Exception:  # noqa: BLE001
+                raise RuntimeError(f"{afm_name} ({t}): tray unreachable or afmctl not answering") from None
+            raise RuntimeError(f"{afm_name} ({t}): afmctl accelerator ids {sorted(d.accel_id for d in devs)} do not "
+                               f"match AFM's {sorted(want)} (GPUs not ACTIVE: "
+                               f"{[f'{d.bdf} {d.config_phase}' for d in devs if d.config_phase != 'ACTIVE'] or 'none'}) - "
+                               f"a GPU reset not re-programmed? Set afm_name: {afm_name} on {t} to pair them by name")
         raise RuntimeError(f"no inventory compute matches AFM {afm_name} (acc-ids {sorted(want)}); "
                            f"set afm_name: {afm_name} on its inventory entry")
 
