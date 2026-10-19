@@ -822,10 +822,10 @@
 - cmd: '^timeout \d+ afmctl test ping '
   rc: 0
   file: afmctl_ping.txt
-- cmd: '^(HELIOS_RUN=\w+ )?TB_NUM_RANKS=\d+ TB_RANK=0 '
+- cmd: '^(HELIOS_RUN=\w+ )?(TB_MASTER_PORT=\d+ )?TB_NUM_RANKS=\d+ TB_RANK=0 '
   rc: 0
   file: transferbench.txt
-- cmd: ^(HELIOS_RUN=\w+ )?TB_NUM_RANKS=\d+ TB_RANK=[1-9]
+- cmd: ^(HELIOS_RUN=\w+ )?(TB_MASTER_PORT=\d+ )?TB_NUM_RANKS=\d+ TB_RANK=[1-9]
   rc: 0
   stdout: ''
 - cmd: RcclSmokeTest
