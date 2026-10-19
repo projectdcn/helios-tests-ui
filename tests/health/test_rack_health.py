@@ -316,3 +316,79 @@ def test_hardware_inventory(rack, computes, inventory, checks, record_property):
                                            "switch": {k: [v["up"], v["total"]] for k, v in sw_links.items()},
                                            "compute": {k: [v["up"], v["total"]] for k, v in ct_links.items()}}})
     checks.assert_all()
+
+
+def _link_check_tool(inventory) -> tuple[str | None, str]:
+    """(path of helios-debug's tools/link_check.py, python to run it) - thresholds.health.link_check.dir, then
+    $HELIOS_DEBUG_DIR, ../helios-debug next to this repo, ~/helios-debug, ~/dev/helios-debug."""
+    import os
+    import sys
+    from pathlib import Path
+    cfg = inventory.th("health.link_check") or {}
+    here = Path(__file__).resolve().parents[2]
+    for d in [cfg.get("dir"), os.environ.get("HELIOS_DEBUG_DIR"), here.parent / "helios-debug",
+              Path.home() / "helios-debug", Path.home() / "dev" / "helios-debug"]:
+        if d and (Path(d).expanduser() / "tools" / "link_check.py").is_file():
+            root = Path(d).expanduser()
+            py = cfg.get("python") or (str(root / ".venv" / "bin" / "python") if (root / ".venv" / "bin" / "python").is_file()
+                                       else sys.executable)
+            return str(root / "tools" / "link_check.py"), py
+    return None, sys.executable
+
+
+@pytest.mark.healthcheck("warn")
+@pytest.mark.tc("HC-012")
+def test_link_scan(inventory, request, checks, record_property):
+    """Every GPU link of the rack (switch port <-> GPU port) checked by helios-debug's link check - kept in its own repo
+    and run here as a separate program on the same inventory: state on both ends, growing bit errors, IFCP, forwarding
+    entry, the switch ASIC's per-lane view for physical problems. One failure line per root cause (trays quarantined in
+    the inventory are recorded, not failed); the full report (ASIC to GPU map, every link, command logs) is kept under
+    <results>/runs/<rack>/link-scans/scan-<UTC time>/ (property 'report'). thresholds.health.link_check: {dir, python, interval_s (30), timeout_s (900),
+    enabled (true)}."""
+    import json
+    import subprocess
+    from pathlib import Path
+    cfg = inventory.th("health.link_check") or {}
+    if cfg.get("enabled") is False:
+        pytest.skip("thresholds.health.link_check.enabled is false")
+    if str((inventory.transport or {}).get("kind", "ssh")) != "ssh" or inventory.th("afm.fake"):
+        pytest.skip("link scan needs real SSH to the rack (replay / fake inventory)")
+    tool, py = _link_check_tool(inventory)
+    if not tool:
+        pytest.skip("helios-debug not found (thresholds.health.link_check.dir or $HELIOS_DEBUG_DIR)")
+    import time
+    res = Path(__file__).resolve().parents[2] / "results"
+    base = Path(request.config.getoption("--results-dir") or res / "runs" / (inventory.rack or "rack"))
+    out = base / "link-scans" / f"scan-{time.strftime('%Y%m%d-%H%M%S', time.gmtime())}"   # the run folder exists only at the end
+    cmd = [py, tool, "scan", "--inventory", str(inventory.path), "--interval", str(cfg.get("interval_s", 30)), "--out", str(out)]
+    record_property("command", " ".join(cmd))
+    try:
+        p = subprocess.run(cmd, capture_output=True, text=True, timeout=float(cfg.get("timeout_s", 900)))
+    except subprocess.TimeoutExpired:
+        pytest.fail(f"link scan did not finish within {cfg.get('timeout_s', 900)} s", pytrace=False)
+    record_property("report", str(out / "report.html"))
+    record_property("scan_output", p.stdout[-6000:])
+    js = out / "link_check.json"
+    checks.check(p.returncode in (0, 1, 2) and js.is_file(), f"link scan failed to run (rc {p.returncode}): {(p.stderr or p.stdout)[-400:]}")
+    if not js.is_file():
+        checks.assert_all()
+    d = json.loads(js.read_text())
+    links = d.get("links") or []
+    states = {k: sum(1 for x in links if x.get("state") == k) for k in ("ok", "degraded", "down")}
+    record_property("links", {"total": len(links), **states})
+    record_property("patterns", d.get("patterns") or [])
+    quarantined = []
+    for g in d.get("root_causes") or []:
+        if g.get("kind") == "tray_quarantined" or str(g.get("cause", "")).startswith("compute tray quarantined"):
+            quarantined.append(f"{g.get('count')} links: {g.get('cause')}")
+            continue
+        first = ", ".join((g.get("links") or [])[:4])
+        checks.fail(f"{str(g.get('state', '')).upper()} {g.get('count')} link(s): {g.get('cause')} [{g.get('owner')}] - "
+                    f"{first}{' ...' if g.get('count', 0) > 4 else ''}")
+    record_property("quarantined", quarantined)
+    if p.returncode == 2:
+        nc = [ln.strip() for ln in p.stdout.splitlines() if ln.startswith(("  switch ", "  tray "))]
+        checks.fail("link scan could not read every node: " + "; ".join(nc[:6]))
+    record_property("snapshot", {"link_scan": {"total": len(links), **states}})
+    checks.assert_all()
+

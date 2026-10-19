@@ -80,6 +80,7 @@ HEALTH_ONLY: dict[str, tuple[str, str]] = {
     "HC-009": (WARN, "AFM controllers up for a while (no recent restart)"),
     "HC-010": (WARN, "same driver / ROCm / IFoE / afmctl / GPU firmware versions on every tray"),
     "HC-011": (WARN, "hardware inventory + usage (CPU, memory, disks, GPUs, compute<->switch links up / down)"),
+    "HC-012": (WARN, "link scan: no down / degraded GPU link, root cause per link (helios-debug link_check)"),
 }
 
 

@@ -213,3 +213,8 @@ cases:
   title: 'Health check: hardware inventory and usage of every switch and tray (CPU, memory, disks, GPUs, compute<->switch links up / down)'
   category: health
   origin: added 2026-10-15
+- id: HC-012
+  level: L1
+  title: 'Health check: link scan - every GPU link of the rack checked end to end with one root cause per down / degraded link (helios-debug link_check, run as a separate tool)'
+  category: health
+  origin: added 2026-10-19
