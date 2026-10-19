@@ -288,8 +288,14 @@ def transferbench_incast(dst, srcs, inventory, checks: Checks, duration_s: float
     t0 = time.monotonic()
     rounds: list[dict] = []
 
+    base = int(inventory.cmd("transferbench.incast_base_port", 47100))
+
     def one(src):
-        jobs = [(node, render(tmpl, rank=r, num_ranks=2, master_addr=addr(src), name=node.name, gpus=node.gpus, **kw))
+        # every job shares the destination: give each its own TB_MASTER_PORT (g02-g17 19 Oct 00:09 UTC: two jobs on
+        # the default port, the second rank on ct12 failed 'recv: Invalid argument' and the load stopped after 6.6 s)
+        port = base + srcs.index(src)
+        jobs = [(node, f"TB_MASTER_PORT={port} " + render(tmpl, rank=r, num_ranks=2, master_addr=addr(src), name=node.name,
+                                                          gpus=node.gpus, **kw))
                 for r, node in enumerate((src, dst))]
         return run_ranks(jobs, timeout, sudo=use_sudo(inventory))
     while True:

@@ -136,18 +136,21 @@ cases:
     switch ports towards it well above idle (and any configured AFM congestion event); drops stop and links / planes
     recover afterwards'
   category: switch-hw
+  scope: AIOPS            # failure detection / AI-ops cases (Scope column of full_rack_testplan.xlsx)
   origin: added 2026-10-18
 - id: TC-SWH-061
   level: L3
   title: 'FDB mismatch, missing entry: an AFM-programmed static FDB entry deleted on a switch is programmed again by
     AFM within the reconcile time (and any configured AFM FDB-mismatch event is raised)'
   category: switch-hw
+  scope: AIOPS            # failure detection / AI-ops cases (Scope column of full_rack_testplan.xlsx)
   origin: added 2026-10-18
 - id: TC-SWH-062
   level: L3
   title: 'FDB mismatch, foreign entry: a static FDB entry AFM did not program, added on a fabric port, is removed by
     AFM within the reconcile time (and any configured AFM FDB-mismatch event is raised)'
   category: switch-hw
+  scope: AIOPS            # failure detection / AI-ops cases (Scope column of full_rack_testplan.xlsx)
   origin: added 2026-10-18
 # full-rack health check (tools/rack_health.py, helios/healthcheck.py) - added 15 Oct 2026
 - id: HC-000
