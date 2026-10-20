@@ -2,7 +2,34 @@
 
 pytest automation for the **AMD Helios full-rack scale-up test plan**
 (`Helios_ScaleUp_TestPlan-AMD.xlsx`): 6 SONiC switch trays (2 ASICs each),
-18 compute trays (4 GPUs each), with the AFM controller and the IFoE fabric.
+18 compute trays (4 GPUs each), with the AFM controller and the IFoE fabric - plus a web UI to run it.
+
+- **Test cases**: 465 of the 587 plan cases automated (BKC-26.12 plan + cases added here: switch-tray checks,
+  failure injection, health checks HC-000…012, BMC over Redfish TC-BMC-001…006); `tools/coverage.py` lists them.
+- **Rack health check** (`tools/rack_health.py`): GO / NO-GO before disruptive work, quarantine-aware.
+- **Web UI** (`python -m ui`, or the offline installers for a Linux server and macOS): run cases picked from the
+  test plan (scope, disruptive, last status or any column), live log, reports and a Share zip with secrets removed,
+  inventory editor with import and quarantine, test-plan upload, SSH keys, AFM and BMC passwords, who is using it.
+- **Link debugging** lives in the separate [helios-debug](https://github.com/projectdcn/helios-debug) repo (link
+  check, debug guide); the health check runs its scan as HC-012 and the UI installer bundles it.
+
+Repositories: [projectdcn/helios-tests](https://github.com/projectdcn/helios-tests) (this one, `main`) and
+[projectdcn/helios-tests-ui](https://github.com/projectdcn/helios-tests-ui) (the web UI work branch,
+`ui/quarantine`, published as its `main` - the same code; it moves first, then `main` follows).
+
+### Quick start
+
+```bash
+python3 -m venv .venv && .venv/bin/pip install -e '.[tools,dev]'    # Python 3.10+
+.venv/bin/pytest unit                                                 # no rack needed
+cp inventory/example-fullrack.yaml inventory/<rack>.local.yaml        # fill in addresses / users (no passwords)
+.venv/bin/python tools/rack_health.py --inventory inventory/<rack>.local.yaml
+.venv/bin/pytest tests --inventory inventory/<rack>.local.yaml --tc TC-SWH-030,TC-BMC-001
+.venv/bin/python -m ui                                                # web UI on http://127.0.0.1:8765/
+```
+
+Passwords never go in an inventory: `password_env` names the variable (`HELIOS_AFM_PASSWORD`,
+`HELIOS_BMC_PASSWORD` / `HELIOS_BMC_PASSWORD_<NODE>`), which the UI fills from its password store.
 
 ## Layout
 
@@ -28,6 +55,7 @@ tests/                  rack tests, each tagged @pytest.mark.tc("TC-...")
   hw/                   hardware (TC-HW)
   scaleout/             mortaro RDMA perftest (TC-IBS)
   ras/                  RAS datapath reset / reboot / power cycle (TC-RAS-reset)
+  bmc/                  BMC of every switch / compute tray over Redfish, read-only (TC-BMC-001..006)
   telemetry/            AMD device-metrics-exporter (TC-CTL-139..150)
   platform/             NTP, DNS, log rotation, topo logs, OOB names across reboot
   ifoe/                 IFoE driver unload/reload (TC-AFM-LU-001, TC-HW-017)
@@ -319,7 +347,7 @@ The table has one row per category:
 `--missing` also lists every case that has **no test yet**, with its ID, level
 and title.
 
-### 8. Web UI (runs, live log, reports, inventory, quarantine)
+### 8. Web UI (runs, live log, reports, inventory, quarantine, test plan, passwords, users)
 
 ```bash
 .venv/bin/python -m ui                 # http://127.0.0.1:8765/  (--port N, --config ui/racks.yaml)
@@ -346,13 +374,29 @@ and title.
   `password_env` / `key_file`), diff preview, dated backup `<file>.bak-YYYYmmdd-HHMMSS` before each save. Per node
   **Quarantine…** (reason required, optional until date) / **Lift** writes the `quarantine:` entry. For g02-g17 the
   editor changes the local copy; the jump host gets it with the next run.
-- **Linux server**: `python tools/build_ui_installer.py` builds `dist/helios-ui-<version>.tar.gz` (committed code +
-  offline wheels for CPython 3.10-3.12); on the server `tar -xzf ... && helios-ui-<version>/install.sh` installs it for
-  your user under `~/helios-ui` (systemd --user service or nohup helper, 127.0.0.1 only: open it with
-  `ssh -L 8765:127.0.0.1:8765 <user>@<server>`); upgrade = run a newer install.sh (config/ and data/ kept),
-  `~/helios-ui/bin/install.sh --rollback`, `~/helios-ui/bin/uninstall.sh [--purge]`. See docs/how-to-run.html, 9b.9.
+- Run tab, **Pick test cases from the test plan**: filters Level, Scope, Disruptive, Health check, Origin, Status (last
+  run) and Suite, plus **+ Filter on another column** (any column of the workbook by its header: values, or "contains"
+  for free text); presets and Run again keep them. Each run records who started / stopped it.
+- Setup tab: **Test plan** (upload an `.xlsx` under any name, choose which one the rack uses; `racks.yaml`'s
+  `workbook:` is only the fallback), the server's SSH key and installing it per node (a password field and Install
+  button per row; a changed host key is explained with fingerprints and can be accepted after a check), and per node
+  BMC address / user (into the inventory) and BMC password (into the password store).
+- Inventory tab: **Import file…** (or drop a YAML file) into the editor with preview; AFM password and default BMC
+  password of the rack (macOS Keychain / a 0600 file on Linux - never the inventory).
+- Results tab: **Share (.zip, secrets removed)** next to each download (passwords, tokens, keys, Authorization headers
+  and `user:pw@` replaced; `SHARED-README.txt` lists every change). Header: **N using now** (who has the UI open).
+- With `HELIOS_UI_TOKEN` (the installers set one when the UI is reachable from other machines) every browser logs in
+  once with that token; behind a reverse proxy on the same server (srv03: nginx with TLS) the UI stays on 127.0.0.1.
+- **Installers**: `python tools/build_ui_installer.py --target linux|macos|all` builds `dist/helios-ui-<version>.tar.gz`
+  (Linux x86_64, CPython 3.10-3.12, systemd --user service) and `dist/helios-ui-<version>-macos.tar.gz` (Apple silicon
+  + Intel, CPython 3.10-3.14, background helper), both offline with their wheels and helios-debug; install with
+  `tar -xzf ... && helios-ui-<version>/install.sh` into `~/helios-ui`. Upgrades keep config/ and data/ and the port,
+  listen on 0.0.0.0 unless `--host` is given; every install backs up the settings to `~/.helios-ui-backups/`, and a new
+  install brings back a removed one (`uninstall.sh --purge` moves it aside; `--purge --delete` deletes);
+  `~/helios-ui/bin/install.sh --rollback`; `~/helios-ui/bin/helios-ui {start|stop|status|logs|token [new]|users}`.
+  See docs/how-to-run.html, 9b.9.
 
-## Coverage (435 of 577 cases: 542 plan + 23 switch cases TC-SWH-037…059 + 12 health checks HC-000…011)
+## Coverage (465 of 587 cases: the 542 plan cases + the cases added here - switch trays, failure injection, health checks HC-000…012, BMC TC-BMC-001…006; `tools/coverage.py` for the current numbers)
 
 * **TC-SWH-001…036, switch hardware.** Firmware, fans, PSUs, platform/EEPROM,
   multi-ASIC namespaces, interface state/speed/MTU, error-counter deltas,
