@@ -160,7 +160,10 @@ def test_page_original_form_is_one_constant():
     assert js.count("fillForm(ORIGINAL_FORM)") >= 2                   # first load and the Reset button
     assert 'value="health" checked' in html and 'name="known" checked' in html and 'name="paths" value="tests"' in html
     assert 'id="default-save"' in html and 'id="default-reset"' in html
-    assert 'name="remember_pw"' in html and 'id="pw-forget"' in html and 'id="pwstatus"' in html
+    # the saved AFM password is set in the Inventory tab (not in the file); the Run tab shows its status and keeps
+    # a one-off field for a single run
+    assert 'id="afm-pw-forget"' in html and 'id="afm-pw"' in html and 'id="pwstatus"' in html
+    assert 'id="pw-once"' in html and 'name="password"' in html and 'name="remember_pw"' not in html
     # the page never keeps the password: localStorage gets fullState() only, which has no password
     full = re.search(r"function fullState\(\) \{(.*?)\n\}", js, re.S).group(1)
     assert "password" not in full and "remember_pw" not in full

@@ -207,3 +207,19 @@ def test_changed_host_key_is_explained_with_fingerprints_and_the_fix():
     msg = host_key_changed(paramiko.BadHostKeyException("10.153.80.86", new, old), "10.153.80.86")
     assert "SHA256:6ab9qp9Bc4+j7fQpVpsOwvqsObZqugjlHn6JiqLyl1w" in msg and "ssh-keygen -R 10.153.80.86" in msg
     assert host_key_changed(OSError("x"), "h") is None
+
+
+def test_a_node_password_from_its_own_row_wins_and_installs_only_that_node(home, tmp_path, monkeypatch):
+    """Node table: one password per row (each tray its own), Install on one row = that node only."""
+    k = _fake_key(home)
+    p = _profile(tmp_path)
+    nodes = FakeNodes({"10.0.0.1": "sw-pw", "10.0.0.11": "c1-pw", "10.0.0.12": PW})
+    monkeypatch.setattr(sshkeys, "_connect", nodes.connect)
+    monkeypatch.setattr(sshkeys, "_auth_methods", lambda t: ["publickey", "password"])
+    res = sshkeys.install(p, str(k), {"ops": PW}, ["c1"], {"c1": "c1-pw"})
+    assert [(r["name"], r["status"]) for r in res] == [("c1", "installed")]
+    res = {r["name"]: r for r in sshkeys.install(p, str(k), {"ops": PW}, None, {"st1": "wrong"})}
+    assert res["c2"]["status"] == "installed" and res["c1"]["status"] == "already"
+    assert res["st1"]["status"] == "failed"
+    res = {r["name"]: r for r in sshkeys.install(p, str(k), {}, ["st1"])}
+    assert "type it in this row" in res["st1"]["detail"]

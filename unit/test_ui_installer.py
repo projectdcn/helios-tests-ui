@@ -453,7 +453,7 @@ def test_linux_keychain_note_and_version_endpoint(tmp_path, monkeypatch):
         srv.shutdown()
         srv.server_close()
     js = (ROOT / "ui" / "static" / "app.js").read_text()
-    assert "d.note || d.error" in js and "form.remember_pw.disabled = !d.available" in js
+    assert "d.note || d.error" in js and '$("#afm-pw-save").disabled = !d.available' in js
 
 
 # ------------------------------------------------------------------ --host

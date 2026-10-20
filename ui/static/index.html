@@ -61,8 +61,8 @@
   </div>
   <div class="box">
     <h3>Install the key on <span id="inst-where"></span></h3>
-    <p class="muted small">Each account's password is used once to add the key to its <code>~/.ssh/authorized_keys</code>, then key-only login is checked. The password is not saved or logged; nodes where key login already works need none.</p>
-    <table id="inst-targets"><thead><tr><th>Node</th><th>Account</th><th>Result</th></tr></thead><tbody></tbody></table>
+    <p class="muted small">Each password is used once to add the key to that account's <code>~/.ssh/authorized_keys</code>, then key-only login is checked. Passwords are not saved or logged; nodes where key login already works need none. Type a node's password in its row (wins), or one password per account below for every node of that account.</p>
+    <table id="inst-targets"><thead><tr><th>Node</th><th>Account</th><th>Password (this node)</th><th>Result</th><th></th></tr></thead><tbody></tbody></table>
     <form id="inst-form" class="row" autocomplete="off">
       <span id="inst-pw"></span>
       <button type="submit" class="primary" id="inst-go">Install key</button>
@@ -168,14 +168,14 @@
     <fieldset>
       <legend>Run</legend>
       <label>Extra pytest arguments <input name="pytest_args" placeholder="--ignore tests/afm"></label>
-      <label>AFM admin password <input type="password" name="password" autocomplete="new-password" spellcheck="false">
-        <span class="muted">kept in memory for this run only, handed to the run through <code id="pwenv">HELIOS_AFM_PASSWORD</code>; empty = the password saved for this rack, if any, else AFM cases skip</span></label>
       <div class="row" id="pw-row">
-        <label class="inline"><input type="checkbox" name="remember_pw"> Remember <span id="pw-store">in macOS Keychain</span> for <b id="pw-rack"></b></label>
-        <button type="button" id="pw-save" title="save the typed AFM password for this rack now, without starting a run">Save password</button>
-        <button type="button" id="pw-forget" title="delete this rack's saved AFM password">Forget saved password</button>
-        <span id="pwstatus" class="muted" role="status" aria-live="polite"></span>
+        <span>AFM password of <b id="pw-rack"></b>: <span id="pwstatus" class="muted" role="status" aria-live="polite"></span></span>
+        <button type="button" id="pw-goto" title="the AFM password is set with the rest of the rack's settings">Set it in the Inventory tab</button>
       </div>
+      <details id="pw-once"><summary>Use another AFM password for this run only</summary>
+        <label>AFM admin password <input type="password" name="password" autocomplete="new-password" spellcheck="false">
+          <span class="muted">kept in memory for this run only, handed to the run through <code id="pwenv">HELIOS_AFM_PASSWORD</code>; empty = the saved one</span></label>
+      </details>
       <button type="submit" class="primary">Start run</button>
       <span id="runmsg"></span>
     </fieldset>
@@ -215,6 +215,16 @@
 
 <section id="tab-inventory" class="tab">
   <p class="muted" id="invpath"></p>
+  <form id="afm-pw-box" class="box row" autocomplete="off">
+    <b>AFM password of <span id="afm-pw-rack"></span></b>
+    <input type="password" id="afm-pw" autocomplete="new-password" spellcheck="false" aria-label="AFM admin password" placeholder="AFM admin password">
+    <button type="submit" class="primary" id="afm-pw-save">Save</button>
+    <button type="button" id="afm-pw-forget">Forget</button>
+    <span id="afm-pw-status" class="muted" role="status" aria-live="polite"></span>
+    <span class="muted small">Kept <span id="afm-pw-store">in the macOS Keychain</span> of the UI server, never in the inventory file
+      (that file is copied, imported and shared); runs get it through <code id="afm-pw-env">HELIOS_AFM_PASSWORD</code>
+      (the inventory's <code>password_env</code>). Without it the AFM cases skip.</span>
+  </form>
   <div id="invmsgs"></div>
   <div class="row">
     <button id="inv-mode-form" class="active">Form</button>

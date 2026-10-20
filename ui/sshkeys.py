@@ -193,9 +193,12 @@ def _password_failure(t: dict, e: Exception) -> str:
             f"password - test the password with: ssh -o PubkeyAuthentication=no {acct}")
 
 
-def install(p: RackProfile, key: str, passwords: dict[str, str], names: list[str] | None = None) -> list[dict]:
+def install(p: RackProfile, key: str, passwords: dict[str, str], names: list[str] | None = None,
+            node_passwords: dict[str, str] | None = None) -> list[dict]:
     """Add ``key``.pub to every target's authorized_keys (password login once per account), then check key login.
-    ``passwords``: {user: password}. Per target {name, user, host, status: installed / already / failed, detail}."""
+    ``passwords``: {user: password}; ``node_passwords``: {node name: password} - typed in the node's own row, wins
+    over the account's. Per target {name, user, host, status: installed / already / failed, detail}."""
+    node_passwords = node_passwords or {}
     k = Path(key).expanduser()
     if k.parent.resolve() != ssh_dir().resolve() or not _key_ok(k):
         raise JobError(f"{key}: not a key of this server")
@@ -213,9 +216,10 @@ def install(p: RackProfile, key: str, passwords: dict[str, str], names: list[str
         if _key_login(t, str(k)) is None:
             out.append({**row, "status": "already", "detail": "key login already works"})
             continue
-        pw = passwords.get(t["user"])
+        pw = node_passwords.get(t["name"]) or passwords.get(t["user"])
         if not pw:
-            out.append({**row, "status": "failed", "detail": f"no password given for {t['user']}"})
+            out.append({**row, "status": "failed",
+                        "detail": f"no password given for {t['user']} (type it in this row, or for every {t['user']} below)"})
             continue
         try:
             c = _connect(t, password=pw)

@@ -246,11 +246,15 @@ async function loadSetup() {
   showPub();
   const jump = setup.runner === "ssh";
   $("#inst-where").textContent = jump ? `the jump host of ${rack.title} (its own key reaches the rack's nodes)` : `every switch and compute of ${rack.title}`;
-  $("#inst-targets tbody").replaceChildren(...(setup.targets_error ? [h("tr", {}, h("td", { colspan: 3, class: "err" }, setup.targets_error))] : []),
+  $("#inst-targets tbody").replaceChildren(...(setup.targets_error ? [h("tr", {}, h("td", { colspan: 5, class: "err" }, setup.targets_error))] : []),
     ...setup.targets.map(t => h("tr", { "data-node": t.name }, h("td", {}, t.name), h("td", {}, `${t.user}@${t.host}${t.port !== 22 ? ":" + t.port : ""}`),
-      h("td", { class: "muted inst-res" }, ""))));
+      h("td", {}, h("input", { type: "password", class: "node-pw", "data-node": t.name, autocomplete: "off", size: 14,
+        "aria-label": `password of ${t.user}@${t.host}`, placeholder: `${t.user} password`,
+        onkeydown: ev => { if (ev.key === "Enter") { ev.preventDefault(); installKey([t.name]); } } })),
+      h("td", { class: "muted inst-res" }, ""),
+      h("td", {}, h("button", { type: "button", class: "inst-one", title: `install the key on ${t.name} only`, onclick: () => installKey([t.name]) }, "Install")))));
   const users = [...new Set(setup.targets.map(t => t.user))];
-  $("#inst-pw").replaceChildren(...users.map(u => h("label", { class: "inline" }, `Password of ${u} `,
+  $("#inst-pw").replaceChildren(...users.map(u => h("label", { class: "inline" }, `Password of every ${u} `,
     h("input", { type: "password", "data-user": u, autocomplete: "off" }))));
   $("#inst-go").disabled = !setup.targets.length;
 }
@@ -283,16 +287,22 @@ $("#key-copy").addEventListener("click", async () => {
   catch (e) { ta.select(); document.execCommand("copy"); }     // plain http to a server: no clipboard API
   $("#key-msg").textContent = "public key copied"; $("#key-msg").className = "ok";
 });
-$("#inst-form").addEventListener("submit", async ev => {
-  ev.preventDefault();
+$("#inst-form").addEventListener("submit", ev => { ev.preventDefault(); installKey(null); });
+// nodes: null = every node, else [name] (a row's Install button / Enter in its password field)
+async function installKey(nodes) {
   const key = $("#key-select").value || setup.chosen;
   if (!key) { $("#inst-msg").textContent = "choose (or create) a key first"; $("#inst-msg").className = "err"; return; }
-  const passwords = {};
-  $$("#inst-pw input").forEach(i => { if (i.value) passwords[i.dataset.user] = i.value; i.value = ""; });
-  $("#inst-go").disabled = true;
-  $("#inst-msg").textContent = "installing…"; $("#inst-msg").className = "muted";
+  const passwords = {}, node_passwords = {};
+  $$("#inst-pw input").forEach(i => { if (i.value) passwords[i.dataset.user] = i.value; if (!nodes) i.value = ""; });
+  $$("#inst-targets .node-pw").forEach(i => {
+    if (nodes && !nodes.includes(i.dataset.node)) return;
+    if (i.value) node_passwords[i.dataset.node] = i.value;
+    i.value = "";
+  });
+  $("#inst-go").disabled = true; $$(".inst-one").forEach(b => b.disabled = true);
+  $("#inst-msg").textContent = nodes ? `installing on ${nodes.join(", ")}…` : "installing…"; $("#inst-msg").className = "muted";
   try {
-    const d = await api("POST", `/api/racks/${enc(rack.name)}/sshkey/install`, { key, passwords });
+    const d = await api("POST", `/api/racks/${enc(rack.name)}/sshkey/install`, { key, passwords, node_passwords, nodes });
     for (const res of d.results) {
       const td = $(`#inst-targets tr[data-node="${CSS.escape(res.name)}"] .inst-res`);
       if (td) {
@@ -305,12 +315,13 @@ $("#inst-form").addEventListener("submit", async ev => {
       }
     }
     const bad = d.results.filter(x => x.status === "failed").length;
-    $("#inst-msg").textContent = bad ? `${bad} failed - fix and Install again` : "done: key login works everywhere - run Check access";
+    $("#inst-msg").textContent = bad ? `${bad} failed - fix and Install again`
+      : nodes ? `done: key login works on ${nodes.join(", ")}` : "done: key login works everywhere - run Check access";
     $("#inst-msg").className = bad ? "err" : "ok";
-    if (!bad && !setup.chosen) await api("POST", `/api/racks/${enc(rack.name)}/sshkey/use`, { key });
+    if (!bad && !setup.chosen && !nodes) await api("POST", `/api/racks/${enc(rack.name)}/sshkey/use`, { key });
   } catch (e) { $("#inst-msg").textContent = e.message; $("#inst-msg").className = "err"; }
-  finally { $("#inst-go").disabled = false; }
-});
+  finally { $("#inst-go").disabled = false; $$(".inst-one").forEach(b => b.disabled = false); }
+}
 $("#acc-setup-btn").addEventListener("click", () => showTab("setup"));
 
 // ---------------------------------------------------------------- sessions (per rack, ui-sessions.json)
@@ -408,7 +419,6 @@ function fillForm(s) {
   const f = s.filters || {};
   for (const k of FILTERS) form["s_" + k].value = f[k] || (k === "suite" ? "all" : "");
   form.password.value = "";
-  form.remember_pw.checked = false;
   kindChanged();
   pickerRestore();
 }
@@ -463,44 +473,53 @@ $("#default-reset").addEventListener("click", async () => {
   } catch (e) { formMsg(e.message, "err"); }
 });
 
-// ---------------------------------------------------------------- AFM password saved on the UI server (opt-in)
-// macOS: the Keychain; Linux: a 0600 password file (d.store names which)
+// ---------------------------------------------------------------- AFM password saved on the UI server
+// set in the Inventory tab (with the rack's other settings) but NOT in the inventory file: macOS Keychain, or a
+// 0600 password file on Linux (d.store names which). The Run tab shows whether there is one; a one-off password for
+// a single run is still possible there.
+function pwMsg(text, cls) { $("#afm-pw-status").textContent = text; $("#afm-pw-status").className = cls; }
 async function loadPwStatus() {
   const r = rack.name;
-  $("#pw-rack").textContent = rack.title;
+  $("#pw-rack").textContent = rack.title; $("#afm-pw-rack").textContent = rack.title;
+  $("#afm-pw-env").textContent = rack.password_env || "HELIOS_AFM_PASSWORD";
   let d;
   try { d = await api("GET", `/api/racks/${enc(r)}/password`); }
   catch (e) { d = { saved: false, available: false, error: e.message }; }
   if (!rack || rack.name !== r) return;
   pwSaved = !!d.saved;
-  const st = $("#pwstatus");
   pwStore = d.store || "macOS Keychain";
-  $("#pw-store").textContent = pwStore.startsWith("password file") ? "on the UI server" : "in macOS Keychain";
-  if (!d.available) { st.textContent = d.note || d.error || "no password store on the UI server: type the password for each run"; st.className = "muted"; }
-  else if (d.error) { st.textContent = d.error; st.className = "err"; }
-  else { st.textContent = pwSaved ? `saved (${pwStore})` : "not saved"; st.className = pwSaved ? "ok" : "muted"; }
+  $("#afm-pw-store").textContent = pwStore.startsWith("password file") ? `in ${pwStore}` : "in the macOS Keychain";
+  const st = $("#pwstatus");
+  let text, cls;
+  if (!d.available) { text = d.note || d.error || "no password store on the UI server: type it for each run below"; cls = "muted"; }
+  else if (d.error) { text = d.error; cls = "err"; }
+  else { text = pwSaved ? "saved ✓" : "not saved - the AFM cases skip"; cls = pwSaved ? "ok" : "warn"; }
+  st.textContent = text; st.className = cls;
   st.title = d.account ? `${pwStore}, account ${d.account}` : "";
-  form.remember_pw.disabled = !d.available;
-  $("#pw-save").disabled = !d.available;
-  $("#pw-forget").disabled = !pwSaved;
+  pwMsg(d.available && !d.error ? (pwSaved ? `saved (${pwStore})` : "not saved") : text, cls);
+  $("#afm-pw-save").disabled = !d.available;
+  $("#afm-pw-forget").disabled = !pwSaved;
+  $("#pw-goto").textContent = pwSaved ? "Change it in the Inventory tab" : "Set it in the Inventory tab";
 }
-$("#pw-save").addEventListener("click", async () => {   // save without starting a run; the field is cleared
-  const pw = form.password.value;
-  if (!pw) { formMsg("type the AFM password first, then Save password", "err"); return; }
-  form.password.value = "";
+$("#pw-goto").addEventListener("click", () => { showTab("inventory"); $("#afm-pw").focus(); });
+$("#afm-pw-box").addEventListener("submit", async ev => {   // the field is cleared either way
+  ev.preventDefault();
+  const pw = $("#afm-pw").value;
+  if (!pw) { pwMsg("type the AFM password first", "err"); $("#afm-pw").focus(); return; }
+  $("#afm-pw").value = "";
   try {
     await api("POST", `/api/racks/${enc(rack.name)}/password`, { password: pw });
-    formMsg(`AFM password of ${rack.title} saved (${pwStore}): leave the field empty to use it`, "ok");
-  } catch (e) { form.password.value = pw; formMsg(e.message, "err"); }
-  loadPwStatus();
+    await loadPwStatus();
+    pwMsg(`saved (${pwStore}): every run of ${rack.title} uses it`, "ok");
+  } catch (e) { pwMsg(e.message, "err"); }
 });
-$("#pw-forget").addEventListener("click", async () => {
+$("#afm-pw-forget").addEventListener("click", async () => {
   if (!confirm(`Delete the AFM password of ${rack.title} from the ${pwStore}?`)) return;
   try {
     const d = await api("POST", `/api/racks/${enc(rack.name)}/password/delete`, {});
-    formMsg(d.deleted ? `AFM password of ${rack.title} deleted from the ${pwStore}` : "no password was saved", "ok");
-  } catch (e) { formMsg(e.message, "err"); }
-  loadPwStatus();
+    await loadPwStatus();
+    pwMsg(d.deleted ? "deleted - the AFM cases skip until a password is saved again" : "no password was saved", "ok");
+  } catch (e) { pwMsg(e.message, "err"); }
 });
 // a preset or a past run's settings into the form (re-run of failed checks: the Results tab's re-run box)
 function applySettings(s, label) {
@@ -731,10 +750,7 @@ $("#resolve").addEventListener("click", async () => {      // manual refresh: re
 });
 form.addEventListener("submit", async ev => {
   ev.preventDefault();
-  const req = { rack: rack.name, ...formState(), password: form.password.value,
-                remember_password: form.remember_pw.checked && !!form.password.value };
-  if (form.remember_pw.checked && !req.password && !confirm("\"Remember\" is ticked but no password "
-      + "is typed: nothing will be saved. Start anyway" + (pwSaved ? " (with the saved password)?" : "?"))) return;
+  const req = { rack: rack.name, ...formState(), password: form.password.value };
   if (req.allow_disruptive && !confirm(`Run DISRUPTIVE cases on ${rack.title}?`)) return;
   rememberForm();
   form.password.value = "";
@@ -745,7 +761,7 @@ form.addEventListener("submit", async ev => {
     $("#runmsg").textContent = (run.status === "queued" && run.queue_position > 1 ? `queued (#${run.queue_position})` : "started")
       + (kc.saved ? `; password saved (${pwStore})` : "") + (kc.error ? "; password not saved: " + kc.error : "");
     if (kc.error) $("#runmsg").className = "warn";
-    form.remember_pw.checked = false;
+    $("#pw-once").open = false;
     loadPwStatus();
     showTab("runs");
     openLog(run.id);

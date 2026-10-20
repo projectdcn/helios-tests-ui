@@ -688,13 +688,17 @@ class Handler(BaseHTTPRequestHandler):
                     sshkeys.choose(p, body.get("key") or None)
                     return self.json({"chosen": sshkeys.chosen(p), "using": sshkeys.using(p)})
                 pws = body.pop("passwords", None) or {}
-                if not isinstance(pws, dict) or not all(isinstance(v, str) for v in pws.values()):
-                    raise JobError("passwords: {user: password}")
+                npws = body.pop("node_passwords", None) or {}
+                for d_, what in ((pws, "passwords: {user: password}"), (npws, "node_passwords: {node: password}")):
+                    if not isinstance(d_, dict) or not all(isinstance(v, str) for v in d_.values()):
+                        raise JobError(what)
+                nodes = body.get("nodes") or None
+                if nodes is not None and (not isinstance(nodes, list) or not all(isinstance(n, str) for n in nodes)):
+                    raise JobError("nodes: [node name, ...]")
                 try:
-                    res = sshkeys.install(p, str(body.get("key") or sshkeys.chosen(p) or ""), pws,
-                                          body.get("nodes") or None)
+                    res = sshkeys.install(p, str(body.get("key") or sshkeys.chosen(p) or ""), pws, nodes, npws)
                 finally:
-                    del pws
+                    del pws, npws
                 return self.json({"results": res})
             m = re.fullmatch(r"/api/racks/([^/]+)/presets(/delete)?", path)
             if m:
