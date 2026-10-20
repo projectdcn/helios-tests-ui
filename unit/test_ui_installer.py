@@ -283,9 +283,9 @@ def test_install_dry_run_changes_nothing(tmp_path):
     assert r.returncode == 0 and "WARNING: the UI has NO login" in r.stdout and "Access token (" not in r.stdout
 
 
-def test_upgrade_keeps_port_and_an_old_install_becomes_0000(tmp_path):
-    """An installation from before --host (state: port only) upgrades to 0.0.0.0 on its own port; a stored host and
-    an explicit --host are kept / win."""
+def test_upgrade_keeps_port_and_listens_on_0000_unless_host_given(tmp_path):
+    """An upgrade keeps the port but listens on 0.0.0.0 unless --host is given - also when the installation listened
+    on 127.0.0.1 (srv03 19 Oct: the upgrade stayed on 127.0.0.1 and the UI could not be opened from the laptop)."""
     b = _bundle_dir(tmp_path)
     prefix = tmp_path / "helios-ui"
     (prefix / "app").mkdir(parents=True)
@@ -296,7 +296,10 @@ def test_upgrade_keeps_port_and_an_old_install_becomes_0000(tmp_path):
     assert r.returncode == 0, r.stdout + r.stderr
     assert "listen: 0.0.0.0:18800" in r.stdout and "upgrade to" in r.stdout
     (prefix / ".install-state").write_text("INSTALLED_PORT=18800\nINSTALLED_HOST=127.0.0.1\nINSTALLED_MODE=nohup\n")
-    assert "listen: 127.0.0.1:18800" in _sh(base).stdout
+    out = _sh(base).stdout
+    assert "listen: 0.0.0.0:18800" in out and "note: the installation listened on 127.0.0.1" in out
+    out = _sh(base + ["--host", "127.0.0.1"]).stdout
+    assert "listen: 127.0.0.1:18800" in out and "note:" not in out
     assert "listen: 0.0.0.0:18801" in _sh(base + ["--host", "0.0.0.0", "--port", "18801"]).stdout
 
 

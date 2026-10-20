@@ -6,8 +6,8 @@
 #                                    app.prev / venv.prev), config/ and data/ kept
 #   ~/helios-ui/bin/install.sh --rollback      back to app.prev / venv.prev (run it again to roll forward)
 #
-# Options: --prefix DIR (default ~/helios-ui)  --host ADDR (default 0.0.0.0 = every address; 127.0.0.1 = this
-# server only, reach it through an SSH tunnel)  --port N (default 8765)  --python PATH  --online (pip from PyPI
+# Options: --prefix DIR (default ~/helios-ui)  --host ADDR (default 0.0.0.0 = every address, also on an upgrade;
+# 127.0.0.1 = this server only, reach it through an SSH tunnel - give it again on every upgrade to keep it)  --port N (default 8765)  --python PATH  --online (pip from PyPI
 # instead of ./wheelhouse)  --no-systemd (nohup + bin/helios-ui helper)  --no-start  --force (upgrade even while a
 # run is going; it is stopped)  --no-token (no access token, see below)  --dry-run (print what would be done,
 # change nothing)  -h|--help
@@ -99,8 +99,9 @@ fi
 if [ "$PORT_SET" = 0 ] && [ -n "${INSTALLED_PORT:-}" ]; then
     PORT=$INSTALLED_PORT                  # an upgrade keeps the port of the installation
 fi
-if [ "$HOST_SET" = 0 ] && [ -n "${INSTALLED_HOST:-}" ]; then
-    HOST=$INSTALLED_HOST                  # ... and its address (an install from before --host: 0.0.0.0)
+HOST_NOTE=""                              # the address is NOT kept: an upgrade listens on 0.0.0.0 unless --host says
+if [ "$HOST_SET" = 0 ] && [ -n "${INSTALLED_HOST:-}" ] && [ "$INSTALLED_HOST" != "$HOST" ]; then
+    HOST_NOTE="the installation listened on $INSTALLED_HOST; this upgrade listens on $HOST (--host $INSTALLED_HOST keeps the old address)"
 fi
 printf '%s' "$HOST" | grep -Eq '^[A-Za-z0-9.:-]+$' || die "--host '$HOST': an address such as 0.0.0.0, 127.0.0.1 or ::"
 case "$PORT" in
@@ -134,10 +135,11 @@ stop_ui() {
 # processes of THIS installation's UI (venv python -m ui ... --config <prefix>/config/racks.yaml)
 our_ui_pids() {
     if command -v pgrep >/dev/null 2>&1; then
-        pgrep -f -- "-m ui .*--config $PREFIX/config/racks.yaml" 2>/dev/null || true
+        { pgrep -f -- "-m ui .*--config $PREFIX/config/racks.yaml" 2>/dev/null
+          pgrep -f -- "^$PREFIX/venv(\\.prev)?/bin/python[0-9.]* -m ui( |\$)" 2>/dev/null; } | sort -u || true
     else
-        ps -eo pid=,args= 2>/dev/null | grep -F -- "--config $PREFIX/config/racks.yaml" | grep -F -- "-m ui" \
-            | grep -v grep | awk '{print $1}' || true
+        ps -eo pid=,args= 2>/dev/null | grep -E -- "--config $PREFIX/config/racks.yaml|^ *[0-9]+ $PREFIX/venv(\\.prev)?/bin/python" \
+            | grep -F -- "-m ui" | grep -v grep | awk '{print $1}' || true
     fi
 }
 
@@ -189,6 +191,14 @@ finally:
 PYEOF
 }
 
+port_holder() {   # what listens on $PORT (process names need the same user, or root)
+    if command -v ss >/dev/null 2>&1; then
+        ss -Hltnp "sport = :$PORT" 2>/dev/null | sed 's/^/    /' || true
+    elif command -v lsof >/dev/null 2>&1; then
+        lsof -nP -iTCP:"$PORT" -sTCP:LISTEN 2>/dev/null | sed 's/^/    /' || true
+    fi
+}
+
 check_port() {   # $1 python, $2 advice
     local rc=0 i
     for i in $(seq 1 20); do              # a socket being closed right now: give it a few seconds
@@ -204,7 +214,10 @@ check_port() {   # $1 python, $2 advice
     case "$rc" in
         0) ;;
         2) die "--host $HOST is not an address of this server (use 0.0.0.0 for every address, or 127.0.0.1)" ;;
-        *) die "port $PORT on $HOST is already in use by another program (see: ss -ltnp | grep :$PORT). $2" ;;
+        *) holder=$(port_holder)
+           die "port $PORT on $HOST is already in use by another program${holder:+:
+$holder
+}(see: ss -ltnp | grep :$PORT). $2" ;;
     esac
 }
 
@@ -476,7 +489,7 @@ print_access() {
     fi
     say ""
     say "Manage it:   $PREFIX/bin/helios-ui {start|stop|restart|status|logs|token [new]}"
-    say "Upgrade:     run install.sh of a newer bundle (config/ and data/ are kept; so are --host and --port)"
+    say "Upgrade:     run install.sh of a newer bundle (config/ and data/ and --port are kept; it listens on 0.0.0.0 unless --host is given)"
     say "Roll back:   $PREFIX/bin/install.sh --rollback"
     say "Uninstall:   $PREFIX/bin/uninstall.sh   (keeps config/ and data/; --purge removes everything)"
 }
@@ -568,6 +581,7 @@ say "disk: $((free_kb / 1024)) MB free in $mkdir_parent (need ~$((need_kb / 1024
 NEW_VERSION=$(bundle_version "$PYTHON" "$HERE/app/BUILD_INFO.json")
 if systemd_user_ok; then MODE=systemd; else MODE=nohup; fi
 say "bundle: $NEW_VERSION   prefix: $PREFIX   listen: $HOST:$PORT   start: $MODE   pip: $([ "$ONLINE" = 1 ] && echo online || echo "offline (wheelhouse)")"
+[ -z "$HOST_NOTE" ] || say "note: $HOST_NOTE"
 
 UPGRADE=0
 OLD_VERSION=""
