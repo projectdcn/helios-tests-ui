@@ -203,3 +203,17 @@ def test_form_save_with_anchors_rewrites_whole_file(tmp_path):
     form["rack"] = "b"
     res = ie.prepare(f, {"form": form})
     assert res["comments_kept"] is False and "# top" not in res["text"] and yaml.safe_load(res["text"])["rack"] == "b"
+
+
+def test_key_file_missing_on_this_server_is_a_warning(tmp_path):
+    """An inventory imported from a laptop names the laptop's key paths (19 Oct: ~/.ssh/id_ed25519_mymdbook)."""
+    from ui.inventory_edit import validate
+    key = tmp_path / "id_here"
+    key.write_text("x")
+    text = ("rack: r\nswitches:\n  - {name: st1, host: 10.0.0.1, user: admin, key_file: /nope/id_laptop}\n"
+            f"computes:\n  - {{name: c1, host: 10.0.0.2, user: u, key_file: {key}}}\n")
+    errors, warnings, _ = validate(text, tmp_path / "inv.yaml")
+    assert errors == []
+    assert [w for w in warnings if "key_file" in w] == [
+        "st1: key_file /nope/id_laptop does not exist on this server - SSH falls back to the default keys; fix the "
+        "path or remove it (Setup tab: the server's keys)"]

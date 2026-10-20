@@ -891,6 +891,29 @@ $("#rerun-go").addEventListener("click", async () => {
 const COLS = { switches: ["name", "host", "user", "port", "key_file", "afm_name"],
                computes: ["name", "host", "user", "gpus", "bmc", "slot", "afm_name"] };
 $("#inv-reload").addEventListener("click", loadInventory);
+// import: a YAML file from the browser's computer goes into the raw editor and is previewed - saved only on Save
+$("#inv-import-btn").addEventListener("click", () => $("#inv-import").click());
+$("#inv-import").addEventListener("change", ev => { const f = ev.target.files[0]; ev.target.value = ""; if (f) importInventory(f); });
+$("#tab-inventory").addEventListener("dragover", ev => { if ([...ev.dataTransfer.types].includes("Files")) { ev.preventDefault(); $("#tab-inventory").classList.add("drop"); } });
+$("#tab-inventory").addEventListener("dragleave", ev => { if (ev.target === $("#tab-inventory")) $("#tab-inventory").classList.remove("drop"); });
+$("#tab-inventory").addEventListener("drop", ev => {
+  $("#tab-inventory").classList.remove("drop");
+  const f = ev.dataTransfer.files[0];
+  if (f) { ev.preventDefault(); importInventory(f); }
+});
+async function importInventory(f) {
+  const bad = m => $("#invmsgs").replaceChildren(h("div", { class: "err" }, "✗ " + m));
+  if (!rack) return;
+  if (f.size > 1024 * 1024) return bad(`${f.name}: ${Math.round(f.size / 1024)} KB - an inventory is a small YAML file (limit 1 MB)`);
+  const text = await f.text();
+  if (text.includes("\0")) return bad(`${f.name} is not a text file`);
+  setMode("raw");
+  $("#raw").value = text;
+  $("#invmsgs").replaceChildren(h("div", { class: "warn" },
+    `! imported ${f.name} (${text.split("\n").length} lines) into the editor. Saving it replaces the whole inventory of ` +
+    `rack ${rack.name} (${inv && inv.exists ? "the current file is backed up first" : "a new file"}): check the preview below, then Save. Nothing is saved yet.`));
+  $("#inv-preview").click();
+}
 $("#inv-mode-form").addEventListener("click", () => setMode("form"));
 $("#inv-mode-raw").addEventListener("click", () => setMode("raw"));
 function setMode(m) {

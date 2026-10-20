@@ -149,6 +149,12 @@ def validate(text: str, path: Path) -> tuple[list[str], list[str], dict]:
                 if role == "compute" and e.get("slot") is None and not e.get("afm_name"):
                     warnings.append(f"{n}: quarantined compute without 'slot' (AFM slot-id): the AFM-side and fabric "
                                     "checks cannot leave its AFM node / switch ports out")
+    for where, kf in _key_files(data):     # e.g. an imported file made on a laptop: its key paths are not here
+        f = Path(os.path.expandvars(str(kf))).expanduser()
+        f = f if f.is_absolute() else path.parent / f
+        if not f.is_file():
+            warnings.append(f"{where}: key_file {kf} does not exist on this server - SSH falls back to the default "
+                            "keys; fix the path or remove it (Setup tab: the server's keys)")
     if not errors:
         fd, tmp = tempfile.mkstemp(prefix=f".{path.name}.check-", suffix=".yaml", dir=path.parent)
         try:
@@ -160,6 +166,22 @@ def validate(text: str, path: Path) -> tuple[list[str], list[str], dict]:
         finally:
             os.unlink(tmp)
     return errors, warnings, data
+
+
+def _key_files(obj, where: str = "") -> list[tuple[str, str]]:
+    """(where, path) of every key_file value in the inventory (entries, transport, defaults ...)."""
+    out = []
+    if isinstance(obj, dict):
+        label = str(obj.get("name") or where or "inventory")
+        for k, v in obj.items():
+            if k == "key_file" and isinstance(v, str) and v.strip():
+                out.append((label, v.strip()))
+            elif isinstance(v, (dict, list)):
+                out += _key_files(v, f"{where}.{k}".strip(".") if not obj.get("name") else label)
+    elif isinstance(obj, list):
+        for x in obj:
+            out += _key_files(x, where)
+    return out
 
 
 def diff(old: str, new: str, name: str) -> str:

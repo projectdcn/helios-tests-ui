@@ -91,6 +91,7 @@ fieldset { min-width: 0; }
 #login-box:not([hidden]) { display: flex; gap: 12px; flex-wrap: wrap; align-items: center; margin: 16px; }
 #logout { margin-left: 8px; }
 #users { margin-left: auto; }
+#tab-inventory.drop { outline: 2px dashed var(--accent, #2563eb); outline-offset: 4px; }
 #users::first-letter { color: var(--pass, #16a34a); }
 #users-box { margin: 10px 16px; }
 #users-table td.idle { opacity: .55; }
