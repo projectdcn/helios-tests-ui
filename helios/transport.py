@@ -74,6 +74,16 @@ def resolve_keys(key_file: str | None, who: str, host: str | None = None) -> tup
     return None, "default SSH keys / ssh-agent"
 
 
+def fingerprint(key) -> str:
+    """OpenSSH-style SHA256 fingerprint of a paramiko key ('SHA256:...', as ssh-keygen -lf prints it)."""
+    try:
+        import base64
+        import hashlib
+        return "SHA256:" + base64.b64encode(hashlib.sha256(key.asbytes()).digest()).decode().rstrip("=")
+    except Exception:  # noqa: BLE001
+        return "?"
+
+
 def host_key_changed(e: Exception, host: str) -> str | None:
     """A plain explanation of paramiko's BadHostKeyException (else None): the host now presents another key than the
     one recorded in ~/.ssh/known_hosts of the user running this - reinstalled host, IP moved to another machine, or
@@ -81,12 +91,7 @@ def host_key_changed(e: Exception, host: str) -> str | None:
     since 10 Oct (checked from a machine that already trusted it)."""
     if type(e).__name__ != "BadHostKeyException":
         return None
-    def fp(k):
-        try:
-            import base64, hashlib
-            return "SHA256:" + base64.b64encode(hashlib.sha256(k.asbytes()).digest()).decode().rstrip("=")
-        except Exception:  # noqa: BLE001
-            return "?"
+    fp = fingerprint
     got, exp = getattr(e, "key", None), getattr(e, "expected_key", None)
     kh = Path("~/.ssh/known_hosts").expanduser()
     return (f"host key of {host} changed: it now presents {got.get_name() if got else '?'} {fp(got) if got else '?'}, "

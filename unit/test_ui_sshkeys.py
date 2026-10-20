@@ -223,3 +223,36 @@ def test_a_node_password_from_its_own_row_wins_and_installs_only_that_node(home,
     assert res["st1"]["status"] == "failed"
     res = {r["name"]: r for r in sshkeys.install(p, str(k), {}, ["st1"])}
     assert "type it in this row" in res["st1"]["detail"]
+
+
+C2_NEW = "AAAAC3NzaC1lZDI1NTE5AAAAIGqtClRGRGPWIpY6/6PBTt3a6xjcRKnmDxCQvN6vWnNb"
+C2_OLD = "AAAAC3NzaC1lZDI1NTE5AAAAIC9g2ecSennknFqf8DNIJc6Km1L959UpCZl1T9X7fLFh"
+
+
+@pytest.mark.skipif(not shutil.which("ssh-keygen"), reason="no ssh-keygen")
+def test_accept_a_changed_host_key_only_with_the_confirmed_fingerprint(home, tmp_path, monkeypatch):
+    """'Accept the new key': the key is read again and must have the fingerprint the person confirmed; the old
+    record is replaced (other hosts kept), known_hosts backed up, the change logged."""
+    import base64
+    import paramiko
+    from helios.transport import fingerprint
+    new = paramiko.PKey.from_type_string("ssh-ed25519", base64.b64decode(C2_NEW))
+    monkeypatch.setattr(sshkeys, "_presented_key", lambda t: new)
+    kh = home / ".ssh" / "known_hosts"
+    kh.write_text(f"10.0.0.12 ssh-ed25519 {C2_OLD}\n10.0.0.11 ssh-ed25519 {C2_OLD}\n")
+    p = _profile(tmp_path)
+    fp = fingerprint(new)
+    assert fp == "SHA256:6ab9qp9Bc4+j7fQpVpsOwvqsObZqugjlHn6JiqLyl1w"
+    with pytest.raises(JobError, match="nothing changed"):          # what was checked must be what is presented
+        sshkeys.accept_host_key(p, "c2", "SHA256:" + "A" * 43)
+    with pytest.raises(JobError, match="not a node of this rack"):
+        sshkeys.accept_host_key(p, "evil", fp)
+    assert kh.read_text().count(C2_OLD) == 2                          # refused = untouched
+    d = sshkeys.accept_host_key(p, "c2", fp, by="Asha (10.0.0.9)")
+    text = kh.read_text()
+    assert f"10.0.0.12 ssh-ed25519 {C2_NEW}" in text and f"10.0.0.11 ssh-ed25519 {C2_OLD}" in text
+    assert f"10.0.0.12 ssh-ed25519 {C2_OLD}" not in text
+    assert d["replaced"] == ["SHA256:u0Fh0BAB9tEkAXWijpdbcM8AuplPFIS4J+84vYvjmk8"] and Path(d["backup"]).is_file()
+    log = (home / ".ssh" / "helios-ui-hostkeys.log").read_text()
+    assert "rk c2 10.0.0.12" in log and fp in log and "Asha (10.0.0.9)" in log
+    assert oct(kh.stat().st_mode)[-3:] == "600"

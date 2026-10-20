@@ -288,6 +288,21 @@ $("#key-copy").addEventListener("click", async () => {
   $("#key-msg").textContent = "public key copied"; $("#key-msg").className = "ok";
 });
 $("#inst-form").addEventListener("submit", ev => { ev.preventDefault(); installKey(null); });
+// a node's changed host key: trusted only after the person confirms the fingerprint they checked on the node; the
+// server reads the key again and accepts it only if it still has that fingerprint (backup + log on the server)
+async function acceptHostKey(res, type, fp) {
+  const ok = confirm(`Trust the new host key of ${res.name} (${res.host})?\n\n${type} ${fp}\n\n` +
+    `Only if you checked this fingerprint on ${res.name} itself - from its console, or a machine that already trusts it:\n` +
+    `    ssh-keygen -lf /etc/ssh/ssh_host_ed25519_key.pub\n\n` +
+    `A different key can mean someone between this server and ${res.name}. The old record is backed up and the change logged.`);
+  if (!ok) return;
+  try {
+    const d = await api("POST", `/api/racks/${enc(rack.name)}/sshkey/hostkey`, { node: res.name, fingerprint: fp });
+    $("#inst-msg").textContent = `${res.name}: new host key trusted (${d.fingerprint}${d.replaced.length ? ", replaced " + d.replaced.join(", ") : ""}) - installing again…`;
+    $("#inst-msg").className = "ok";
+    await installKey([res.name]);
+  } catch (e) { $("#inst-msg").textContent = e.message; $("#inst-msg").className = "err"; }
+}
 // nodes: null = every node, else [name] (a row's Install button / Enter in its password field)
 async function installKey(nodes) {
   const key = $("#key-select").value || setup.chosen;
@@ -309,7 +324,12 @@ async function installKey(nodes) {
         td.className = "inst-res " + (res.status === "failed" ? "err" : "ok");
         td.replaceChildren(`${res.status === "failed" ? "✗" : "✓"} ${res.detail}`);
         const pub = $("#key-pub").value;
-        if (res.status === "failed" && pub && !/host key of \S+ changed/.test(res.detail))   // not for a host-key problem: the key is not the issue
+        const hk = /host key of \S+ changed: it now presents (\S+) (SHA256:[A-Za-z0-9+/]{43})/.exec(res.detail);
+        if (res.status === "failed" && hk)
+          td.append(h("div", {}, h("button", { type: "button", onclick: () => acceptHostKey(res, hk[1], hk[2]),
+            title: "replace this server's old record for the node with the key it presents now (after you checked the fingerprint)" },
+            "Accept the new key…")));
+        if (res.status === "failed" && pub && !hk)   // not for a host-key problem: the SSH key is not the issue
           td.append(h("div", { class: "muted small" }, "or add it from a machine that can already log in:",
             h("code", { class: "inst-cmd" }, `echo '${pub}' | ssh ${res.user}@${res.host} 'umask 077; mkdir -p ~/.ssh; cat >> ~/.ssh/authorized_keys'`)));
       }

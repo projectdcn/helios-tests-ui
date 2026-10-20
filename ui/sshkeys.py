@@ -98,6 +98,71 @@ def create(name: str = DEFAULT_NAME) -> dict:
     return _pub_info(Path(str(path) + ".pub"))
 
 
+FP_RX = re.compile(r"^SHA256:[A-Za-z0-9+/]{43}$")
+
+
+def known_hosts() -> Path:
+    return Path("~/.ssh/known_hosts").expanduser()
+
+
+def _presented_key(t: dict):
+    """The host key the node presents now (no login)."""
+    import paramiko
+    tr = paramiko.Transport((t["host"], t["port"]))
+    try:
+        tr.start_client(timeout=15)
+        return tr.get_remote_server_key()
+    finally:
+        tr.close()
+
+
+def accept_host_key(p: RackProfile, node: str, fp: str, by: str = "") -> dict:
+    """Replace the known_hosts record of one of the rack's nodes with the key it presents NOW - only when that key
+    has the fingerprint the person confirmed (read again here: what they checked is what gets trusted). known_hosts
+    is backed up first; every change is logged in ~/.ssh/helios-ui-hostkeys.log. 20 Oct: srv03 had a stale record
+    for MR3 c2."""
+    from helios.transport import fingerprint
+    if not isinstance(fp, str) or not FP_RX.match(fp):
+        raise JobError("fingerprint: SHA256:... as shown in the message")
+    t = next((x for x in targets(p) if x["name"] == node), None)
+    if t is None:
+        raise JobError(f"{node!r} is not a node of this rack")
+    key = _presented_key(t)
+    now = fingerprint(key)
+    if now != fp:
+        raise JobError(f"{node} ({t['host']}) now presents {now}, not the {fp} you confirmed: nothing changed - "
+                       "check the key on the host again")
+    import datetime as _dt
+    import shutil
+    import paramiko
+    kh = known_hosts()
+    name = t["host"] if t["port"] == 22 else f"[{t['host']}]:{t['port']}"
+    old, backup = [], None
+    if kh.is_file():
+        try:
+            hk = paramiko.HostKeys(str(kh))
+            old = sorted({fingerprint(k) for k in (hk.lookup(name) or {}).values()})
+        except Exception:  # noqa: BLE001 - an unreadable line: ssh-keygen -R still handles the file
+            pass
+        stamp = _dt.datetime.now().strftime("%Y%m%d-%H%M%S")
+        backup = kh.with_name(f"known_hosts.bak-{stamp}")
+        shutil.copy2(kh, backup)
+        r = subprocess.run(["ssh-keygen", "-R", name, "-f", str(kh)], capture_output=True, text=True, timeout=30)
+        if r.returncode != 0:
+            raise JobError(f"ssh-keygen -R {name} failed: {(r.stderr or r.stdout).strip()[-200:]}")
+        kh.with_name("known_hosts.old").unlink(missing_ok=True)      # ssh-keygen's own copy: ours is dated
+    else:
+        kh.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+    with open(kh, "a") as f:
+        f.write(f"{name} {key.get_name()} {key.get_base64()}\n")
+    os.chmod(kh, 0o600)
+    with open(kh.with_name("helios-ui-hostkeys.log"), "a") as f:
+        f.write(f"{_dt.datetime.now().isoformat(timespec='seconds')} {p.name} {node} {name}: "
+                f"{', '.join(old) or '(no record)'} -> {now}{' by ' + by if by else ''}\n")
+    return {"node": node, "host": name, "fingerprint": now, "replaced": old,
+            "backup": str(backup) if backup else None}
+
+
 def targets(p: RackProfile) -> list[dict]:
     """Where the key must be accepted: the jump host (jump-host rack), else every switch and compute."""
     if p.runner == "ssh" and p.ssh:

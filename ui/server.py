@@ -676,9 +676,12 @@ class Handler(BaseHTTPRequestHandler):
                     if m.group(2) == "check":
                         return self.json(inventory_edit.prepare(p.inventory, body))
                     return self.json(inventory_edit.save(p.inventory, body))
-            m = re.fullmatch(r"/api/racks/([^/]+)/sshkey/(create|use|install)", path)
+            m = re.fullmatch(r"/api/racks/([^/]+)/sshkey/(create|use|install|hostkey)", path)
             if m:                                  # Setup tab; an install password is used once, never kept or logged
                 p = self.app.profile(m.group(1))
+                if m.group(2) == "hostkey":        # accept a node's changed host key (fingerprint confirmed by a person)
+                    return self.json(sshkeys.accept_host_key(p, str(body.get("node") or ""),
+                                                             body.get("fingerprint"), by=self._by()))
                 if m.group(2) == "create":
                     k = sshkeys.create(str(body.get("name") or sshkeys.DEFAULT_NAME))
                     if body.get("use", True):
