@@ -146,7 +146,8 @@ def _key_login(t: dict, key: str) -> str | None:
     try:
         c = _connect(t, key=key)
     except Exception as e:  # noqa: BLE001
-        return f"{type(e).__name__}: {str(e)[:160]}"
+        from helios.transport import host_key_changed
+        return host_key_changed(e, t["host"]) or f"{type(e).__name__}: {str(e)[:160]}"
     try:
         _, out, _ = c.exec_command("true", timeout=20)
         return None if out.channel.recv_exit_status() == 0 else "logged in, but 'true' failed"
@@ -177,6 +178,10 @@ def _password_failure(t: dict, e: Exception) -> str:
     """Why the one-time password login failed, with what to try. 17 Oct, MR3 st1: 'wrong password?' while the user's
     own 'ssh admin@st1' worked - that ssh used a key, so it never checked the password."""
     acct = f"{t['user']}@{t['host']}"
+    from helios.transport import host_key_changed
+    hk = host_key_changed(e, t["host"])
+    if hk:
+        return f"cannot log in to {acct}: {hk}"
     if type(e).__name__ not in ("AuthenticationException", "BadAuthenticationType"):
         return f"cannot log in to {acct} ({type(e).__name__}: {str(e)[:160]})"
     methods = _auth_methods(t)

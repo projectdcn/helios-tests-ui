@@ -193,3 +193,17 @@ def test_account_without_password_login_says_add_by_hand(home, tmp_path, monkeyp
     monkeypatch.setattr(sshkeys, "_auth_methods", lambda t: ["publickey"])
     r = sshkeys.install(p, str(k), {"admin": "x"}, ["st1"])[0]
     assert r["status"] == "failed" and "does not accept password logins (it allows: publickey)" in r["detail"]
+
+
+def test_changed_host_key_is_explained_with_fingerprints_and_the_fix():
+    """20 Oct srv03 -> MR3 c2: BadHostKeyException showed two cut-off base64 keys and no way forward."""
+    import base64
+    import paramiko
+    from helios.transport import host_key_changed
+    new = paramiko.PKey.from_type_string("ssh-ed25519", base64.b64decode(
+        "AAAAC3NzaC1lZDI1NTE5AAAAIGqtClRGRGPWIpY6/6PBTt3a6xjcRKnmDxCQvN6vWnNb"))
+    old = paramiko.PKey.from_type_string("ssh-ed25519", base64.b64decode(
+        "AAAAC3NzaC1lZDI1NTE5AAAAIC9g2ecSennknFqf8DNIJc6Km1L959UpCZl1T9X7fLFh"))
+    msg = host_key_changed(paramiko.BadHostKeyException("10.153.80.86", new, old), "10.153.80.86")
+    assert "SHA256:6ab9qp9Bc4+j7fQpVpsOwvqsObZqugjlHn6JiqLyl1w" in msg and "ssh-keygen -R 10.153.80.86" in msg
+    assert host_key_changed(OSError("x"), "h") is None
