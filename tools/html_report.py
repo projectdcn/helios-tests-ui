@@ -625,7 +625,7 @@ def coverage_section(plan_rows: list[dict] | None) -> str:
     return "\n".join(h)
 
 
-PLAN_ID_RE = re.compile(r"\b(?:TC|HC|SMOKE)-[A-Za-z0-9]+(?:-[A-Za-z0-9]+)*")
+PLAN_ID_RE = re.compile(r"\b(?:TC|HC|SMOKE)-[A-Za-z0-9]+(?:[-.][A-Za-z0-9]+)*")
 
 
 def link_ids(text: str, ids) -> str:

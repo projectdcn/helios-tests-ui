@@ -67,6 +67,27 @@ class Redfish:
         except ValueError:
             raise BmcError(f"{self.address}: GET {path}: not JSON") from None
 
+    def request(self, method: str, path: str, auth: bool = True, **kw):
+        """(status, content type, text) of any request - for the cases that judge the raw answer ($metadata XML,
+        an unauthenticated GET). Errors of the connection itself raise BmcError."""
+        url = path if path.startswith("http") else self.base + path
+        try:
+            r = self.s.request(method, url, timeout=self.timeout, verify=self.verify,
+                               auth=None if auth else False, **kw)
+        except Exception as e:  # noqa: BLE001
+            raise BmcError(f"{self.address}: {type(e).__name__}: {str(e)[:160]}") from None
+        log.debug("[bmc %s] %s %s -> %s%s", self.address, method, path, r.status_code, "" if auth else " (no login)")
+        return r.status_code, r.headers.get("Content-Type", ""), r.text
+
+    def try_get(self, path: str) -> dict | None:
+        """GET, None on HTTP 404 (a resource the BMC does not have); other errors raise."""
+        try:
+            return self.get(path)
+        except BmcError as e:
+            if "HTTP 404" in str(e):
+                return None
+            raise
+
     def members(self, path: str) -> list[str]:
         return [m["@odata.id"] for m in self.get(path).get("Members") or [] if isinstance(m, dict) and m.get("@odata.id")]
 
@@ -231,4 +252,34 @@ def firmware_groups(snaps: dict[str, dict]) -> dict[str, list[str]]:
     for node, snap in snaps.items():
         for m in snap["managers"][:1]:
             out.setdefault(str(m["firmware"] or "?"), []).append(node)
+    return out
+
+
+# ------------------------------------------------------------------ discovery (the plan's ids differ per platform)
+def discover(rf: Redfish) -> dict:
+    """The BMC's own resource paths: manager (bmc / BMC / first), every chassis, the chassis with sensors, the
+    system, the manager's log service ("Log", else "EventLog", else the first). The Blanton plan writes
+    Managers/bmc and Managers/BMC, Chassis/Chassis_0 - real ids differ (QFX5250_640E_L_Baseboard)."""
+    cache = getattr(rf, "_discovered", None)
+    if cache is not None:
+        return cache
+    root = rf.get("/redfish/v1/")
+    managers = rf.members("/redfish/v1/Managers")
+    mgr = next((m for m in managers if m.rstrip("/").rsplit("/", 1)[-1].lower() == "bmc"), managers[0] if managers else None)
+    chassis = rf.members("/redfish/v1/Chassis")
+    main = None
+    for c in chassis:
+        d = rf.get(c)
+        if d.get("Sensors") or d.get("ThermalSubsystem") or d.get("Thermal"):
+            main = c
+            break
+    systems = rf.members("/redfish/v1/Systems")
+    logsvc = None
+    if mgr:
+        svcs = rf.members(mgr.rstrip("/") + "/LogServices") if rf.try_get(mgr.rstrip("/") + "/LogServices") else []
+        ids = {s_.rstrip("/").rsplit("/", 1)[-1]: s_ for s_ in svcs}
+        logsvc = ids.get("Log") or ids.get("EventLog") or (svcs[0] if svcs else None)
+    out = {"root": root, "manager": mgr, "managers": managers, "chassis": chassis, "main_chassis": main or (chassis[0] if chassis else None),
+           "system": systems[0] if systems else None, "systems": systems, "log_service": logsvc}
+    rf._discovered = out
     return out

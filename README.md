@@ -4,8 +4,9 @@ pytest automation for the **AMD Helios full-rack scale-up test plan**
 (`Helios_ScaleUp_TestPlan-AMD.xlsx`): 6 SONiC switch trays (2 ASICs each),
 18 compute trays (4 GPUs each), with the AFM controller and the IFoE fabric - plus a web UI to run it.
 
-- **Test cases**: 465 of the 587 plan cases automated (BKC-26.12 plan + cases added here: switch-tray checks,
-  failure injection, health checks HC-000…012, BMC over Redfish TC-BMC-001…006); `tools/coverage.py` lists them.
+- **Test cases**: 574 of the 696 plan cases automated (BKC-26.12 plan + cases added here: switch-tray checks,
+  failure injection, health checks HC-000…012, BMC over Redfish TC-BMC-001…006, and 109 read-only cases of the
+  Blanton switch-BMC plan TPI-151974 as TC-BLT-<plan id>); `tools/coverage.py` lists them.
 - **Rack health check** (`tools/rack_health.py`): GO / NO-GO before disruptive work, quarantine-aware.
 - **Web UI** (`python -m ui`, or the offline installers for a Linux server and macOS): run cases picked from the
   test plan (scope, disruptive, last status), live log, reports and a Share zip with secrets removed,
@@ -55,7 +56,8 @@ tests/                  rack tests, each tagged @pytest.mark.tc("TC-...")
   hw/                   hardware (TC-HW)
   scaleout/             mortaro RDMA perftest (TC-IBS)
   ras/                  RAS datapath reset / reboot / power cycle (TC-RAS-reset)
-  bmc/                  BMC of every switch / compute tray over Redfish, read-only (TC-BMC-001..006)
+  bmc/                  BMC of every switch / compute tray over Redfish, read-only (TC-BMC-001..006); the Blanton
+                        switch-BMC plan TPI-151974 (TC-BLT-7.x: Redfish, bmc-manager.sh on the switch, ARIM)
   telemetry/            AMD device-metrics-exporter (TC-CTL-139..150)
   platform/             NTP, DNS, log rotation, topo logs, OOB names across reboot
   ifoe/                 IFoE driver unload/reload (TC-AFM-LU-001, TC-HW-017)
@@ -395,7 +397,7 @@ and title.
   `~/helios-ui/bin/install.sh --rollback`; `~/helios-ui/bin/helios-ui {start|stop|status|logs|token [new]|users}`.
   See docs/how-to-run.html, 9b.9.
 
-## Coverage (465 of 587 cases: the 542 plan cases + the cases added here - switch trays, failure injection, health checks HC-000…012, BMC TC-BMC-001…006; `tools/coverage.py` for the current numbers)
+## Coverage (574 of 696 cases: the 542 plan cases + the cases added here - switch trays, failure injection, health checks HC-000…012, BMC TC-BMC-001…006, Blanton BMC TC-BLT-*; `tools/coverage.py` for the current numbers)
 
 * **TC-SWH-001…036, switch hardware.** Firmware, fans, PSUs, platform/EEPROM,
   multi-ASIC namespaces, interface state/speed/MTU, error-counter deltas,

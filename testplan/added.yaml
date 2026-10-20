@@ -251,3 +251,660 @@ cases:
   title: 'BMC firmware consistent: same BMC firmware version on every compute tray, and on every switch tray'
   category: bmc
   origin: added 2026-10-20
+# Blanton switch BMC, read-only cases of Juniper TPI-151974 v1.2 ("E-RLI42381 - Blantons: BMC support");
+# tests/bmc/test_blanton_{redfish,cli,arim}.py - added 20 Oct 2026. The plan's id is in each title.
+- id: TC-BLT-7.2.1-1
+  level: L1
+  title: GET Service Root (Tc7.2.1-1, Blanton BMC plan TPI-151974, read-only)
+  category: bmc-blanton
+  origin: added 2026-10-20
+  scope: BMC (Switch)
+- id: TC-BLT-7.2.1-2
+  level: L1
+  title: GET OData Service Document (Tc7.2.1-2, Blanton BMC plan TPI-151974, read-only)
+  category: bmc-blanton
+  origin: added 2026-10-20
+  scope: BMC (Switch)
+- id: TC-BLT-7.2.1-3
+  level: L1
+  title: GET Schema Metadata ($metadata) (Tc7.2.1-3, Blanton BMC plan TPI-151974, read-only)
+  category: bmc-blanton
+  origin: added 2026-10-20
+  scope: BMC (Switch)
+- id: TC-BLT-7.2.2-1
+  level: L1
+  title: List Chassis Collection (Tc7.2.2-1, Blanton BMC plan TPI-151974, read-only)
+  category: bmc-blanton
+  origin: added 2026-10-20
+  scope: BMC (Switch)
+- id: TC-BLT-7.2.2-2
+  level: L1
+  title: Get Chassis Detail (Tc7.2.2-2, Blanton BMC plan TPI-151974, read-only)
+  category: bmc-blanton
+  origin: added 2026-10-20
+  scope: BMC (Switch)
+- id: TC-BLT-7.2.2-3
+  level: L1
+  title: Get System Detail (Tc7.2.2-3, Blanton BMC plan TPI-151974, read-only)
+  category: bmc-blanton
+  origin: added 2026-10-20
+  scope: BMC (Switch)
+- id: TC-BLT-7.2.3-1
+  level: L1
+  title: List All Sensors (Tc7.2.3-1, Blanton BMC plan TPI-151974, read-only)
+  category: bmc-blanton
+  origin: added 2026-10-20
+  scope: BMC (Switch)
+- id: TC-BLT-7.2.3-2
+  level: L1
+  title: Get Individual Sensor (LeakDetector_0) (Tc7.2.3-2, Blanton BMC plan TPI-151974, read-only)
+  category: bmc-blanton
+  origin: added 2026-10-20
+  scope: BMC (Switch)
+- id: TC-BLT-7.2.3-3
+  level: L1
+  title: Legacy Thermal View (Tc7.2.3-3, Blanton BMC plan TPI-151974, read-only)
+  category: bmc-blanton
+  origin: added 2026-10-20
+  scope: BMC (Switch)
+- id: TC-BLT-7.2.4-1
+  level: L1
+  title: LeakDetection Resource (Tc7.2.4-1, Blanton BMC plan TPI-151974, read-only)
+  category: bmc-blanton
+  origin: added 2026-10-20
+  scope: BMC (Switch)
+- id: TC-BLT-7.2.4-2
+  level: L1
+  title: List LeakDetectors (Tc7.2.4-2, Blanton BMC plan TPI-151974, read-only)
+  category: bmc-blanton
+  origin: added 2026-10-20
+  scope: BMC (Switch)
+- id: TC-BLT-7.2.4-3
+  level: L1
+  title: LeakDetector Detail (Tc7.2.4-3, Blanton BMC plan TPI-151974, read-only)
+  category: bmc-blanton
+  origin: added 2026-10-20
+  scope: BMC (Switch)
+- id: TC-BLT-7.2.5-1
+  level: L1
+  title: ThermalSubsystem Overview (Tc7.2.5-1, Blanton BMC plan TPI-151974, read-only)
+  category: bmc-blanton
+  origin: added 2026-10-20
+  scope: BMC (Switch)
+- id: TC-BLT-7.2.6-1
+  level: L1
+  title: BMC Detail (Tc7.2.6-1, Blanton BMC plan TPI-151974, read-only)
+  category: bmc-blanton
+  origin: added 2026-10-20
+  scope: BMC (Switch)
+- id: TC-BLT-7.2.6-2
+  level: L1
+  title: NetworkProtocol (Tc7.2.6-2, Blanton BMC plan TPI-151974, read-only)
+  category: bmc-blanton
+  origin: added 2026-10-20
+  scope: BMC (Switch)
+- id: TC-BLT-7.2.7-1
+  level: L1
+  title: List Users (Tc7.2.7-1, Blanton BMC plan TPI-151974, read-only)
+  category: bmc-blanton
+  origin: added 2026-10-20
+  scope: BMC (Switch)
+- id: TC-BLT-7.2.7-7
+  level: L1
+  title: List Roles (Tc7.2.7-7, Blanton BMC plan TPI-151974, read-only)
+  category: bmc-blanton
+  origin: added 2026-10-20
+  scope: BMC (Switch)
+- id: TC-BLT-7.2.8-3
+  level: L1
+  title: List Sessions (Tc7.2.8-3, Blanton BMC plan TPI-151974, read-only)
+  category: bmc-blanton
+  origin: added 2026-10-20
+  scope: BMC (Switch)
+- id: TC-BLT-7.2.9-1
+  level: L1
+  title: EventService Status (Tc7.2.9-1, Blanton BMC plan TPI-151974, read-only)
+  category: bmc-blanton
+  origin: added 2026-10-20
+  scope: BMC (Switch)
+- id: TC-BLT-7.2.9-14
+  level: L1
+  title: Verify Chassis and Sensor URIs (Native Local - No Rewriting) (Tc7.2.9-14, Blanton BMC plan TPI-151974, read-only)
+  category: bmc-blanton
+  origin: added 2026-10-20
+  scope: BMC (Switch)
+- id: TC-BLT-7.2.9-18
+  level: L1
+  title: Check Switch Manager / BMC Info (Tc7.2.9-18, Blanton BMC plan TPI-151974, read-only)
+  category: bmc-blanton
+  origin: added 2026-10-20
+  scope: BMC (Switch)
+- id: TC-BLT-7.2.10-1
+  level: L1
+  title: LogService Accessible on Switch BMC (Tc7.2.10-1, Blanton BMC plan TPI-151974, read-only)
+  category: bmc-blanton
+  origin: added 2026-10-20
+  scope: BMC (Switch)
+- id: TC-BLT-7.2.10-13
+  level: L1
+  title: MaxNumberOfRecords = 10,000 (Tc7.2.10-13, Blanton BMC plan TPI-151974, read-only)
+  category: bmc-blanton
+  origin: added 2026-10-20
+  scope: BMC (Switch)
+- id: TC-BLT-7.2.10-14
+  level: L1
+  title: OverWritePolicy = "WrapsWhenFull" (Tc7.2.10-14, Blanton BMC plan TPI-151974, read-only)
+  category: bmc-blanton
+  origin: added 2026-10-20
+  scope: BMC (Switch)
+- id: TC-BLT-7.2.10-15
+  level: L1
+  title: ClearLog Action Supported (Tc7.2.10-15, Blanton BMC plan TPI-151974, read-only)
+  category: bmc-blanton
+  origin: added 2026-10-20
+  scope: BMC (Switch)
+- id: TC-BLT-7.2.10-18
+  level: L1
+  title: All Three Table 37 Parameters Present Together (Tc7.2.10-18, Blanton BMC plan TPI-151974, read-only)
+  category: bmc-blanton
+  origin: added 2026-10-20
+  scope: BMC (Switch)
+- id: TC-BLT-7.2.11-1
+  level: L1
+  title: UpdateService Overview (Tc7.2.11-1, Blanton BMC plan TPI-151974, read-only)
+  category: bmc-blanton
+  origin: added 2026-10-20
+  scope: BMC (Switch)
+- id: TC-BLT-7.2.11-2
+  level: L1
+  title: Firmware Inventory (Tc7.2.11-2, Blanton BMC plan TPI-151974, read-only)
+  category: bmc-blanton
+  origin: added 2026-10-20
+  scope: BMC (Switch)
+- id: TC-BLT-7.4-1
+  level: L1
+  title: GET UpdateService - Configuration (Tc7.4-1, Blanton BMC plan TPI-151974, read-only)
+  category: bmc-blanton
+  origin: added 2026-10-20
+  scope: BMC (Switch)
+- id: TC-BLT-7.4-2
+  level: L1
+  title: GET FirmwareInventory - Switch Collection (Tc7.4-2, Blanton BMC plan TPI-151974, read-only)
+  category: bmc-blanton
+  origin: added 2026-10-20
+  scope: BMC (Switch)
+- id: TC-BLT-7.4-6
+  level: L1
+  title: GET FirmwareInventory/{id} - Individual Entry (Tc7.4-6, Blanton BMC plan TPI-151974, read-only)
+  category: bmc-blanton
+  origin: added 2026-10-20
+  scope: BMC (Switch)
+- id: TC-BLT-7.4-7
+  level: L1
+  title: Verify Switch Firmware Component IDs (Tc7.4-7, Blanton BMC plan TPI-151974, read-only)
+  category: bmc-blanton
+  origin: added 2026-10-20
+  scope: BMC (Switch)
+- id: TC-BLT-7.4-8
+  level: L1
+  title: Verify All Entries Accessible (Tc7.4-8, Blanton BMC plan TPI-151974, read-only)
+  category: bmc-blanton
+  origin: added 2026-10-20
+  scope: BMC (Switch)
+- id: TC-BLT-7.4-11
+  level: L1
+  title: Verify Switch BMC Firmware Entry (Tc7.4-11, Blanton BMC plan TPI-151974, read-only)
+  category: bmc-blanton
+  origin: added 2026-10-20
+  scope: BMC (Switch)
+- id: TC-BLT-7.2.12-1
+  level: L1
+  title: List Ethernet Interfaces (Tc7.2.12-1, Blanton BMC plan TPI-151974, read-only)
+  category: bmc-blanton
+  origin: added 2026-10-20
+  scope: BMC (Switch)
+- id: TC-BLT-7.2.12-2
+  level: L1
+  title: Get eth0 Details (Tc7.2.12-2, Blanton BMC plan TPI-151974, read-only)
+  category: bmc-blanton
+  origin: added 2026-10-20
+  scope: BMC (Switch)
+- id: TC-BLT-7.2.13-1
+  level: L1
+  title: CertificateService Root (Tc7.2.13-1, Blanton BMC plan TPI-151974, read-only)
+  category: bmc-blanton
+  origin: added 2026-10-20
+  scope: BMC (Switch)
+- id: TC-BLT-7.2.13-2
+  level: L1
+  title: HTTPS Certificates (Tc7.2.13-2, Blanton BMC plan TPI-151974, read-only)
+  category: bmc-blanton
+  origin: added 2026-10-20
+  scope: BMC (Switch)
+- id: TC-BLT-7.2.13-3
+  level: L1
+  title: GET Individual Certificate - Active TLS Certificate (Tc7.2.13-3, Blanton BMC plan TPI-151974, read-only)
+  category: bmc-blanton
+  origin: added 2026-10-20
+  scope: BMC (Switch)
+- id: TC-BLT-7.2.13-6
+  level: L1
+  title: Verify ReplaceCertificate Action Target URI Format (Tc7.2.13-6, Blanton BMC plan TPI-151974, read-only)
+  category: bmc-blanton
+  origin: added 2026-10-20
+  scope: BMC (Switch)
+- id: TC-BLT-7.2.13-7
+  level: L1
+  title: Verify Certificate Validity Period (Tc7.2.13-7, Blanton BMC plan TPI-151974, read-only)
+  category: bmc-blanton
+  origin: added 2026-10-20
+  scope: BMC (Switch)
+- id: TC-BLT-7.2.14-1
+  level: L1
+  title: GET TaskService - Configuration (Tc7.2.14-1, Blanton BMC plan TPI-151974, read-only)
+  category: bmc-blanton
+  origin: added 2026-10-20
+  scope: BMC (Switch)
+- id: TC-BLT-7.2.14-2
+  level: L1
+  title: GET Tasks Collection (Tc7.2.14-2, Blanton BMC plan TPI-151974, read-only)
+  category: bmc-blanton
+  origin: added 2026-10-20
+  scope: BMC (Switch)
+- id: TC-BLT-7.2.14-3
+  level: L1
+  title: GET Individual Task - Required Fields (Tc7.2.14-3, Blanton BMC plan TPI-151974, read-only)
+  category: bmc-blanton
+  origin: added 2026-10-20
+  scope: BMC (Switch)
+- id: TC-BLT-7.2.14-6
+  level: L1
+  title: Task StartTime and EndTime Fields (Tc7.2.14-6, Blanton BMC plan TPI-151974, read-only)
+  category: bmc-blanton
+  origin: added 2026-10-20
+  scope: BMC (Switch)
+- id: TC-BLT-7.2.14-8
+  level: L1
+  title: Task Messages Array Content (Tc7.2.14-8, Blanton BMC plan TPI-151974, read-only)
+  category: bmc-blanton
+  origin: added 2026-10-20
+  scope: BMC (Switch)
+- id: TC-BLT-7.2.14-9
+  level: L1
+  title: GET TelemetryService - Configuration (Tc7.2.14-9, Blanton BMC plan TPI-151974, read-only)
+  category: bmc-blanton
+  origin: added 2026-10-20
+  scope: BMC (Switch)
+- id: TC-BLT-7.2.14-11
+  level: L1
+  title: GET MetricDefinitions - Collection (Tc7.2.14-11, Blanton BMC plan TPI-151974, read-only)
+  category: bmc-blanton
+  origin: added 2026-10-20
+  scope: BMC (Switch)
+- id: TC-BLT-7.2.14-12
+  level: L1
+  title: GET MetricDefinitions/{id} - Individual Definition (Tc7.2.14-12, Blanton BMC plan TPI-151974, read-only)
+  category: bmc-blanton
+  origin: added 2026-10-20
+  scope: BMC (Switch)
+- id: TC-BLT-7.2.14-13
+  level: L1
+  title: GET MetricReportDefinitions - Collection (Tc7.2.14-13, Blanton BMC plan TPI-151974, read-only)
+  category: bmc-blanton
+  origin: added 2026-10-20
+  scope: BMC (Switch)
+- id: TC-BLT-7.2.14-16
+  level: L1
+  title: GET MetricReports - Collection (Tc7.2.14-16, Blanton BMC plan TPI-151974, read-only)
+  category: bmc-blanton
+  origin: added 2026-10-20
+  scope: BMC (Switch)
+- id: TC-BLT-7.2.14-17
+  level: L1
+  title: GET MetricReports/{id} - Individual Report (Tc7.2.14-17, Blanton BMC plan TPI-151974, read-only)
+  category: bmc-blanton
+  origin: added 2026-10-20
+  scope: BMC (Switch)
+- id: TC-BLT-7.2.14-19
+  level: L1
+  title: TelemetryService Structure Verified (Tc7.2.14-19, Blanton BMC plan TPI-151974, read-only)
+  category: bmc-blanton
+  origin: added 2026-10-20
+  scope: BMC (Switch)
+- id: TC-BLT-7.2.14-20
+  level: L1
+  title: MetricDefinitions Auto-Populated (Tc7.2.14-20, Blanton BMC plan TPI-151974, read-only)
+  category: bmc-blanton
+  origin: added 2026-10-20
+  scope: BMC (Switch)
+- id: TC-BLT-7.2.14-21
+  level: L1
+  title: Deduplication Keys Present (Tc7.2.14-21, Blanton BMC plan TPI-151974, read-only)
+  category: bmc-blanton
+  origin: added 2026-10-20
+  scope: BMC (Switch)
+- id: TC-BLT-7.2.14-22
+  level: L1
+  title: MetricProperties Lists Switch Sensor URIs (Tc7.2.14-22, Blanton BMC plan TPI-151974, read-only)
+  category: bmc-blanton
+  origin: added 2026-10-20
+  scope: BMC (Switch)
+- id: TC-BLT-7.2.14-23
+  level: L1
+  title: Client Workflow - Browse (Tc7.2.14-23, Blanton BMC plan TPI-151974, read-only)
+  category: bmc-blanton
+  origin: added 2026-10-20
+  scope: BMC (Switch)
+- id: TC-BLT-7.5.9-4
+  level: L1
+  title: TelemetryService Structure Verified (Tc7.5.9-4, Blanton BMC plan TPI-151974, read-only)
+  category: bmc-blanton
+  origin: added 2026-10-20
+  scope: BMC (Switch)
+- id: TC-BLT-7.5.9-5
+  level: L1
+  title: Deduplication Keys Present (Tc7.5.9-5, Blanton BMC plan TPI-151974, read-only)
+  category: bmc-blanton
+  origin: added 2026-10-20
+  scope: BMC (Switch)
+- id: TC-BLT-7.5.9-6
+  level: L1
+  title: MetricProperties Lists Switch Sensor URIs (Tc7.5.9-6, Blanton BMC plan TPI-151974, read-only)
+  category: bmc-blanton
+  origin: added 2026-10-20
+  scope: BMC (Switch)
+- id: TC-BLT-7.5.9-7
+  level: L1
+  title: Client Workflow - Browse (Tc7.5.9-7, Blanton BMC plan TPI-151974, read-only)
+  category: bmc-blanton
+  origin: added 2026-10-20
+  scope: BMC (Switch)
+- id: TC-BLT-7.5.9-8
+  level: L1
+  title: Client Workflow - Pick and Review MetricProperties (Tc7.5.9-8, Blanton BMC plan TPI-151974, read-only)
+  category: bmc-blanton
+  origin: added 2026-10-20
+  scope: BMC (Switch)
+- id: TC-BLT-7.5.9-13
+  level: L1
+  title: GET MetricReports - Collection (Tc7.5.9-13, Blanton BMC plan TPI-151974, read-only)
+  category: bmc-blanton
+  origin: added 2026-10-20
+  scope: BMC (Switch)
+- id: TC-BLT-7.5.9-14
+  level: L1
+  title: GET MetricReports/{id} (Tc7.5.9-14, Blanton BMC plan TPI-151974, read-only)
+  category: bmc-blanton
+  origin: added 2026-10-20
+  scope: BMC (Switch)
+- id: TC-BLT-7.3.1-1
+  level: L1
+  title: Service Root & Version (Tc7.3.1-1, Blanton BMC plan TPI-151974, read-only)
+  category: bmc-blanton
+  origin: added 2026-10-20
+  scope: BMC (Switch)
+- id: TC-BLT-7.3.1-2
+  level: L1
+  title: Managers & NetworkProtocol (Tc7.3.1-2, Blanton BMC plan TPI-151974, read-only)
+  category: bmc-blanton
+  origin: added 2026-10-20
+  scope: BMC (Switch)
+- id: TC-BLT-7.3.1-3
+  level: L1
+  title: EthernetInterfaces (eth0) (Tc7.3.1-3, Blanton BMC plan TPI-151974, read-only)
+  category: bmc-blanton
+  origin: added 2026-10-20
+  scope: BMC (Switch)
+- id: TC-BLT-7.3.4-1
+  level: L1
+  title: Journal & SEL LogServices (Tc7.3.4-1, Blanton BMC plan TPI-151974, read-only)
+  category: bmc-blanton
+  origin: added 2026-10-20
+  scope: BMC (Switch)
+- id: TC-BLT-7.3.5-1
+  level: L1
+  title: Authentication & TLS Enforcement (Tc7.3.5-1, Blanton BMC plan TPI-151974, read-only)
+  category: bmc-blanton
+  origin: added 2026-10-20
+  scope: BMC (Switch)
+- id: TC-BLT-7.3.6-1
+  level: L1
+  title: Sensor Discovery (D-Bus & Redfish) (Tc7.3.6-1, Blanton BMC plan TPI-151974, read-only)
+  category: bmc-blanton
+  origin: added 2026-10-20
+  scope: BMC (Switch)
+- id: TC-BLT-7.3.6-2
+  level: L1
+  title: Threshold & Health Mapping (Tc7.3.6-2, Blanton BMC plan TPI-151974, read-only)
+  category: bmc-blanton
+  origin: added 2026-10-20
+  scope: BMC (Switch)
+- id: TC-BLT-7.5.13-1
+  level: L1
+  title: GET ServiceConditions - Root Resource (Tc7.5.13-1, Blanton BMC plan TPI-151974, read-only)
+  category: bmc-blanton
+  origin: added 2026-10-20
+  scope: BMC (Switch)
+- id: TC-BLT-7.5.13-2
+  level: L1
+  title: Verify Condition Object Structure (Tc7.5.13-2, Blanton BMC plan TPI-151974, read-only)
+  category: bmc-blanton
+  origin: added 2026-10-20
+  scope: BMC (Switch)
+- id: TC-BLT-7.5.13-3
+  level: L1
+  title: Verify Severity Values (Tc7.5.13-3, Blanton BMC plan TPI-151974, read-only)
+  category: bmc-blanton
+  origin: added 2026-10-20
+  scope: BMC (Switch)
+- id: TC-BLT-7.5.13-4
+  level: L1
+  title: Verify OriginOfCondition URIs (Tc7.5.13-4, Blanton BMC plan TPI-151974, read-only)
+  category: bmc-blanton
+  origin: added 2026-10-20
+  scope: BMC (Switch)
+- id: TC-BLT-7.5.13-5
+  level: L1
+  title: Verify Timestamp Format (Tc7.5.13-5, Blanton BMC plan TPI-151974, read-only)
+  category: bmc-blanton
+  origin: added 2026-10-20
+  scope: BMC (Switch)
+- id: TC-BLT-7.5.13-7
+  level: L1
+  title: Client Workflow - Poll, Identify, Filter (Tc7.5.13-7, Blanton BMC plan TPI-151974, read-only)
+  category: bmc-blanton
+  origin: added 2026-10-20
+  scope: BMC (Switch)
+- id: TC-BLT-7.1.1-1
+  level: L1
+  title: USB Presence Detection ['check'] (Tc7.1.1-1, Blanton BMC plan TPI-151974, read-only)
+  category: bmc-blanton
+  origin: added 2026-10-20
+  scope: BMC (Switch)
+- id: TC-BLT-7.1.1-2
+  level: L1
+  title: Help Menu ['--help' | '-h'] (Tc7.1.1-2, Blanton BMC plan TPI-151974, read-only)
+  category: bmc-blanton
+  origin: added 2026-10-20
+  scope: BMC (Switch)
+- id: TC-BLT-7.1.1-4
+  level: L1
+  title: Display Version Information ['version'] (Tc7.1.1-4, Blanton BMC plan TPI-151974, read-only)
+  category: bmc-blanton
+  origin: added 2026-10-20
+  scope: BMC (Switch)
+- id: TC-BLT-7.1.1-5
+  level: L1
+  title: System Status Overview ['status'] (Tc7.1.1-5, Blanton BMC plan TPI-151974, read-only)
+  category: bmc-blanton
+  origin: added 2026-10-20
+  scope: BMC (Switch)
+- id: TC-BLT-7.1.1-6
+  level: L1
+  title: Health Check ['health'] (Tc7.1.1-6, Blanton BMC plan TPI-151974, read-only)
+  category: bmc-blanton
+  origin: added 2026-10-20
+  scope: BMC (Switch)
+- id: TC-BLT-7.1.1-9
+  level: L1
+  title: Default Boot Flash ('flash-info') (Tc7.1.1-9, Blanton BMC plan TPI-151974, read-only)
+  category: bmc-blanton
+  origin: added 2026-10-20
+  scope: BMC (Switch)
+- id: TC-BLT-7.1.1-10
+  level: L1
+  title: Flash Partition Information ['flash-info'] (Tc7.1.1-10, Blanton BMC plan TPI-151974, read-only)
+  category: bmc-blanton
+  origin: added 2026-10-20
+  scope: BMC (Switch)
+- id: TC-BLT-7.1.2-1
+  level: L1
+  title: Journal Streaming [No Filter |errors |warnings |boot |] (Tc7.1.2-1, Blanton BMC plan TPI-151974, read-only)
+  category: bmc-blanton
+  origin: added 2026-10-20
+  scope: BMC (Switch)
+- id: TC-BLT-7.1.2-2
+  level: L1
+  title: Kernel Logs ['dmesg'] (Tc7.1.2-2, Blanton BMC plan TPI-151974, read-only)
+  category: bmc-blanton
+  origin: added 2026-10-20
+  scope: BMC (Switch)
+- id: TC-BLT-7.1.3-3
+  level: L1
+  title: Check SSH Access Status ['ssh-access status'] (Tc7.1.3-3, Blanton BMC plan TPI-151974, read-only)
+  category: bmc-blanton
+  origin: added 2026-10-20
+  scope: BMC (Switch)
+- id: TC-BLT-7.1.4-1
+  level: L1
+  title: List Configuration Files ['config-list'] (Tc7.1.4-1, Blanton BMC plan TPI-151974, read-only)
+  category: bmc-blanton
+  origin: added 2026-10-20
+  scope: BMC (Switch)
+- id: TC-BLT-7.2.6-17
+  level: L1
+  title: Verify redfish docker container is only enabled on liquid cooling platforms. (Tc7.2.6-17, Blanton BMC plan TPI-151974,
+    read-only)
+  category: bmc-blanton
+  origin: added 2026-10-20
+  scope: BMC (Switch)
+- id: TC-BLT-7.2.6-19
+  level: L1
+  title: Rack Manager Reachability - REACHABLE (Tc7.2.6-19, Blanton BMC plan TPI-151974, read-only)
+  category: bmc-blanton
+  origin: added 2026-10-20
+  scope: BMC (Switch)
+- id: TC-BLT-7.5.1-1
+  level: L1
+  title: GET Aggregator Service Root (Tc7.5.1-1, Blanton BMC plan TPI-151974, read-only)
+  category: bmc-blanton
+  origin: added 2026-10-20
+  scope: BMC (ARIM rack manager)
+- id: TC-BLT-7.5.1-2
+  level: L1
+  title: GET /redfish Version Object (Tc7.5.1-2, Blanton BMC plan TPI-151974, read-only)
+  category: bmc-blanton
+  origin: added 2026-10-20
+  scope: BMC (ARIM rack manager)
+- id: TC-BLT-7.5.1-3
+  level: L1
+  title: GET JsonSchemas Collection (Tc7.5.1-3, Blanton BMC plan TPI-151974, read-only)
+  category: bmc-blanton
+  origin: added 2026-10-20
+  scope: BMC (ARIM rack manager)
+- id: TC-BLT-7.5.1-4
+  level: L1
+  title: GET Registries Collection (Tc7.5.1-4, Blanton BMC plan TPI-151974, read-only)
+  category: bmc-blanton
+  origin: added 2026-10-20
+  scope: BMC (ARIM rack manager)
+- id: TC-BLT-7.5.2-4
+  level: L1
+  title: List Connection Methods (Tc7.5.2-4, Blanton BMC plan TPI-151974, read-only)
+  category: bmc-blanton
+  origin: added 2026-10-20
+  scope: BMC (ARIM rack manager)
+- id: TC-BLT-7.5.3-1
+  level: L1
+  title: Verify Transparent Proxy Rule (Tc7.5.3-1, Blanton BMC plan TPI-151974, read-only)
+  category: bmc-blanton
+  origin: added 2026-10-20
+  scope: BMC (ARIM rack manager)
+- id: TC-BLT-7.5.3-2
+  level: L1
+  title: Verify URI Rewriting in Responses (Tc7.5.3-2, Blanton BMC plan TPI-151974, read-only)
+  category: bmc-blanton
+  origin: added 2026-10-20
+  scope: BMC (ARIM rack manager)
+- id: TC-BLT-7.5.4-1
+  level: L1
+  title: Systems Collection Membership (Tc7.5.4-1, Blanton BMC plan TPI-151974, read-only)
+  category: bmc-blanton
+  origin: added 2026-10-20
+  scope: BMC (ARIM rack manager)
+- id: TC-BLT-7.5.4-2
+  level: L1
+  title: Chassis Collection Membership (Tc7.5.4-2, Blanton BMC plan TPI-151974, read-only)
+  category: bmc-blanton
+  origin: added 2026-10-20
+  scope: BMC (ARIM rack manager)
+- id: TC-BLT-7.5.4-3
+  level: L1
+  title: Managers Collection Membership (Tc7.5.4-3, Blanton BMC plan TPI-151974, read-only)
+  category: bmc-blanton
+  origin: added 2026-10-20
+  scope: BMC (ARIM rack manager)
+- id: TC-BLT-7.5.4-4
+  level: L1
+  title: Chassis Containment Hierarchy (Tc7.5.4-4, Blanton BMC plan TPI-151974, read-only)
+  category: bmc-blanton
+  origin: added 2026-10-20
+  scope: BMC (ARIM rack manager)
+- id: TC-BLT-7.5.5-1
+  level: L1
+  title: ComponentIntegrity Collection (Tc7.5.5-1, Blanton BMC plan TPI-151974, read-only)
+  category: bmc-blanton
+  origin: added 2026-10-20
+  scope: BMC (ARIM rack manager)
+- id: TC-BLT-7.5.7-1
+  level: L1
+  title: PowerEquipment Singleton (Tc7.5.7-1, Blanton BMC plan TPI-151974, read-only)
+  category: bmc-blanton
+  origin: added 2026-10-20
+  scope: BMC (ARIM rack manager)
+- id: TC-BLT-7.5.7-2
+  level: L1
+  title: Power Shelf Sub-Resources (Tc7.5.7-2, Blanton BMC plan TPI-151974, read-only)
+  category: bmc-blanton
+  origin: added 2026-10-20
+  scope: BMC (ARIM rack manager)
+- id: TC-BLT-7.5.7-3
+  level: L1
+  title: Super Cap Battery Resources (Tc7.5.7-3, Blanton BMC plan TPI-151974, read-only)
+  category: bmc-blanton
+  origin: added 2026-10-20
+  scope: BMC (ARIM rack manager)
+- id: TC-BLT-7.5.8-1
+  level: L1
+  title: EventService Configuration (Tc7.5.8-1, Blanton BMC plan TPI-151974, read-only)
+  category: bmc-blanton
+  origin: added 2026-10-20
+  scope: BMC (ARIM rack manager)
+- id: TC-BLT-7.5.9-1
+  level: L1
+  title: Deduplicated MetricDefinitions (Tc7.5.9-1, Blanton BMC plan TPI-151974, read-only)
+  category: bmc-blanton
+  origin: added 2026-10-20
+  scope: BMC (ARIM rack manager)
+- id: TC-BLT-7.5.10-1
+  level: L1
+  title: Task Tracking for Async Operations (Tc7.5.10-1, Blanton BMC plan TPI-151974, read-only)
+  category: bmc-blanton
+  origin: added 2026-10-20
+  scope: BMC (ARIM rack manager)
+- id: TC-BLT-7.5.11-1
+  level: L1
+  title: Aggregated FirmwareInventory (Tc7.5.11-1, Blanton BMC plan TPI-151974, read-only)
+  category: bmc-blanton
+  origin: added 2026-10-20
+  scope: BMC (ARIM rack manager)
