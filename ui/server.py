@@ -27,9 +27,9 @@ import zipfile
 from http.cookies import CookieError, SimpleCookie
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from urllib.parse import parse_qs, unquote, urlparse
+from urllib.parse import parse_qs, quote, unquote, urlparse
 
-from . import defaults, inventory_edit, plan, presets, sessions, sshkeys
+from . import defaults, inventory_edit, plan, presence, presets, sessions, share, sshkeys
 from .config import ROOT, afm_username, inventory_rack_name, load_config
 from .keychain import Keychain, KeychainError, account
 from .runner import JobError, NAME_RX, TC_RX
@@ -84,6 +84,19 @@ class App:
         # python -m ui passes the real one; an App built without one (tests) has no Keychain
         self.keychain = keychain if keychain is not None else Keychain(enabled=False)
         self.runs.store_label = self.store_label
+        self.presence = presence.Presence()          # who is using the UI (memory only)
+
+    def saved_passwords(self) -> list[str]:
+        """The AFM passwords saved for the racks (to blank them in a shared zip); never sent anywhere."""
+        out = []
+        for rack in self.profiles:
+            try:
+                acct = self.keychain_account(rack)
+                if self.keychain.available() and self.keychain.has(acct):
+                    out.append(self.keychain.get(acct) or "")
+            except Exception:  # noqa: BLE001 - a rack without inventory / an unreadable store: nothing to add
+                pass
+        return [p for p in out if p]
 
     @property
     def store_label(self) -> str:
@@ -111,7 +124,7 @@ class App:
                 out["error"] = str(e)
         return out
 
-    def start_run(self, body: dict):
+    def start_run(self, body: dict, started_by: str | None = None):
         """POST /api/runs: a typed password wins (saved to the Keychain first when ``remember_password``); an empty
         one falls back to the rack's Keychain password. Keychain trouble never stops the run: it is noted in the
         log header and in the response (``keychain``)."""
@@ -141,7 +154,7 @@ class App:
                 except KeychainError as e:
                     kc["error"] = str(e)
                     notes.append(f"no AFM password typed and the {self.store_label} could not be read: {e}")
-            run = self.runs.submit(rack, body, password, source, notes)
+            run = self.runs.submit(rack, body, password, source, notes, started_by)
         finally:
             del password
         return run, kc
@@ -247,6 +260,67 @@ class Handler(BaseHTTPRequestHandler):
 
     def log_message(self, fmt, *args):        # quiet; request bodies (passwords) are never logged anyway
         pass
+
+    def end_headers(self):
+        for c in getattr(self, "_cookies", ()):   # the browser id / name cookies of ui/presence.py
+            self.send_header("Set-Cookie", c)
+        self._cookies = []
+        super().end_headers()
+
+    def _cookie(self, name: str) -> str:
+        try:
+            c = SimpleCookie(self.headers.get("Cookie") or "")
+        except CookieError:
+            return ""
+        return c[name].value if name in c else ""
+
+    def _who(self) -> tuple[str, str]:
+        """(browser id, name) of this request; a browser without an id gets one (cookie set on this response)."""
+        bid = self._cookie(presence.BID_COOKIE)
+        if not presence.BID_RX.match(bid):
+            bid = presence.new_bid()
+            self._cookies = [f"{presence.BID_COOKIE}={bid}; Path=/; Max-Age={365 * 24 * 3600}; HttpOnly; SameSite=Strict"]
+        return bid, presence.clean_name(unquote(self._cookie(presence.NAME_COOKIE)))
+
+    def _touch(self, path: str) -> None:
+        """Count this request as the browser being here (not the installer's /api/version check, not static)."""
+        if path in OPEN_PATHS or path.startswith("/static/") or self.headers.get("Authorization"):
+            return                                # (a Bearer request is a script, e.g. helios-ui users)
+        had = presence.BID_RX.match(self._cookie(presence.BID_COOKIE))
+        bid, name = self._who()
+        self.bid = bid
+        if not had:                               # no id yet: a probe / script, or a page loaded before this
+            return                                # version - counted from its next request (it has the id then)
+        self.app.presence.touch(bid, name, presence.client_ip(self.client_address[0], self.headers),
+                                self.headers.get("User-Agent") or "")
+
+    def _by(self) -> str:
+        return self.app.presence.label(getattr(self, "bid", None))
+
+    def _set_name(self, body: dict) -> None:
+        raw = body.get("name")
+        name = presence.clean_name(raw)
+        if raw not in (None, "") and not name:
+            return self.err(400, "name: 1-40 letters, digits, spaces and . @ ' ( ) - _")
+        bid, _ = self._who()
+        self.app.presence.touch(bid, name, presence.client_ip(self.client_address[0], self.headers),
+                                self.headers.get("User-Agent") or "")
+        v = quote(name, safe="")
+        self._cookies = [c for c in getattr(self, "_cookies", [])] + [
+            f"{presence.NAME_COOKIE}={v}; Path=/; Max-Age={(365 * 24 * 3600) if name else 0}; HttpOnly; SameSite=Strict"]
+        return self.json(self.app.presence.snapshot(bid))
+
+    def _share(self, rack: str, run: str) -> None:
+        """The results folder as a zip with passwords / tokens / keys blanked out (ui/share.py)."""
+        folder = result_folder(self.app.profile(rack), run)
+        if folder is None:
+            return self.err(404, "no such results folder")
+        values = share.known_secrets([*self.app.saved_passwords(), *( [self.token] if self.token else [])])
+        with tempfile.SpooledTemporaryFile(max_size=32 * 1024 * 1024) as fh:
+            share.share_zip(folder, fh, values, shared_by=self._by())
+            size = fh.tell()
+            fh.seek(0)
+            return self._attachment(fh, size, "application/zip", f"{folder.name}-shared.zip")
 
     # ------------------------------------------------------------- helpers
     def _send(self, code: int, body: bytes, ctype: str, extra: dict | None = None) -> None:
@@ -385,8 +459,10 @@ class Handler(BaseHTTPRequestHandler):
         path, q = unquote(u.path), parse_qs(u.query)
         if self._need_login(path):
             return
+        self._touch(path)
         try:
             if path in ("/", "/index.html"):
+                self._who()                        # the page's own API calls then share one browser id
                 return self._file(STATIC, "index.html")
             if path.startswith("/static/"):
                 return self._file(STATIC, path[len("/static/"):])
@@ -401,6 +477,8 @@ class Handler(BaseHTTPRequestHandler):
                 return self.json({"version": version(), "commit": bi.get("commit"), "built": bi.get("built"),
                                   "root": str(ROOT), "auth": bool(self.token),
                                   **(login_hint() if self.token else {})})
+            if path == "/api/users":               # who is using the UI now (ui/presence.py)
+                return self.json(self.app.presence.snapshot(getattr(self, "bid", None)))
             if path == "/api/racks":
                 return self.json([{**p.as_dict(), **self.app.runs.busy(n)} for n, p in self.app.profiles.items()])
             m = re.fullmatch(r"/api/cases/([^/]+)/history", path)
@@ -449,6 +527,9 @@ class Handler(BaseHTTPRequestHandler):
             m = re.fullmatch(r"/api/racks/([^/]+)/results/([^/]+)/zip", path)
             if m:
                 return self._download_result(m.group(1), m.group(2), "zip")
+            m = re.fullmatch(r"/api/racks/([^/]+)/results/([^/]+)/share", path)
+            if m:
+                return self._share(m.group(1), m.group(2))
             m = re.fullmatch(r"/api/racks/([^/]+)/results/([^/]+)/file/([^/]+)", path)
             if m:
                 return self._download_result(m.group(1), m.group(2), m.group(3))
@@ -529,14 +610,17 @@ class Handler(BaseHTTPRequestHandler):
         path = urlparse(self.path).path
         if self._need_login(path):
             return
+        self._touch(path)
         try:
             body = self._body()
             if path == "/api/login":
                 return self._login(body)
             if path == "/api/logout":
                 return self._logout()
+            if path == "/api/me":                  # this browser's display name ("" = forget it)
+                return self._set_name(body)
             if path == "/api/runs":
-                run, kc = self.app.start_run(body)
+                run, kc = self.app.start_run(body, started_by=self._by() or None)
                 return self.json({**self.app.runs.get(run.id), "keychain": kc}, 201)
             m = re.fullmatch(r"/api/racks/([^/]+)/password(/delete)?", path)
             if m:                                  # Keychain / password file: save / forget; never sent back
@@ -556,7 +640,7 @@ class Handler(BaseHTTPRequestHandler):
                 return self.json(defaults.save(p, body.get("settings")), 201)
             m = re.fullmatch(r"/api/runs/([^/]+)/stop", path)
             if m:
-                return self.json(self.app.runs.stop(m.group(1)).as_dict())
+                return self.json(self.app.runs.stop(m.group(1), by=self._by() or None).as_dict())
             m = re.fullmatch(r"/api/racks/([^/]+)/sessions", path)
             if m:                                  # a new session becomes the rack's current one
                 return self.json(sessions.new_session(self.app.profile(m.group(1)), body.get("name")), 201)

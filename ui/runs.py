@@ -43,8 +43,11 @@ def _now() -> str:
 
 class Run:
     def __init__(self, rid: str, rack: str, job: Job, password: str | None, log_dir: Path,
-                 filters: dict | None = None, password_source: str | None = None, notes: list[str] | None = None):
+                 filters: dict | None = None, password_source: str | None = None, notes: list[str] | None = None,
+                 started_by: str | None = None):
         self.id, self.rack, self.job = rid, rack, job
+        self.started_by = started_by or None        # "Name (address)" of the browser that started it (ui/presence.py)
+        self.stopped_by: str | None = None
         self.filters = dict(filters or {})          # test-plan pick of the form (for "Run again"), never a secret
         self._password = password or None           # memory only; dropped when the run ends
         self.has_password = bool(password)
@@ -72,7 +75,7 @@ class Run:
                 "results": self.results, "verdict": self.verdict, "error": self.error,
                 "has_password": self.has_password, "password_source": self.password_source,
                 "lines": len(self.lines), "current": self.current if self.status == "running" else None,
-                "session": self.session}
+                "session": self.session, "started_by": self.started_by, "stopped_by": self.stopped_by}
 
     def save(self) -> None:
         self.meta_path.parent.mkdir(parents=True, exist_ok=True)
@@ -96,14 +99,16 @@ class RunManager:
 
     # ------------------------------------------------------------- queue
     def submit(self, rack: str, req: dict, password: str | None = None, password_source: str | None = None,
-               notes: list[str] | None = None) -> Run:
+               notes: list[str] | None = None, started_by: str | None = None) -> Run:
         if rack not in self.profiles:
             raise JobError(f"unknown rack {rack!r}")
         job = Job.from_request(req)
         filters = clean_filters(req.get("filters"))
         p = self.profiles[rack]
         rid = f"{rack}-{time.strftime('%Y%m%d-%H%M%S')}-" + "".join(random.choices(string.ascii_lowercase, k=4))
-        run = Run(rid, rack, job, password, p.results_dir / "ui-runs", filters, password_source, notes)
+        run = Run(rid, rack, job, password, p.results_dir / "ui-runs", filters, password_source, notes, started_by)
+        if started_by:
+            run.notes.append(f"started by {started_by}")
         try:
             if job.kind != "access":             # a prerequisites check has no test results for a session
                 run.session = sessions.join(p, rid)
@@ -241,10 +246,12 @@ class RunManager:
                 build_report(d, f"{run.rack}: {summary_text(d)}", log)
                 run.verdict = run.verdict or summary_text(d)
 
-    def stop(self, rid: str) -> Run:
+    def stop(self, rid: str, by: str | None = None) -> Run:
         run = self.runs.get(rid)
         if run is None:
             raise KeyError(rid)
+        if by and not run.done:
+            run.stopped_by = by
         with self.lock:
             if run.status == "queued":
                 if run in self.queues[run.rack]:

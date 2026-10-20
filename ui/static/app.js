@@ -53,6 +53,41 @@ $("#login-box").addEventListener("submit", async ev => {
   catch (e) { $("#login-msg").textContent = e.message; $("#login-msg").className = "err"; $("#login-box").token.focus(); }
 });
 $("#logout").addEventListener("click", async () => { await api("POST", "/api/logout", {}).catch(() => {}); location.reload(); });
+
+// ---------------------------------------------------------------- who is using the UI (ui/presence.py)
+function ago(s) { return s < 60 ? `${s}s ago` : s < 3600 ? `${Math.floor(s / 60)}m ago` : `${Math.floor(s / 3600)}h ago`; }
+function renderUsers(d) {
+  $("#users").hidden = false;
+  $("#users-n").textContent = d.people || d.active.length || 1;
+  const me = d.you || {};
+  if (document.activeElement !== $("#me-name")) $("#me-name").value = me.name || "";
+  $("#users").title = (me.name ? "" : "set your name so others see who you are - ") +
+    "who has this UI open (a request in the last 2 minutes)";
+  const row = (u, idle) => h("tr", { class: u.you ? "you" : "" },
+    h("td", { class: idle ? "idle" : "" }, u.name || h("span", { class: "muted" }, "(no name)")),
+    h("td", { class: idle ? "idle" : "" }, u.ip), h("td", { class: idle ? "idle" : "" }, u.browser),
+    h("td", { class: idle ? "idle" : "" }, u.idle_s < 5 ? "now" : ago(u.idle_s)),
+    h("td", { class: idle ? "idle" : "" }, u.first));
+  $("#users-table tbody").replaceChildren(...d.active.map(u => row(u, false)), ...d.recent.map(u => row(u, true)));
+}
+async function loadUsers() {
+  try { renderUsers(await api("GET", "/api/users")); } catch (e) { if (e.status === 401) $("#users").hidden = true; }
+}
+$("#users").addEventListener("click", () => {
+  const box = $("#users-box"); box.hidden = !box.hidden;
+  $("#users").setAttribute("aria-expanded", String(!box.hidden));
+  if (!box.hidden) { loadUsers(); if (!$("#me-name").value) $("#me-name").focus(); }
+});
+async function saveName() {
+  try { renderUsers(await api("POST", "/api/me", { name: $("#me-name").value.trim() }));
+        $("#me-msg").textContent = $("#me-name").value.trim() ? "saved in this browser" : "name removed"; $("#me-msg").className = "muted small"; }
+  catch (e) { $("#me-msg").textContent = e.message; $("#me-msg").className = "err small"; }
+}
+$("#me-save").addEventListener("click", saveName);
+$("#me-name").addEventListener("keydown", ev => { if (ev.key === "Enter") { ev.preventDefault(); saveName(); } });
+loadUsers();
+setInterval(() => { if (!document.hidden) loadUsers(); }, 30000);
+document.addEventListener("visibilitychange", () => { if (!document.hidden) loadUsers(); });
 api("GET", "/api/version").then(v => {
   $("#logout").hidden = !v.auth;
   if (v.auth && v.server) {   // which UI this is and who to ask; the token itself is never sent to the page
@@ -741,7 +776,8 @@ async function loadRuns() {
     h("td", { class: "st-" + r.status }, r.status + (r.status === "queued" && r.queue_position ? ` #${r.queue_position}` : ""),
       r.status === "running" && r.started ? h("div", { class: "muted" }, `${elapsed(r.started)}${r.current ? " · " + r.current.split("::").pop() : ""}`) : null),
     h("td", {}, what(r.job)),
-    h("td", {}, r.started || r.created),
+    h("td", {}, r.started || r.created, r.started_by ? h("div", { class: "muted" }, "by " + r.started_by) : null,
+      r.stopped_by ? h("div", { class: "muted" }, (r.status === "cancelled" ? "cancelled by " : "stopped by ") + r.stopped_by) : null),
     h("td", {}, r.rc ?? ""),
     h("td", { class: "v-" + (r.verdict || "") }, r.verdict || r.error || ""),
     h("td", {}, ...(r.results || []).map(n => [resultLinks(n), " "])),
@@ -782,6 +818,9 @@ function openLog(id) {
 }
 
 // ---------------------------------------------------------------- results history
+const SHARE_TIP = "for sending outside the team (AMD, a ticket): the same files with passwords, tokens, API keys and " +
+  "private keys replaced by <REDACTED>; binary files that cannot be checked are left out. SHARED-README.txt inside " +
+  "lists every change. IP addresses and host names are kept.";
 $("#refresh-results").addEventListener("click", loadResults);
 async function loadResults() {
   if (!rack) return;
@@ -802,7 +841,8 @@ async function loadResults() {
       h("td", {}, s.written || ""),
       h("td", {}, s.reports.includes("report.html") ? h("a", { href: base(s.id) + "report.html", target: "_blank" }, "session report") : "",
         s.folder ? [" ", h("a", { href: base(s.id) + "session.json", target: "_blank", class: "muted" }, "session.json")] : null),
-      h("td", {}, s.folder ? h("a", { class: "btn", href: dl(s.id, "zip"), download: "", title: "the consolidated folder: csv files, logs, report, session.json" }, "Download results (.zip)") : ""),
+      h("td", {}, s.folder ? [h("a", { class: "btn", href: dl(s.id, "zip"), download: "", title: "the consolidated folder: csv files, logs, report, session.json" }, "Download results (.zip)"),
+        h("a", { class: "btn", href: dl(s.id, "share"), download: "", title: SHARE_TIP }, "Share (.zip, secrets removed)")] : ""),
       h("td", {}, s.runs.length ? h("button", { onclick: () => rebuildSession(s.id),
         title: "build the consolidated folder and its report again from the session's runs" }, "Rebuild") : null))));
   $("#results tbody").replaceChildren(...rows.map(r => h("tr", {},
@@ -814,6 +854,7 @@ async function loadResults() {
       h("a", { href: base(r.name) + "tc_summary.csv", target: "_blank", class: "muted" }, "csv")),
     h("td", {},
       h("a", { class: "btn", href: dl(r.name, "zip"), download: "", title: "every file of the folder" }, "Download results (.zip)"),
+      h("a", { class: "btn", href: dl(r.name, "share"), download: "", title: SHARE_TIP }, "Share (.zip, secrets removed)"),
       ...["report.html", "health.html"].filter(f => r.reports.includes(f)).map(f =>
         h("a", { class: "btn", href: dl(r.name, "file/" + f), download: "" }, f === "report.html" ? "Download report" : "Download health report"))),
     h("td", {},

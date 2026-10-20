@@ -11,8 +11,22 @@
   <h1>Helios tests</h1>
   <label>Rack <select id="rack"></select></label>
   <span id="rackinfo" class="muted"></span>
+  <button type="button" id="users" hidden aria-expanded="false" aria-controls="users-box"
+    title="who has this UI open (a request in the last 2 minutes)">&#9679; <span id="users-n">1</span> using now</button>
   <button type="button" id="logout" hidden title="forget this browser's login to the UI">Log out</button>
 </header>
+<section id="users-box" class="box" hidden aria-label="Who is using this UI">
+  <div class="row">
+    <b>Using this UI now</b>
+    <label class="inline">Your name <input id="me-name" maxlength="40" placeholder="so others see who you are" autocomplete="name"></label>
+    <button type="button" id="me-save">Save</button>
+    <span id="me-msg" class="muted small" role="status" aria-live="polite"></span>
+  </div>
+  <table id="users-table"><thead><tr><th>Who</th><th>Address</th><th>Browser</th><th>Last seen</th><th>Here since</th></tr></thead><tbody></tbody></table>
+  <p class="muted small">One line per browser. "Now" = a request in the last 2 minutes (an open page checks in every
+    30 s); others seen in the last hour are greyed. Runs show who started / stopped them. The name is kept in your
+    browser only; this list is in the UI's memory and starts empty after a restart.</p>
+</section>
 <form id="login-box" class="box" hidden>
   <b>This UI needs its access token.</b>
   <label>Access token <input type="password" name="token" autocomplete="current-password" required></label>

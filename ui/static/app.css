@@ -89,7 +89,12 @@ fieldset { min-width: 0; }
 
 .unsaved { margin: 6px 0; padding: 6px 10px; border-left: 3px solid var(--warn, #b45309); background: rgba(180, 83, 9, .08); }
 #login-box:not([hidden]) { display: flex; gap: 12px; flex-wrap: wrap; align-items: center; margin: 16px; }
-#logout { margin-left: auto; }
+#logout { margin-left: 8px; }
+#users { margin-left: auto; }
+#users::first-letter { color: var(--pass, #16a34a); }
+#users-box { margin: 10px 16px; }
+#users-table td.idle { opacity: .55; }
+#users-table tr.you td:first-child::after { content: " (you)"; color: var(--muted, #888); }
 #login-hint { flex-basis: 100%; font-family: ui-monospace, Menlo, monospace; }
 [hidden] { display: none !important; }      /* the hidden attribute wins over display rules (nav, flex boxes) */
 #acc-table td:first-child { font-weight: 700; text-align: center; width: 1.5em; }
