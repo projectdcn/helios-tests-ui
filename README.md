@@ -8,7 +8,7 @@ pytest automation for the **AMD Helios full-rack scale-up test plan**
   failure injection, health checks HC-000…012, BMC over Redfish TC-BMC-001…006); `tools/coverage.py` lists them.
 - **Rack health check** (`tools/rack_health.py`): GO / NO-GO before disruptive work, quarantine-aware.
 - **Web UI** (`python -m ui`, or the offline installers for a Linux server and macOS): run cases picked from the
-  test plan (scope, disruptive, last status or any column), live log, reports and a Share zip with secrets removed,
+  test plan (scope, disruptive, last status), live log, reports and a Share zip with secrets removed,
   inventory editor with import and quarantine, test-plan upload, SSH keys, AFM and BMC passwords, who is using it.
 - **Link debugging** lives in the separate [helios-debug](https://github.com/projectdcn/helios-debug) repo (link
   check, debug guide); the health check runs its scan as HC-012 and the UI installer bundles it.
@@ -375,8 +375,7 @@ and title.
   **Quarantine…** (reason required, optional until date) / **Lift** writes the `quarantine:` entry. For g02-g17 the
   editor changes the local copy; the jump host gets it with the next run.
 - Run tab, **Pick test cases from the test plan**: filters Level, Scope, Disruptive, Health check, Origin, Status (last
-  run) and Suite, plus **+ Filter on another column** (any column of the workbook by its header: values, or "contains"
-  for free text); presets and Run again keep them. Each run records who started / stopped it.
+  run) and Suite; presets and Run again keep them. Each run records who started / stopped it.
 - Setup tab: **Test plan** (upload an `.xlsx` under any name, choose which one the rack uses; `racks.yaml`'s
   `workbook:` is only the fallback), the server's SSH key and installing it per node (a password field and Install
   button per row; a changed host key is explained with fingerprints and can be accepted after a check), and per node

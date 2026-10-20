@@ -148,7 +148,7 @@
       <label>Test case ids <textarea name="tc" rows="2" placeholder="TC-SWH-002, TC-AFM-001"></textarea></label>
       <label>or a marker expression <input name="marker" placeholder="healthcheck   /   l1 and not disruptive"></label>
       <details id="pick" open>
-        <summary>Pick test cases from the test plan: by Level, Scope, Disruptive, Last status - or any column</summary>
+        <summary>Pick test cases from the test plan: by Level, Scope, Disruptive, Last status</summary>
         <p class="muted small">Pick values in any of the filters (none picked = no filter); the matching automated cases are listed below and ticked, and the ticked ones become the test case ids. Ids you typed or edited yourself are not replaced without asking.</p>
         <div class="grid filters">
           <div class="ms" data-col="level"><span class="ms-label" id="ms-level-l">Level</span></div>
@@ -159,26 +159,22 @@
           <div class="ms" data-col="status"><span class="ms-label" id="ms-status-l">Status (last run)</span></div>
           <label>Suite <select name="s_suite"><option>all</option><option>afm</option><option>ssh</option></select></label>
         </div>
-        <div id="anycol">
-          <div id="anycol-rules"></div>
-          <button type="button" id="anycol-add" title="filter on any column of the workbook by its header: pick values, or 'contains' text for free-text columns">+ Filter on another column</button>
-        </div>
         <input type="hidden" name="s_cols">
         <input type="hidden" name="s_level"><input type="hidden" name="s_scope"><input type="hidden" name="s_disruptive">
         <input type="hidden" name="s_health"><input type="hidden" name="s_origin"><input type="hidden" name="s_status">
-        <div class="row">
+        <div class="row pick-bar">
           <button type="button" id="resolve" title="read the workbook again and tick every matching case">Fill the test case ids</button>
-          <span id="resolved" class="muted" role="status" aria-live="polite"></span>
-          <a href="#" id="replace-tc" hidden></a>
-        </div>
-        <div id="caselist" hidden>
-          <div class="row">
+          <span id="case-tools" hidden>
             <input type="search" id="case-search" placeholder="search id / title" aria-label="search the listed cases by id or title">
             <button type="button" id="case-all" title="tick every case shown">Select all</button>
             <button type="button" id="case-none" title="untick every case shown">Select none</button>
-            <span id="case-count" class="muted"></span>
-            <span id="case-noauto" class="muted"></span>
-          </div>
+          </span>
+          <span id="resolved" class="muted" role="status" aria-live="polite"></span>
+          <span id="case-count" class="muted"></span>
+          <span id="case-noauto" class="muted"></span>
+          <a href="#" id="replace-tc" hidden></a>
+        </div>
+        <div id="caselist" hidden>
           <div class="case-wrap">
             <table id="cases"><thead><tr><th></th><th>ID</th><th>Title</th><th>Level</th><th>Scope</th><th>Disruptive</th><th>Health</th><th>Last status</th></tr></thead><tbody></tbody></table>
           </div>

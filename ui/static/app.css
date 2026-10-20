@@ -91,9 +91,10 @@ fieldset { min-width: 0; }
 #login-box:not([hidden]) { display: flex; gap: 12px; flex-wrap: wrap; align-items: center; margin: 16px; }
 #logout { margin-left: 8px; }
 #users { margin-left: auto; }
-#anycol { margin: 6px 0; }
-.anycol-rule { gap: 8px; align-items: center; margin: 4px 0; }
-.anycol-vals label { margin-right: 10px; }
+.pick-bar { align-items: center; flex-wrap: wrap; }
+#case-tools { display: inline-flex; gap: 8px; align-items: center; }
+#case-tools[hidden] { display: none; }
+#case-search { width: 16em; }
 #inst-targets .inst-one { white-space: nowrap; }
 .bmc-cell .row.tight { gap: 4px; margin: 0 0 4px; flex-wrap: nowrap; }
 #inst-targets td:nth-child(2) { white-space: nowrap; }

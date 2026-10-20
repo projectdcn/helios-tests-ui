@@ -735,7 +735,6 @@ const valLabel = (col, v) => v === EMPTY ? (col === "status" ? "(not run)" : "(b
 function pickMsg(text, cls = "muted") { $("#resolved").textContent = text; $("#resolved").className = cls; }
 
 function renderPickers() {
-  renderAnyCols();
   for (const div of $$("#pick .ms")) {
     const col = div.dataset.col, hidden = form["s_" + col];
     const chosen = splitVals(hidden.value), chosenL = new Set(chosen.map(x => x.toLowerCase()));
@@ -772,58 +771,6 @@ function renderPickers() {
     div.replaceChildren(div.querySelector(".ms-label"), dd);
   }
 }
-// "any column" filter: rules [{col, values: [...]} | {col, contains}] kept as JSON in the hidden s_cols (a preset /
-// run / the remembered form carry it like the other filters); the server applies them (ui/plan.parse_cols)
-function colRules() { try { const r = JSON.parse(form.s_cols.value || "[]"); return Array.isArray(r) ? r : []; } catch (e) { return []; } }
-function setColRules(rules) {
-  const keep = rules.filter(r => r.col && ((r.values && r.values.length) || (r.contains || "").trim() || r._new));
-  form.s_cols.value = keep.length ? JSON.stringify(keep.map(r => r.contains !== undefined ? { col: r.col, contains: r.contains }
-                                                                                                : { col: r.col, values: r.values || [] })) : "";
-}
-function renderAnyCols() {
-  const cols = plan ? plan.any_columns || [] : [];
-  const rules = colRules();
-  const box = $("#anycol-rules");
-  box.replaceChildren(...rules.map((r, i) => {
-    const meta = cols.find(c => c.name === r.col);
-    const sel = h("select", { "aria-label": "column" }, ...cols.map(c => h("option", { value: c.name, selected: c.name === r.col }, c.name)),
-      meta ? null : h("option", { value: r.col, selected: true }, r.col + " (not in the workbook)"));
-    sel.addEventListener("change", () => {
-      const rs = colRules(); const m = cols.find(c => c.name === sel.value);
-      rs[i] = m && m.free ? { col: sel.value, contains: "" } : { col: sel.value, values: [] };
-      form.s_cols.value = JSON.stringify(rs); renderAnyCols();
-    });
-    let what;
-    if (meta && !meta.free) {
-      const chosen = new Set((r.values || []).map(v => v.toLowerCase()));
-      what = h("span", { class: "anycol-vals" }, ...meta.values.map(v => h("label", { class: "inline" },
-        h("input", { type: "checkbox", value: v, checked: chosen.has(v.toLowerCase()), onchange: ev => {
-          const rs = colRules(); const vs = new Set(rs[i].values || []);
-          if (ev.target.checked) vs.add(v); else vs.delete(v);
-          rs[i] = { col: r.col, values: [...vs] }; form.s_cols.value = JSON.stringify(rs); schedulePick(); rememberForm();
-        } }), " ", valLabel(r.col, v))));
-    } else {
-      what = h("input", { type: "search", value: r.contains || "", placeholder: "contains…", "aria-label": `${r.col} contains` });
-      what.addEventListener("input", () => {
-        const rs = colRules(); rs[i] = { col: r.col, contains: what.value }; form.s_cols.value = JSON.stringify(rs);
-        schedulePick(); rememberForm();
-      });
-    }
-    return h("div", { class: "row anycol-rule" }, sel, what,
-      h("button", { type: "button", title: "remove this filter", onclick: () => {
-        const rs = colRules(); rs.splice(i, 1); setColRules(rs); renderAnyCols(); schedulePick(); rememberForm(); } }, "✕"));
-  }));
-  $("#anycol-add").disabled = !cols.length;
-  $("#anycol-add").title = cols.length ? "filter on any column of the workbook by its header" : "the workbook is not read yet";
-}
-$("#anycol-add").addEventListener("click", () => {
-  const cols = plan ? plan.any_columns || [] : [];
-  const used = new Set(colRules().map(r => r.col));
-  const c = cols.find(x => !used.has(x.name) && !x.free) || cols[0];
-  if (!c) return;
-  form.s_cols.value = JSON.stringify([...colRules(), c.free ? { col: c.name, contains: "" } : { col: c.name, values: [] }]);
-  renderAnyCols();
-});
 document.addEventListener("click", ev => {            // one dropdown open at a time; a click outside closes it
   for (const d of $$("#pick .ms-dd[open]")) if (!d.contains(ev.target)) d.open = false;
 });
@@ -846,7 +793,7 @@ function pickerRestore() {
 async function loadPlan() {
   const r = rack.name;
   plan = null; planById = new Map(); caseRows = []; lastPick = null;
-  $("#caselist").hidden = true; $("#replace-tc").hidden = true;
+  $("#caselist").hidden = true; $("#case-tools").hidden = true; $("#replace-tc").hidden = true;
   renderPickers();
   if (!rack.workbook) { pickMsg("no test-plan workbook for this rack: upload one in the Setup tab (Test plan)"); return; }
   pickMsg("reading the workbook…");
@@ -885,7 +832,7 @@ function renderCases(d, mode) {
   const frag = document.createDocumentFragment();
   caseRows.forEach(x => frag.append(x.tr));
   $("#cases tbody").replaceChildren(frag);
-  $("#caselist").hidden = !caseRows.length;
+  $("#caselist").hidden = !caseRows.length; $("#case-tools").hidden = !caseRows.length;
   $("#case-noauto").textContent = d.not_automated ? `· ${d.not_automated} matching case(s) not automated (not listed)` : "";
   applySearch();
   pickMsg(`${caseRows.length} case(s) from ${d.workbook}`);
