@@ -165,3 +165,15 @@ def test_a_results_folder_link_opens_its_report(served):
                                                             "Cookie": f"{AUTH_COOKIE}={auth_cookie_value(TOKEN)}"})
     assert c2.getresponse().getheader("Location") == f"/results/rack-a/{f.name}/report.html"
     assert _req(c.port, "GET", "/results/rack-a/nope/")[0] == 404
+
+
+def test_the_page_is_the_one_the_server_started_with(served, monkeypatch):
+    """20 Oct: a UI started before an update served the NEW page from disk with its OLD code ('unknown filter(s):
+    [cols]'). The page is now loaded once at start."""
+    import ui.server as S
+    c, _ = served
+    before = c.req("GET", "/static/app.js")[1]
+    real = S.STATIC / "app.js"
+    monkeypatch.setattr(S.Path, "read_bytes", lambda self: b"changed on disk" if self == real else S.Path.read_bytes(self))
+    assert c.req("GET", "/static/app.js")[1] == before
+    assert c.req("GET", "/static/../server.py")[0] == 404 and c.req("GET", "/static/nope.js")[0] == 404

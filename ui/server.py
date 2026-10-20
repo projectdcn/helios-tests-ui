@@ -39,6 +39,20 @@ from .runs import RunManager, build_report, history
 from .version import build_info, version
 
 STATIC = Path(__file__).resolve().parent / "static"
+
+
+def _load_static() -> dict[str, bytes]:
+    """The page's files as they are when the server starts: a running server always serves the page that matches its
+    own code. 20 Oct: the files were read on every request, so after an update the old process served the new page,
+    which sent a filter (cols) the old code refused - 'unknown filter(s)', no test cases. Restart to get a new page."""
+    out = {}
+    for f in STATIC.rglob("*"):
+        if f.is_file():
+            out[f.relative_to(STATIC).as_posix()] = f.read_bytes()
+    return out
+
+
+STATIC_FILES = _load_static()
 ALLOWED_HOSTS = {"127.0.0.1", "localhost", "[::1]"}
 MAX_BODY = 4 * 1024 * 1024
 BMC_ENV = "HELIOS_BMC_PASSWORD"                   # what the inventory's BMC commands read (ipmitool -E: $IPMI_PASSWORD)
@@ -499,6 +513,15 @@ class Handler(BaseHTTPRequestHandler):
         with open(f, "rb") as fh:
             return self._attachment(fh, f.stat().st_size, ctype, f"{folder.name}-{what}")
 
+    def _static(self, rel: str) -> None:
+        data = STATIC_FILES.get(rel)
+        if data is None:
+            return self.err(404, "not found")
+        ctype = mimetypes.guess_type(rel)[0] or "application/octet-stream"
+        if ctype.startswith("text/") or ctype in ("application/json", "application/javascript"):
+            ctype += "; charset=utf-8"
+        self._send(200, data, ctype)
+
     def _file(self, base: Path, rel: str) -> None:
         base = base.resolve()
         f = (base / rel).resolve()
@@ -526,9 +549,9 @@ class Handler(BaseHTTPRequestHandler):
         try:
             if path in ("/", "/index.html"):
                 self._who()                        # the page's own API calls then share one browser id
-                return self._file(STATIC, "index.html")
+                return self._static("index.html")
             if path.startswith("/static/"):
-                return self._file(STATIC, path[len("/static/"):])
+                return self._static(path[len("/static/"):])
             m = re.fullmatch(r"/results/([^/]+)/([^/]+)/?", path)
             if m:                                  # a run's folder: its report (else health report, else the csv)
                 p = self.app.profile(m.group(1))
