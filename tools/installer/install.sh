@@ -723,11 +723,14 @@ if [ "$DRY" = 0 ]; then
     (cd "$PREFIX/app" && "$PREFIX/venv/bin/python" - "$PREFIX/config/racks.yaml" <<'PYEOF'
 import sys
 from ui.config import load_config
+from ui.testplan import chosen
 for n, r in load_config(sys.argv[1]).items():
     state = "OK     " if r.inventory.is_file() else "MISSING"
-    print("  %-10s inventory %s %s" % (n, state, r.inventory))
-    if r.workbook and not r.workbook.is_file():
-        print("  %-10s workbook  MISSING %s" % ("", r.workbook))
+    print("  %-10s inventory %s %s%s" % (n, state, r.inventory, "" if r.inventory.is_file() else
+                                         "   (or in the UI: Inventory tab, Import file...)"))
+    wb = chosen(r, r.workbook)                     # a workbook uploaded / chosen in the UI wins
+    if wb and not wb.is_file():
+        print("  %-10s workbook  MISSING %s   (or in the UI: Setup tab, Upload a test plan)" % ("", wb))
 PYEOF
     ) || warn "$PREFIX/config/racks.yaml does not load: fix it, then $PREFIX/bin/helios-ui restart"
 fi
@@ -795,7 +798,8 @@ else
 Next: copy what the racks need (nothing secret is copied by this installer):
     $PREFIX/data/inventories/mr3.local.yaml                 (MR3 inventory)
     $PREFIX/data/inventories/fullrack-jump-afm.local.yaml   (g02-g17: copy of the jump host's ~/helios/fullrack-jump-afm.yaml)
-    $PREFIX/data/testplan/full_rack_testplan.xlsx           (test-plan workbook)
+    a test-plan workbook                                    (in the UI: Setup tab, Upload a test plan - any name)
+    (inventories can also be imported in the UI: Inventory tab, Import file...)
     SSH keys in ~/.ssh of $(id -un): the jump host (tenant-hpe@165.204.38.103 -p 8059) and the MR3 nodes, usable
     without a prompt (the service has no ssh-agent). Profiles: $PREFIX/config/racks.yaml
 AFM password: type it in the Run form; 'Remember' saves it per rack in ~/.config/helios-ui/secrets.json of

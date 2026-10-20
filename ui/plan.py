@@ -44,9 +44,9 @@ def _sort_key(v: str):
 def _workbook(profile) -> Path:
     wbp = profile.workbook
     if not wbp:
-        raise JobError(f"no test-plan workbook configured for {profile.name}: set 'workbook:' in ui/racks.yaml")
+        raise JobError(f"no test-plan workbook for {profile.name}: upload one in the Setup tab (Test plan)")
     if not wbp.is_file() or wbp.suffix != ".xlsx":
-        raise JobError(f"{profile.name}: workbook not found: {wbp}")
+        raise JobError(f"{profile.name}: workbook not found: {wbp} - upload it (or another) in the Setup tab (Test plan)")
     return wbp
 
 

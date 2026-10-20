@@ -130,7 +130,7 @@ def test_plan_errors(ui):
     st, d = c.j("GET", "/api/racks/nosuch/plan")
     assert st == 404 and "unknown rack" in d["error"]
     st, d = c.j("GET", "/api/racks/none/plan")
-    assert st == 400 and "no test-plan workbook configured for none" in d["error"]
+    assert st == 400 and "no test-plan workbook for none: upload one" in d["error"]
     st, d = c.j("GET", "/api/racks/missing/plan")
     assert st == 400 and "workbook not found" in d["error"]
     st, d = c.j("GET", "/api/racks/other/plan")

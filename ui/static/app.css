@@ -93,7 +93,7 @@ fieldset { min-width: 0; }
 #users { margin-left: auto; }
 #inst-targets .inst-one { white-space: nowrap; }
 #inst-targets td:nth-child(2) { white-space: nowrap; }
-#tab-inventory.drop { outline: 2px dashed var(--accent, #2563eb); outline-offset: 4px; }
+#tp-box.drop, #tab-inventory.drop { outline: 2px dashed var(--accent, #2563eb); outline-offset: 4px; }
 #users::first-letter { color: var(--pass, #16a34a); }
 #users-box { margin: 10px 16px; }
 #users-table td.idle { opacity: .55; }

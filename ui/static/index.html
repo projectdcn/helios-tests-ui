@@ -45,6 +45,20 @@
 </nav>
 <main>
 <section id="tab-setup" class="tab">
+  <div class="box" id="tp-box">
+    <h3>Test plan of <span class="setup-rack"></span></h3>
+    <p>Uses: <b id="tp-current"></b> <span id="tp-note" class="muted small"></span></p>
+    <div class="row">
+      <label class="inline">Workbook <select id="tp-select"></select></label>
+      <button type="button" id="tp-use">Use for this rack</button>
+      <button type="button" id="tp-upload-btn" class="primary" title="an .xlsx from your computer (or drop it on this box); any file name">Upload a test plan (.xlsx)…</button>
+      <input type="file" id="tp-upload" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" hidden>
+      <span id="tp-msg" class="muted" role="status" aria-live="polite"></span>
+    </div>
+    <p class="muted small">Kept under its own name in <code id="tp-dir"></code> (upgrades keep it); a file with the same name is kept as
+      <code>&lt;name&gt;.bak-&lt;time&gt;.xlsx</code>. It is accepted only if the test-plan reader can read it (the BKC
+      test-plan layout). "Pick from the test plan" on the Run tab reads the workbook chosen here.</p>
+  </div>
   <div class="box">
     <h3>SSH key of this UI server for <span class="setup-rack"></span></h3>
     <p>Runs log in with: <b id="key-using"></b></p>

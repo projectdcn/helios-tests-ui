@@ -53,7 +53,7 @@ def _profile(tmp_path, workbook):
 
 
 def test_ui_uses_only_the_racks_workbook(tmp_path):
-    with pytest.raises(JobError, match="no test-plan workbook configured for r"):
+    with pytest.raises(JobError, match="no test-plan workbook for r: upload one"):
         select_cases({"health": "Blocker"}, _profile(tmp_path, None))
     with pytest.raises(JobError, match="workbook not found"):
         select_cases({}, _profile(tmp_path, tmp_path / "missing.xlsx"))

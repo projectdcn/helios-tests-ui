@@ -106,7 +106,7 @@ function showTab(t) {
   if (t === "results") loadResults();
   if (t === "inventory") loadInventory();
   if (t === "run") loadSession();
-  if (t === "setup") loadSetup();
+  if (t === "setup") { loadSetup(); loadTestplan(); }
 }
 
 // ---------------------------------------------------------------- case history (results/index.csv)
@@ -156,7 +156,7 @@ function rackChanged() {
     loadPlan();
     loadSession();
     loadAccess();
-    if ($("#tab-setup").classList.contains("active")) loadSetup();
+    if ($("#tab-setup").classList.contains("active")) { loadSetup(); loadTestplan(); }
   }
 }
 
@@ -343,6 +343,55 @@ async function installKey(nodes) {
   finally { $("#inst-go").disabled = false; $$(".inst-one").forEach(b => b.disabled = false); }
 }
 $("#acc-setup-btn").addEventListener("click", () => showTab("setup"));
+
+// ---------------------------------------------------------------- test-plan workbook (ui/testplan.py)
+function tpMsg(t, cls = "muted") { $("#tp-msg").textContent = t; $("#tp-msg").className = cls; }
+async function loadTestplan() {
+  if (!rack) return;
+  const r = rack.name;
+  let d;
+  try { d = await api("GET", `/api/racks/${enc(r)}/testplan`); } catch (e) { tpMsg(e.message, "err"); return; }
+  if (!rack || rack.name !== r) return;
+  $("#tp-current").textContent = d.current ? d.current + (d.current_exists ? "" : " (MISSING)") : "(none)";
+  $("#tp-current").className = d.current_exists ? "" : "err";
+  $("#tp-note").textContent = d.from_ui ? "(chosen in the UI)" : d.configured ? "(from ui/racks.yaml)" : "";
+  $("#tp-dir").textContent = d.dir;
+  $("#tp-select").replaceChildren(
+    ...(d.configured ? [] : [h("option", { value: "" }, "(none)")]),
+    ...d.files.map(f => h("option", { value: f.name }, `${f.name}  (${Math.max(1, Math.round(f.size / 1024))} KB, ${f.mtime})`)));
+  if (d.current && d.files.some(f => f.name === d.current)) $("#tp-select").value = d.current;
+  $("#tp-use").disabled = !d.files.length;
+  if (!d.current_exists) tpMsg(d.files.length ? "choose a workbook and Use it, or upload one" : "no workbook yet: upload one", "warn");
+}
+$("#tp-use").addEventListener("click", async () => {
+  try {
+    await api("POST", `/api/racks/${enc(rack.name)}/testplan/use`, { name: $("#tp-select").value });
+    tpMsg(`${rack.title} uses ${$("#tp-select").value}`, "ok");
+    await loadRacks(); loadTestplan();
+  } catch (e) { tpMsg(e.message, "err"); }
+});
+$("#tp-upload-btn").addEventListener("click", () => $("#tp-upload").click());
+$("#tp-upload").addEventListener("change", ev => { const f = ev.target.files[0]; ev.target.value = ""; if (f) uploadTestplan(f); });
+$("#tp-box").addEventListener("dragover", ev => { if ([...ev.dataTransfer.types].includes("Files")) { ev.preventDefault(); $("#tp-box").classList.add("drop"); } });
+$("#tp-box").addEventListener("dragleave", ev => { if (ev.target === $("#tp-box")) $("#tp-box").classList.remove("drop"); });
+$("#tp-box").addEventListener("drop", ev => {
+  $("#tp-box").classList.remove("drop");
+  const f = ev.dataTransfer.files[0];
+  if (f) { ev.preventDefault(); uploadTestplan(f); }
+});
+async function uploadTestplan(f) {
+  if (!/\.xlsx$/i.test(f.name)) { tpMsg(`${f.name}: an Excel .xlsx file, please`, "err"); return; }
+  if (f.size > 20 * 1024 * 1024) { tpMsg(`${f.name}: ${Math.round(f.size / 1048576)} MB - limit 20 MB`, "err"); return; }
+  tpMsg(`uploading ${f.name}…`);
+  const buf = new Uint8Array(await f.arrayBuffer());
+  let bin = "";
+  for (let i = 0; i < buf.length; i += 0x8000) bin += String.fromCharCode.apply(null, buf.subarray(i, i + 0x8000));
+  try {
+    const d = await api("POST", `/api/racks/${enc(rack.name)}/testplan/upload`, { name: f.name, data: btoa(bin), use: true });
+    tpMsg(`${d.name}: ${d.cases} cases - ${rack.title} now uses it` + (d.replaced ? ` (the previous ${d.name} kept as ${d.replaced})` : ""), "ok");
+    await loadRacks(); loadTestplan();
+  } catch (e) { tpMsg(e.message, "err"); }
+}
 
 // ---------------------------------------------------------------- sessions (per rack, ui-sessions.json)
 let sessData = null;
@@ -671,7 +720,7 @@ async function loadPlan() {
   plan = null; planById = new Map(); caseRows = []; lastPick = null;
   $("#caselist").hidden = true; $("#replace-tc").hidden = true;
   renderPickers();
-  if (!rack.workbook) { pickMsg("no test-plan workbook configured for this rack ('workbook:' in ui/racks.yaml)"); return; }
+  if (!rack.workbook) { pickMsg("no test-plan workbook for this rack: upload one in the Setup tab (Test plan)"); return; }
   pickMsg("reading the workbook…");
   try {
     const p = await api("GET", `/api/racks/${enc(r)}/plan`);

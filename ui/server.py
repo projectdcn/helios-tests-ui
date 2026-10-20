@@ -29,7 +29,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, quote, unquote, urlparse
 
-from . import defaults, inventory_edit, plan, presence, presets, sessions, share, sshkeys
+from . import defaults, inventory_edit, plan, presence, presets, sessions, share, sshkeys, testplan
 from .config import ROOT, afm_username, inventory_rack_name, load_config
 from .keychain import Keychain, KeychainError, account
 from .runner import JobError, NAME_RX, TC_RX
@@ -39,6 +39,7 @@ from .version import build_info, version
 STATIC = Path(__file__).resolve().parent / "static"
 ALLOWED_HOSTS = {"127.0.0.1", "localhost", "[::1]"}
 MAX_BODY = 4 * 1024 * 1024
+UPLOAD_BODY = 30 * 1024 * 1024                    # a test-plan workbook upload (base64 in JSON; ui/testplan.py)
 # files of a results folder offered as single downloads (the zip has everything)
 DOWNLOADABLE = ("report.html", "health.html", "tc_summary.csv", "tc_results.csv", "health.json", "health-notes.txt",
                 "session.json")
@@ -85,6 +86,10 @@ class App:
         self.keychain = keychain if keychain is not None else Keychain(enabled=False)
         self.runs.store_label = self.store_label
         self.presence = presence.Presence()          # who is using the UI (memory only)
+        # racks.yaml's workbook: stays the fallback; a workbook chosen / uploaded in the UI wins (ui/testplan.py)
+        self.configured_workbook = {n: p.workbook for n, p in self.profiles.items()}
+        for n, p in self.profiles.items():
+            p.workbook = testplan.chosen(p, self.configured_workbook[n])
 
     def saved_passwords(self) -> list[str]:
         """The AFM passwords saved for the racks (to blank them in a shared zip); never sent anywhere."""
@@ -181,9 +186,9 @@ def select_cases(filters: dict, profile) -> list[str]:
     fallback: another workbook layout would filter on the wrong columns, so select_cases checks the header."""
     wbp = profile.workbook
     if not wbp:
-        raise JobError(f"no test-plan workbook configured for {profile.name}: set 'workbook:' in ui/racks.yaml")
+        raise JobError(f"no test-plan workbook for {profile.name}: upload one in the Setup tab (Test plan)")
     if not wbp.is_file() or wbp.suffix != ".xlsx":
-        raise JobError(f"{profile.name}: workbook not found: {wbp}")
+        raise JobError(f"{profile.name}: workbook not found: {wbp} - upload it (or another) in the Setup tab (Test plan)")
     args = [sys.executable, "tools/select_cases.py", str(wbp), "--suite", filters.get("suite") or "all"]
     for k in ("level", "status", "scope", "origin", "disruptive", "health"):
         v = str(filters.get(k) or "").strip()
@@ -394,9 +399,9 @@ class Handler(BaseHTTPRequestHandler):
         self._send(200, b'{"ok": true}', "application/json",
                    {"Set-Cookie": f"{AUTH_COOKIE}=; Path=/; Max-Age=0; HttpOnly; SameSite=Strict"})
 
-    def _body(self) -> dict:
+    def _body(self, limit: int = MAX_BODY) -> dict:
         n = int(self.headers.get("Content-Length") or 0)
-        if n > MAX_BODY:
+        if n > limit:
             raise ValueError("request too large")
         raw = self.rfile.read(n) if n else b"{}"
         d = json.loads(raw or b"{}")
@@ -517,6 +522,9 @@ class Handler(BaseHTTPRequestHandler):
             m = re.fullmatch(r"/api/racks/([^/]+)/password", path)
             if m:                                  # {saved: bool, ...}: NEVER the password
                 return self.json(self.app.password_status(m.group(1)))
+            m = re.fullmatch(r"/api/racks/([^/]+)/testplan", path)
+            if m:                                  # the rack's workbooks (uploaded / configured) and the current one
+                return self.json(testplan.listing(self.app.profile(m.group(1)), self.app.configured_workbook[m.group(1)]))
             m = re.fullmatch(r"/api/racks/([^/]+)/plan", path)
             if m:
                 p = self.app.profile(m.group(1))
@@ -612,11 +620,21 @@ class Handler(BaseHTTPRequestHandler):
             return
         self._touch(path)
         try:
-            body = self._body()
+            body = self._body(UPLOAD_BODY if path.endswith("/testplan/upload") else MAX_BODY)
             if path == "/api/login":
                 return self._login(body)
             if path == "/api/logout":
                 return self._logout()
+            m = re.fullmatch(r"/api/racks/([^/]+)/testplan/(upload|use)", path)
+            if m:                                  # a test-plan workbook from the browser / which one the rack uses
+                p = self.app.profile(m.group(1))
+                conf = self.app.configured_workbook[m.group(1)]
+                with self.app.edit_lock:
+                    if m.group(2) == "upload":
+                        d = testplan.upload(p, conf, body.get("name"), body.pop("data", ""), body.get("use", True) is not False)
+                        return self.json(d, 201)
+                    testplan.choose(p, conf, body.get("name") or None)
+                    return self.json(testplan.listing(p, conf))
             if path == "/api/me":                  # this browser's display name ("" = forget it)
                 return self._set_name(body)
             if path == "/api/runs":
