@@ -67,14 +67,21 @@ header"): add a line HELIOS_UI_ALLOWED_HOSTS=alias1,alias2 to ~/helios-ui/config
 
 Upgrade, roll back, uninstall
 -----------------------------
-    ./install.sh                                  (from a newer bundle) app/ + venv/ replaced, config/ + data/ kept,
-                                                  the port and --host of the installation kept (an install from
-                                                  before --host existed becomes 0.0.0.0; give --host to choose),
-                                                  the old ones kept as app.prev / venv.prev; refuses while a run
-                                                  is going (--force stops it)
+    ./install.sh                                  (from a newer bundle) app/ + venv/ replaced, config/ + data/ kept
+                                                  (access token, rack profiles, inventories, test plans, results),
+                                                  the port kept; listens on 0.0.0.0 unless --host is given (or a
+                                                  proxy holds the port: then 127.0.0.1 behind it); the old code kept
+                                                  as app.prev / venv.prev; refuses while a run is going (--force)
+                                                  Do NOT delete ~/helios-ui before an upgrade - it is not needed.
     ~/helios-ui/bin/install.sh --rollback         back to app.prev (run it again to roll forward)
     ~/helios-ui/bin/uninstall.sh                  remove service, app/, venv/, bin/; keep config/, data/, logs/
-    ~/helios-ui/bin/uninstall.sh --purge [--yes]  remove everything
+    ~/helios-ui/bin/uninstall.sh --purge [--yes]  move everything aside to ~/helios-ui.removed-<time>
+    ~/helios-ui/bin/uninstall.sh --purge --delete really delete everything
+
+Settings survive a removed installation: every install leaves a copy of config/ (access token, rack profiles),
+the inventories, test plans and saved forms in ~/.helios-ui-backups/ (the last 5, mode 700). A new install into a
+missing ~/helios-ui takes back ~/helios-ui.removed-<time>/ (everything, results included) or else the newest
+backup (no results); ./install.sh --fresh starts empty instead.
 
 Command-line runs on the server use the same code and venv:
     cd ~/helios-ui/app && export HELIOS_RESULTS_ROOT=~/helios-ui/data/results

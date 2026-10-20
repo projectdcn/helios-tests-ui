@@ -9,7 +9,8 @@
 # Options: --prefix DIR (default ~/helios-ui)  --host ADDR (default 0.0.0.0 = every address, also on an upgrade;
 # 127.0.0.1 = this server only, reach it through an SSH tunnel - give it again on every upgrade to keep it)  --port N (default 8765)  --python PATH  --online (pip from PyPI
 # instead of ./wheelhouse)  --no-systemd (nohup + bin/helios-ui helper)  --no-start  --force (upgrade even while a
-# run is going; it is stopped)  --no-token (no access token, see below)  --dry-run (print what would be done,
+# run is going; it is stopped)  --no-token (no access token, see below)  --fresh (a new installation in a missing
+# prefix does NOT bring back the settings of a removed one / the last backup, see below)  --dry-run (print what would be done,
 # change nothing)  -h|--help
 #
 # Listening beyond 127.0.0.1, the UI gets an access token (HELIOS_UI_TOKEN in config/ui.env, generated once, kept by
@@ -30,6 +31,7 @@ NO_START=0
 NO_SYSTEMD=0
 FORCE=0
 NO_TOKEN=0
+FRESH=0
 TOKEN_NEW=""
 PORT_SET=0
 UNIT=helios-ui.service
@@ -70,6 +72,7 @@ while [ $# -gt 0 ]; do
         --no-systemd)  NO_SYSTEMD=1; shift ;;
         --force)       FORCE=1; shift ;;
         --no-token)    NO_TOKEN=1; shift ;;
+        --fresh)       FRESH=1; shift ;;
         -h|--help)     usage 0 ;;
         *)             warn "unknown option: $1"; usage 2 ;;
     esac
@@ -89,6 +92,35 @@ if ! printf '%s' "$PREFIX" | grep -Eq '^/[A-Za-z0-9._/+-]+$'; then
     die "--prefix '$PREFIX': use letters, digits and . _ / + - only (no spaces)"
 fi
 [ "$PREFIX" != "$HOME" ] && [ "$PREFIX" != "/" ] || die "--prefix must be a directory of its own, not $PREFIX"
+
+# ------------------------------------------------------------------ bring back what a removed installation had
+# srv03 20 Oct: /root/helios-ui was gone between installs - new token (everyone logged out), rack profiles,
+# inventories, test plans and saved forms lost. A new installation in a prefix without config/ takes them back from
+#   1. the newest <prefix>.removed-<time>/ (uninstall.sh --purge moves the installation there): config/, data/,
+#      .install-state (port / address) are moved back - every result included
+#   2. else the newest ~/.helios-ui-backups/<name>-<time>/ (every install leaves one; config/, inventories, test
+#      plans, saved presets / defaults / sessions / workbook choice - not the results)
+# --fresh skips this.
+BACKUPS="$HOME/.helios-ui-backups"
+RESTORED=""
+if [ "$ROLLBACK" = 0 ] && [ "$FRESH" = 0 ] && [ ! -f "$PREFIX/config/racks.yaml" ] && [ ! -f "$PREFIX/config/ui.env" ]; then
+    removed=$(ls -1d "$PREFIX".removed-* 2>/dev/null | sort | tail -n 1 || true)
+    backup=$(ls -1d "$BACKUPS/$(basename "$PREFIX")"-* 2>/dev/null | sort | tail -n 1 || true)
+    if [ -n "$removed" ] && { [ -d "$removed/config" ] || [ -d "$removed/data" ]; }; then
+        step "restore the removed installation $removed (install.sh --fresh to start empty)"
+        run mkdir -p "$PREFIX"
+        for d in config data logs .install-state; do
+            if [ -e "$removed/$d" ] && [ ! -e "$PREFIX/$d" ]; then run mv "$removed/$d" "$PREFIX/$d"; say "  $d"; fi
+        done
+        RESTORED=$removed
+    elif [ -n "$backup" ]; then
+        step "restore settings from the backup $backup (install.sh --fresh to start empty)"
+        run mkdir -p "$PREFIX"
+        if [ "$DRY" = 1 ]; then say "  [dry-run] copy $backup/. -> $PREFIX/"; else (cd "$backup" && tar -cf - .) | (cd "$PREFIX" && tar -xf -); fi
+        say "  config/ (access token, rack profiles), inventories, test plans, saved forms; earlier results are not in a backup"
+        RESTORED=$backup
+    fi
+fi
 
 STATE="$PREFIX/.install-state"
 if [ -f "$STATE" ]; then
@@ -477,6 +509,24 @@ firewall_advice() {
     fi
 }
 
+# a copy of what is small and cannot be made again - outside the prefix, so removing it (by hand or --purge) does not
+# take it along: config/ (token, rack profiles), inventories, test plans, the racks' ui-*.json (presets, defaults,
+# sessions, workbook choice). Mode 700 (ui.env holds the token). The last 5 are kept.
+backup_settings() {
+    local dest name
+    [ "$DRY" = 1 ] && { say "  [dry-run] back up config/ + inventories + test plans -> $BACKUPS/"; return 0; }
+    name=$(basename "$PREFIX")
+    dest="$BACKUPS/$name-$(date +%Y%m%d-%H%M%S)"
+    ( umask 077; mkdir -p "$dest" ) || { warn "could not create $dest: no settings backup"; return 0; }
+    chmod 700 "$BACKUPS" "$dest" 2>/dev/null || true
+    ( cd "$PREFIX" && { ls -d config data/inventories data/testplan .install-state 2>/dev/null
+                         find data/results -maxdepth 5 -name 'ui-*.json' -type f 2>/dev/null; } | tar -cf - -T - 2>/dev/null ) \
+        | ( cd "$dest" && tar -xf - ) || warn "settings backup to $dest incomplete"
+    ls -1d "$BACKUPS/$name"-* 2>/dev/null | sort | awk -v n="$(ls -1d "$BACKUPS/$name"-* 2>/dev/null | wc -l)" 'NR <= n - 5' \
+        | while read -r old; do rm -rf "$old"; done
+    say "settings backed up to $dest (config, inventories, test plans, saved forms; the last 5 are kept)"
+}
+
 print_access() {
     local host ips
     host=$(hostname -f 2>/dev/null || hostname)
@@ -762,6 +812,7 @@ run chmod 755 "$PREFIX/bin/install.sh" "$PREFIX/bin/uninstall.sh"
 run cp "$HERE/README-INSTALL.txt" "$PREFIX/README-INSTALL.txt"
 write_state "$MODE" "$NEW_VERSION"
 write_helper
+backup_settings
 
 if [ "$MODE" = systemd ]; then
     step "systemd --user service $UNIT"

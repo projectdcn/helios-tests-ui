@@ -8,6 +8,7 @@ import io
 import json
 import os
 import re
+import shutil
 import socket
 import subprocess
 import sys
@@ -555,3 +556,82 @@ def test_upgrade_keeps_loopback_when_a_proxy_holds_the_port_elsewhere(tmp_path):
     assert "generate an access token" in r3.stdout and f"https://127.0.0.2:{port}/" in r3.stdout
     assert r.returncode == 0 and f"listening on 127.0.0.1:{port} behind it" in r.stdout, r.stdout + r.stderr
     assert "behind it" not in r2.stdout
+
+
+# ------------------------------------------------------------------ settings survive a removed installation
+def test_purge_moves_aside_and_delete_really_deletes(tmp_path):
+    """srv03 20 Oct: /root/helios-ui vanished between installs (token, inventories, results gone). --purge now moves
+    the installation aside; only --purge --delete removes it."""
+    pre = tmp_path / "helios-ui"
+    for d in ("app", "config", "data/results"):
+        (pre / d).mkdir(parents=True)
+    (pre / ".install-state").write_text("INSTALLED_PORT=8765\n")
+    (pre / "config" / "ui.env").write_text("HELIOS_UI_TOKEN=t\n")
+    r = _sh([str(INSTALLER / "uninstall.sh"), "--prefix", str(pre), "--purge", "--yes"], HOME=str(tmp_path))
+    assert r.returncode == 0, r.stdout + r.stderr
+    aside = list(tmp_path.glob("helios-ui.removed-*"))
+    assert not pre.exists() and len(aside) == 1 and (aside[0] / "config" / "ui.env").is_file()
+    (pre / "app").mkdir(parents=True)
+    r = _sh([str(INSTALLER / "uninstall.sh"), "--prefix", str(pre), "--purge", "--delete", "--yes"], HOME=str(tmp_path))
+    assert r.returncode == 0 and not pre.exists() and "deleted" in r.stdout
+
+
+def test_a_new_install_takes_back_the_removed_installation_or_the_backup(tmp_path):
+    """A new install into a missing prefix brings back config/ + data/ of <prefix>.removed-<time> (else the last
+    settings backup), before anything else - here it then stops at a taken port, the restore stays."""
+    b = _bundle_dir(tmp_path)
+    home = tmp_path / "home"
+    home.mkdir()
+    pre = home / "helios-ui"
+    removed = home / "helios-ui.removed-20261020-010101"
+    (removed / "config").mkdir(parents=True)
+    (removed / "config" / "ui.env").write_text("HELIOS_UI_TOKEN=keep-me-keep-me-123\n")
+    (removed / "data" / "results" / "runs" / "mr3").mkdir(parents=True)
+    (removed / "data" / "results" / "runs" / "mr3" / "ui-presets.json").write_text("{}")
+    s = socket.socket()
+    s.bind(("127.0.0.1", 0))
+    s.listen()
+    port = s.getsockname()[1]
+    base = [str(b / "install.sh"), "--online", "--no-systemd", "--python", sys.executable, "--prefix", str(pre),
+            "--port", str(port), "--host", "127.0.0.1"]
+    try:
+        r = _sh(base, HOME=str(home))
+    finally:
+        s.close()
+    assert "restore the removed installation" in r.stdout, r.stdout + r.stderr
+    assert (pre / "config" / "ui.env").read_text().startswith("HELIOS_UI_TOKEN=keep-me")
+    assert (pre / "data" / "results" / "runs" / "mr3" / "ui-presets.json").is_file()
+    # no removed copy, a settings backup instead
+    shutil.rmtree(pre)
+    shutil.rmtree(removed)
+    bk = home / ".helios-ui-backups" / "helios-ui-20261020-020202"
+    (bk / "config").mkdir(parents=True)
+    (bk / "config" / "racks.yaml").write_text("racks: {}\n")
+    r = _sh(base + ["--dry-run"], HOME=str(home))
+    assert "restore settings from the backup" in r.stdout
+    r = _sh(base + ["--dry-run", "--fresh"], HOME=str(home))
+    assert "restore" not in r.stdout
+
+
+def test_backup_settings_keeps_small_things_and_the_last_five(tmp_path):
+    pre, home = tmp_path / "helios-ui", tmp_path / "home"
+    (pre / "config").mkdir(parents=True)
+    (pre / "config" / "ui.env").write_text("HELIOS_UI_TOKEN=x\n")
+    (pre / "data" / "inventories").mkdir(parents=True)
+    (pre / "data" / "inventories" / "mr3.local.yaml").write_text("rack: mr3\n")
+    (pre / "data" / "results" / "runs" / "mr3" / "mr3-20261020-0101").mkdir(parents=True)
+    (pre / "data" / "results" / "runs" / "mr3" / "ui-defaults.json").write_text("{}")
+    (pre / "data" / "results" / "runs" / "mr3" / "mr3-20261020-0101" / "big.log").write_text("x" * 1000)
+    fn = re.search(r"^backup_settings\(\) \{.*?^\}$", (INSTALLER / "install.sh").read_text(), re.S | re.M).group(0)
+    script = f'say() {{ echo "$*"; }}\nwarn() {{ echo "W: $*" >&2; }}\nDRY=0\nPREFIX={pre}\nBACKUPS={home}/.helios-ui-backups\n{fn}\n'
+    for i in range(7):
+        r = subprocess.run(["bash", "-c", script + f"date() {{ echo 20261020-00000{i}; }}\nbackup_settings"],
+                           capture_output=True, text=True)
+        assert r.returncode == 0, r.stderr
+    kept = sorted(p.name for p in (home / ".helios-ui-backups").iterdir())
+    assert kept == [f"helios-ui-20261020-00000{i}" for i in range(2, 7)]
+    last = home / ".helios-ui-backups" / kept[-1]
+    assert (last / "config" / "ui.env").is_file() and (last / "data" / "inventories" / "mr3.local.yaml").is_file()
+    assert (last / "data" / "results" / "runs" / "mr3" / "ui-defaults.json").is_file()
+    assert not (last / "data" / "results" / "runs" / "mr3" / "mr3-20261020-0101").exists()     # no results
+    assert oct(last.stat().st_mode)[-3:] == "700"

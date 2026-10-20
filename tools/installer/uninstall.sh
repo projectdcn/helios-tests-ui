@@ -3,14 +3,18 @@
 #
 #   ~/helios-ui/bin/uninstall.sh            stop + disable the service, remove app/ venv/ (and .prev) bin/;
 #                                           KEEP config/ and data/ (results, inventories, workbook) and logs/
-#   ~/helios-ui/bin/uninstall.sh --purge    remove the whole ~/helios-ui (asks first; --yes does not ask)
+#   ~/helios-ui/bin/uninstall.sh --purge    move the whole ~/helios-ui aside to ~/helios-ui.removed-<time>
+#                                           (asks first; --yes does not ask): a later install.sh takes its
+#                                           config/ and data/ back (install.sh --fresh does not)
+#   ~/helios-ui/bin/uninstall.sh --purge --delete   really delete it (results, inventories, token: gone)
 #
-# Options: --prefix DIR (default: the installation this script is in, else ~/helios-ui)  --purge  --yes  --dry-run
+# Options: --prefix DIR (default: the installation this script is in, else ~/helios-ui)  --purge  --delete  --yes  --dry-run
 set -euo pipefail
 
 HERE=$(cd "$(dirname "$0")" && pwd)
 UNIT=helios-ui.service
 PURGE=0
+DELETE=0
 YES=0
 DRY=0
 PREFIX=""
@@ -25,9 +29,10 @@ while [ $# -gt 0 ]; do
         --prefix)   [ $# -ge 2 ] || die "--prefix needs a directory"; PREFIX=$2; shift 2 ;;
         --prefix=*) PREFIX=${1#*=}; shift ;;
         --purge)    PURGE=1; shift ;;
+        --delete)   DELETE=1; shift ;;
         --yes|-y)   YES=1; shift ;;
         --dry-run)  DRY=1; shift ;;
-        -h|--help)  sed -n '2,9p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+        -h|--help)  sed -n '2,12p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
         *)          die "unknown option: $1" ;;
     esac
 done
@@ -39,7 +44,11 @@ PREFIX=${PREFIX%/}
 [ "$PREFIX" != "$HOME" ] && [ "$PREFIX" != "/" ] || die "refusing to touch $PREFIX"
 
 if [ "$PURGE" = 1 ] && [ "$YES" = 0 ] && [ "$DRY" = 0 ]; then
-    printf 'Delete ALL of %s, including config/ and data/ (results, inventories, workbook)? [y/N] ' "$PREFIX"
+    if [ "$DELETE" = 1 ]; then
+        printf 'DELETE ALL of %s, including config/ and data/ (results, inventories, workbook, access token)? [y/N] ' "$PREFIX"
+    else
+        printf 'Remove %s (moved aside to %s.removed-<time>; a later install takes its config/ and data/ back)? [y/N] ' "$PREFIX" "$PREFIX"
+    fi
     read -r ans || ans=""
     case "$ans" in y|Y|yes|YES) ;; *) say "nothing changed"; exit 1 ;; esac
 fi
@@ -60,8 +69,15 @@ if [ -x "$PREFIX/bin/helios-ui" ] && [ -f "$PREFIX/logs/helios-ui.pid" ]; then
 fi
 
 if [ "$PURGE" = 1 ]; then
-    run rm -rf "$PREFIX"
-    say "removed $PREFIX"
+    if [ "$DELETE" = 1 ]; then
+        run rm -rf "$PREFIX"
+        say "deleted $PREFIX (the settings backups in ~/.helios-ui-backups/ are kept)"
+    else
+        aside="$PREFIX.removed-$(date +%Y%m%d-%H%M%S)"
+        run mv "$PREFIX" "$aside"
+        say "moved $PREFIX to $aside - a later install.sh takes its config/ and data/ back;"
+        say "delete it for good with: rm -rf $aside"
+    fi
     exit 0
 fi
 
