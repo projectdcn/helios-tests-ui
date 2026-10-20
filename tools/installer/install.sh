@@ -601,6 +601,21 @@ fi
 # ------------------------------------------------------------------ install
 step "stop the running UI (if any)"
 stop_ui
+# an upgrade of a 127.0.0.1 install whose port is held on the server's address by another program (srv03 19 Oct:
+# nginx on 10.83.6.106:8765 in front of the UI on 127.0.0.1:8765): that is a reverse proxy - keep 127.0.0.1
+if [ "$HOST_SET" = 0 ] && [ "$HOST" = 0.0.0.0 ]; then        # read-only: also in --dry-run
+    case "${INSTALLED_HOST:-}" in
+        127.0.0.1|::1|localhost)
+            rc=0; port_free "$PYTHON" "$PORT" "$HOST" || rc=$?
+            if [ "$rc" = 1 ] && [ -z "$(our_ui_pids)" ] && port_free "$PYTHON" "$PORT" "$INSTALLED_HOST"; then
+                HOST=$INSTALLED_HOST
+                say "note: port $PORT is held on another address of this server by:"
+                port_holder
+                say "      - most likely a reverse proxy (nginx) in front of the UI: keeping $HOST:$PORT"
+                say "      (to listen on every address instead: stop that program, or install.sh --port N)"
+            fi ;;
+    esac
+fi
 if [ "$DRY" = 0 ] && [ "$NO_START" = 0 ]; then check_port "$PYTHON" "Use --port N"; fi
 
 if [ "$UPGRADE" = 1 ] || [ -d "$PREFIX/venv" ]; then

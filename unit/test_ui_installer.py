@@ -529,3 +529,24 @@ def test_bundle_carries_helios_debug_next_to_app(tmp_path):
     assert not any(n.endswith("lab.local.yaml") for n in names)
     assert len(info["helios_debug"]["commit"]) == 40
     assert 'step "link check -> $PREFIX/helios-debug"' in (ROOT / "tools/installer/install.sh").read_text()
+
+
+@pytest.mark.skipif(sys.platform != "linux", reason="needs a second loopback address (127.0.0.2), Linux only")
+def test_upgrade_keeps_loopback_when_a_proxy_holds_the_port_elsewhere(tmp_path):
+    """srv03 19 Oct: nginx listens on the server's address, port 8765, in front of the UI on 127.0.0.1:8765 - the
+    upgrade must stay on 127.0.0.1 instead of failing on 0.0.0.0; an explicit --host is never overridden."""
+    b = _bundle_dir(tmp_path)
+    prefix = tmp_path / "helios-ui"
+    (prefix / "app").mkdir(parents=True)
+    proxy = socket.socket()
+    proxy.bind(("127.0.0.2", 0))
+    proxy.listen()
+    port = proxy.getsockname()[1]
+    (prefix / ".install-state").write_text(f"INSTALLED_PORT={port}\nINSTALLED_HOST=127.0.0.1\nINSTALLED_MODE=nohup\n")
+    base = [str(b / "install.sh"), "--dry-run", "--online", "--no-systemd", "--python", sys.executable, "--prefix", str(prefix)]
+    try:
+        r, r2 = _sh(base), _sh(base + ["--host", "0.0.0.0"])
+    finally:
+        proxy.close()
+    assert r.returncode == 0 and f"keeping 127.0.0.1:{port}" in r.stdout, r.stdout + r.stderr
+    assert "keeping" not in r2.stdout
