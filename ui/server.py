@@ -471,6 +471,16 @@ class Handler(BaseHTTPRequestHandler):
                 return self._file(STATIC, "index.html")
             if path.startswith("/static/"):
                 return self._file(STATIC, path[len("/static/"):])
+            m = re.fullmatch(r"/results/([^/]+)/([^/]+)/?", path)
+            if m:                                  # a run's folder: its report (else health report, else the csv)
+                p = self.app.profile(m.group(1))
+                if not NAME_RX.match(m.group(2)) or not (p.results_dir / m.group(2)).is_dir():
+                    return self.err(404, "not found")
+                f = next((x for x in ("report.html", "health.html", "tc_summary.csv")
+                          if (p.results_dir / m.group(2) / x).is_file()), None)
+                if f is None:
+                    return self.err(404, "this results folder has no report or tc_summary.csv yet")
+                return self._send(302, b"", "text/plain", {"Location": f"/results/{quote(m.group(1))}/{quote(m.group(2))}/{f}"})
             m = re.fullmatch(r"/results/([^/]+)/([^/]+)/(.+)", path)
             if m:
                 p = self.app.profile(m.group(1))

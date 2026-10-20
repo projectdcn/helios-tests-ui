@@ -845,8 +845,10 @@ function what(job) {
   if (job.kind === "access") return "prerequisites check (Check access)";
   return [job.tc.length ? job.tc.join(",") : "", job.marker ? "-m " + job.marker : "", job.paths.join(" ")].filter(Boolean).join(" ");
 }
-function resultLinks(name) {
-  return h("a", { href: `/results/${encodeURIComponent(rack.name)}/${encodeURIComponent(name)}/` + "tc_summary.csv", target: "_blank" }, name);
+function resultLinks(name) {        // the folder link opens its report.html (else health.html, else the csv)
+  const base = `/results/${encodeURIComponent(rack.name)}/${encodeURIComponent(name)}/`;
+  return h("span", {}, h("a", { href: base, target: "_blank", title: "the run's report" }, name), " ",
+    h("a", { href: base + "tc_summary.csv", target: "_blank", class: "muted small", title: "the raw results table" }, "csv"));
 }
 function elapsed(started) {          // "2026-10-16 20:42:03" (the UI host's local time) -> "running 2m10s"
   const t = new Date(started.replace(" ", "T"));

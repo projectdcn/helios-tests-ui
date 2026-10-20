@@ -145,3 +145,23 @@ def test_the_page_hands_out_the_browser_id(served):
     assert st == 200 and presence.BID_COOKIE in sc
     _, _, sc2 = _req(c.port, "GET", "/", cookies=sc.split(";")[0])
     assert presence.BID_COOKIE not in sc2                                  # kept, not replaced
+
+
+def test_a_results_folder_link_opens_its_report(served):
+    """Runs tab, 20 Oct: the results link of mr3-20261020-054251 opened tc_summary.csv instead of the report."""
+    c, results = served
+    f = results / "rack-a-20261020-054251"
+    f.mkdir(parents=True)
+    (f / "tc_summary.csv").write_text("tc,verdict\n")
+    st, _, _ = _req(c.port, "GET", f"/results/rack-a/{f.name}/")
+    assert st == 302
+    c2 = http.client.HTTPConnection("127.0.0.1", c.port, timeout=10)
+    c2.request("GET", f"/results/rack-a/{f.name}/", headers={"Host": f"127.0.0.1:{c.port}",
+                                                             "Cookie": f"{AUTH_COOKIE}={auth_cookie_value(TOKEN)}"})
+    assert c2.getresponse().getheader("Location").endswith("/tc_summary.csv")
+    (f / "report.html").write_text("<html></html>")
+    c2 = http.client.HTTPConnection("127.0.0.1", c.port, timeout=10)
+    c2.request("GET", f"/results/rack-a/{f.name}", headers={"Host": f"127.0.0.1:{c.port}",
+                                                            "Cookie": f"{AUTH_COOKIE}={auth_cookie_value(TOKEN)}"})
+    assert c2.getresponse().getheader("Location") == f"/results/rack-a/{f.name}/report.html"
+    assert _req(c.port, "GET", "/results/rack-a/nope/")[0] == 404
