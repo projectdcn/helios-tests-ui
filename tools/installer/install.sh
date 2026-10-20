@@ -281,7 +281,8 @@ EOF
 write_helper() {
     write_file "$PREFIX/bin/helios-ui" 755 <<EOF
 #!/usr/bin/env bash
-# helios-ui {start|stop|restart|status|logs|token [new]} - the helios-tests UI of $PREFIX (written by install.sh)
+# helios-ui {start|stop|restart|status|logs|token [new]|users} - the helios-tests UI of $PREFIX (written by install.sh)
+#   users       who has the UI open now (and in the last hour)
 #   token       print the UI access token (give it to the people who use the UI)
 #   token new   a new random token, then restart: every browser has to log in again with the new one
 set -euo pipefail
@@ -292,6 +293,27 @@ PIDF="\$PREFIX/logs/helios-ui.pid"
 LOG="\$PREFIX/logs/helios-ui.log"
 CMD=\${1:-status}
 ENVF="\$PREFIX/config/ui.env"
+if [ "\$CMD" = users ]; then            # who has the UI open (the UI's own list; this request is not counted)
+    exec "\$PREFIX/venv/bin/python" - "\$INSTALLED_PORT" "\$ENVF" <<'PYEOF'
+import json, re, sys, urllib.request
+port, envf = sys.argv[1], sys.argv[2]
+tok = ""
+try:
+    tok = next((m.group(1) for m in (re.match(r"^HELIOS_UI_TOKEN=(.*)$", l.strip()) for l in open(envf)) if m), "")
+except OSError:
+    pass
+req = urllib.request.Request(f"http://127.0.0.1:{port}/api/users", headers={"Authorization": f"Bearer {tok}"} if tok else {})
+try:
+    d = json.load(urllib.request.build_opener(urllib.request.ProxyHandler({})).open(req, timeout=10))
+except Exception as e:
+    sys.exit(f"the UI on 127.0.0.1:{port} did not answer: {e}")
+print(f"{len(d['active'])} browser(s) using the UI now (a request in the last {d['active_s']} s):")
+for u in d["active"] + d["recent"]:
+    idle = u["idle_s"]
+    seen = "now" if idle < 5 else f"{idle // 60}m{idle % 60:02d}s ago"
+    print(f"  {'*' if idle <= d['active_s'] else ' '} {(u['name'] or '(no name)'):<24} {u['ip']:<16} {u['browser']:<20} last {seen:<11} since {u['first']}")
+PYEOF
+fi
 if [ "\$CMD" = token ]; then
     case "\${2:-show}" in
         show)
@@ -362,11 +384,11 @@ else
             if running; then echo "helios-ui running (pid \$(cat "\$PIDF")) on \${INSTALLED_HOST:-0.0.0.0}:\$INSTALLED_PORT"
             else echo "helios-ui not running"; exit 3; fi ;;
         logs) exec tail -n 200 -F "\$LOG" ;;
-        *) echo "usage: \$0 {start|stop|restart|status|logs|token [new]}" >&2; exit 2 ;;
+        *) echo "usage: \$0 {start|stop|restart|status|logs|token [new]|users}" >&2; exit 2 ;;
     esac
     exit 0
 fi
-echo "usage: \$0 {start|stop|restart|status|logs|token [new]}" >&2
+echo "usage: \$0 {start|stop|restart|status|logs|token [new]|users}" >&2
 exit 2
 EOF
 }
@@ -458,7 +480,17 @@ firewall_advice() {
 print_access() {
     local host ips
     host=$(hostname -f 2>/dev/null || hostname)
-    if is_loopback; then
+    if [ "$BEHIND_PROXY" = 1 ]; then
+        say ""
+        say "The UI listens on $HOST:$PORT behind the proxy on ${PROXY_ADDR:-the address of this server}:$PORT. Open:"
+        say "    https://${PROXY_ADDR:-<that address>}:$PORT/   (http:// instead if that proxy does not use TLS)"
+        if [ -n "$TOKEN_NEW" ]; then
+            say "Access token (each browser logs in with it once; give it to the team):"
+            say "    $TOKEN_NEW"
+        else
+            say "Access token: $PREFIX/bin/helios-ui token"
+        fi
+    elif is_loopback; then
         say ""
         say "The UI listens on $HOST:$PORT only (this server). From your laptop:"
         say "    ssh -L $PORT:127.0.0.1:$PORT $(id -un)@$host"
@@ -488,7 +520,7 @@ print_access() {
         firewall_advice
     fi
     say ""
-    say "Manage it:   $PREFIX/bin/helios-ui {start|stop|restart|status|logs|token [new]}"
+    say "Manage it:   $PREFIX/bin/helios-ui {start|stop|restart|status|logs|token [new]|users}"
     say "Upgrade:     run install.sh of a newer bundle (config/ and data/ and --port are kept; it listens on 0.0.0.0 unless --host is given)"
     say "Roll back:   $PREFIX/bin/install.sh --rollback"
     say "Uninstall:   $PREFIX/bin/uninstall.sh   (keeps config/ and data/; --purge removes everything)"
@@ -601,17 +633,24 @@ fi
 # ------------------------------------------------------------------ install
 step "stop the running UI (if any)"
 stop_ui
-# an upgrade of a 127.0.0.1 install whose port is held on the server's address by another program (srv03 19 Oct:
-# nginx on 10.83.6.106:8765 in front of the UI on 127.0.0.1:8765): that is a reverse proxy - keep 127.0.0.1
+# no --host, and the port is held on another address of this server by another program while 127.0.0.1:PORT is free
+# (srv03 19 Oct: nginx on 10.83.6.106:8765, TLS, in front of the UI on 127.0.0.1:8765): a reverse proxy - listen on
+# 127.0.0.1 behind it (also on a fresh install / after the prefix was removed), with an access token
+BEHIND_PROXY=0
+PROXY_ADDR=""
 if [ "$HOST_SET" = 0 ] && [ "$HOST" = 0.0.0.0 ]; then        # read-only: also in --dry-run
-    case "${INSTALLED_HOST:-}" in
+    case "${INSTALLED_HOST:-127.0.0.1}" in
         127.0.0.1|::1|localhost)
+            lo=${INSTALLED_HOST:-127.0.0.1}
             rc=0; port_free "$PYTHON" "$PORT" "$HOST" || rc=$?
-            if [ "$rc" = 1 ] && [ -z "$(our_ui_pids)" ] && port_free "$PYTHON" "$PORT" "$INSTALLED_HOST"; then
-                HOST=$INSTALLED_HOST
+            if [ "$rc" = 1 ] && [ -z "$(our_ui_pids)" ] && port_free "$PYTHON" "$PORT" "$lo"; then
+                HOST=$lo
+                BEHIND_PROXY=1
+                holder=$(port_holder)
+                PROXY_ADDR=$(printf '%s\n' "$holder" | grep -oE '[0-9]+(\.[0-9]+){3}:'"$PORT" | head -n 1 | cut -d: -f1)
                 say "note: port $PORT is held on another address of this server by:"
-                port_holder
-                say "      - most likely a reverse proxy (nginx) in front of the UI: keeping $HOST:$PORT"
+                printf '%s\n' "$holder" | cut -c1-200
+                say "      - most likely a reverse proxy (nginx) in front of the UI: listening on $HOST:$PORT behind it"
                 say "      (to listen on every address instead: stop that program, or install.sh --port N)"
             fi ;;
     esac
@@ -695,7 +734,7 @@ fi
 
 step "access token"
 ENVF="$PREFIX/config/ui.env"
-if is_loopback; then
+if is_loopback && [ "$BEHIND_PROXY" = 0 ] && ! grep -q '^HELIOS_UI_TOKEN=' "$ENVF" 2>/dev/null; then
     say "listening on $HOST only (SSH tunnel): no access token needed"
 elif [ "$NO_TOKEN" = 1 ]; then
     say "--no-token: the UI on $HOST:$PORT has no login"

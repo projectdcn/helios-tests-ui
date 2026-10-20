@@ -544,9 +544,14 @@ def test_upgrade_keeps_loopback_when_a_proxy_holds_the_port_elsewhere(tmp_path):
     port = proxy.getsockname()[1]
     (prefix / ".install-state").write_text(f"INSTALLED_PORT={port}\nINSTALLED_HOST=127.0.0.1\nINSTALLED_MODE=nohup\n")
     base = [str(b / "install.sh"), "--dry-run", "--online", "--no-systemd", "--python", sys.executable, "--prefix", str(prefix)]
+    fresh = [str(b / "install.sh"), "--dry-run", "--online", "--no-systemd", "--python", sys.executable,
+             "--prefix", str(tmp_path / "fresh"), "--port", str(port)]
     try:
-        r, r2 = _sh(base), _sh(base + ["--host", "0.0.0.0"])
+        r, r2, r3 = _sh(base), _sh(base + ["--host", "0.0.0.0"]), _sh(fresh)
     finally:
         proxy.close()
-    assert r.returncode == 0 and f"keeping 127.0.0.1:{port}" in r.stdout, r.stdout + r.stderr
-    assert "keeping" not in r2.stdout
+    # srv03 20 Oct: /root/helios-ui was gone (no install state) - the proxy case must still listen on loopback
+    assert r3.returncode == 0 and f"listening on 127.0.0.1:{port} behind it" in r3.stdout, r3.stdout + r3.stderr
+    assert "generate an access token" in r3.stdout and f"https://127.0.0.2:{port}/" in r3.stdout
+    assert r.returncode == 0 and f"listening on 127.0.0.1:{port} behind it" in r.stdout, r.stdout + r.stderr
+    assert "behind it" not in r2.stdout
