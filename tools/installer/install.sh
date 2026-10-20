@@ -861,8 +861,9 @@ Next: copy what the racks need (nothing secret is copied by this installer):
     (inventories can also be imported in the UI: Inventory tab, Import file...)
     SSH keys in ~/.ssh of $(id -un): the jump host (tenant-hpe@165.204.38.103 -p 8059) and the MR3 nodes, usable
     without a prompt (the service has no ssh-agent). Profiles: $PREFIX/config/racks.yaml
-AFM password: type it in the Run form; 'Remember' saves it per rack in ~/.config/helios-ui/secrets.json of
-    $(id -un) (mode 600, clear text: as safe as that account; \$HELIOS_UI_SECRETS in config/ui.env moves it).
+AFM and BMC passwords: set them in the UI (Inventory tab; per node BMC passwords in the Setup node table). Saved
+    per rack in the macOS Keychain, on Linux in ~/.config/helios-ui/secrets.json of $(id -un) (mode 600, clear text:
+    as safe as that account; \$HELIOS_UI_SECRETS in config/ui.env moves it). Never in an inventory file.
 EOF
 fi
 print_access
