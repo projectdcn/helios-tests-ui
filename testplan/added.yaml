@@ -218,3 +218,36 @@ cases:
   title: 'Health check: link scan - every GPU link of the rack checked end to end with one root cause per down / degraded link (helios-debug link_check, run as a separate tool)'
   category: health
   origin: added 2026-10-19
+# BMC of every switch / compute tray over Redfish, read-only (tests/bmc/test_bmc.py) - added 20 Oct 2026
+- id: TC-BMC-001
+  level: L1
+  title: 'BMC reachable and login works: every switch and compute BMC answers Redfish at its own address (bmc:) with its
+    bmc_user and BMC password'
+  category: bmc
+  origin: added 2026-10-20
+- id: TC-BMC-002
+  level: L1
+  title: 'BMC power state: every system the switch and compute BMCs report is powered on'
+  category: bmc
+  origin: added 2026-10-20
+- id: TC-BMC-003
+  level: L1
+  title: 'BMC health: no BMC (manager) or system reports health Critical (Warning recorded)'
+  category: bmc
+  origin: added 2026-10-20
+- id: TC-BMC-004
+  level: L1
+  title: 'BMC sensors: no temperature, fan, voltage or power-supply sensor Critical or beyond its critical limit
+    (beyond a non-critical limit recorded)'
+  category: bmc
+  origin: added 2026-10-20
+- id: TC-BMC-005
+  level: L1
+  title: 'BMC event log: no Critical entry in the last 24 h (thresholds.bmc.log_window_h); Warning entries counted'
+  category: bmc
+  origin: added 2026-10-20
+- id: TC-BMC-006
+  level: L2
+  title: 'BMC firmware consistent: same BMC firmware version on every compute tray, and on every switch tray'
+  category: bmc
+  origin: added 2026-10-20
