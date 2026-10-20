@@ -1,11 +1,18 @@
-helios-tests web UI - installing on a Linux server
-====================================================
+helios-tests web UI - installing on a Linux server or a Mac
+=============================================================
 
-This bundle holds the committed helios-tests code (app/), every Python package it needs as wheels for Linux x86_64
-and CPython 3.10 / 3.11 / 3.12 (wheelhouse/), install.sh and uninstall.sh. It installs without internet access and
-without root, for the user who runs it.
+Two bundles, one per OS (TARGET in the bundle says which; install.sh refuses the other OS):
+    helios-ui-<version>.tar.gz          Linux x86_64, CPython 3.10 / 3.11 / 3.12; runs as a systemd --user service
+    helios-ui-<version>-macos.tar.gz    macOS, Apple silicon (arm64) and Intel (x86_64), CPython 3.10 - 3.14;
+                                        runs in the background (bin/helios-ui start / stop), no autostart after a
+                                        reboot; python3 from python.org or Homebrew (brew install python@3.12) -
+                                        /usr/bin/python3 of the Command Line Tools is too old
+Each holds the committed helios-tests code (app/), every Python package it needs as wheels (wheelhouse/),
+install.sh and uninstall.sh. It installs without internet access and without root, for the user who runs it.
 
-Needs: Linux x86_64, python3 >= 3.10 with the venv module (Debian/Ubuntu: python3-venv), ~250 MB disk.
+Needs: python3 >= 3.10 with the venv module (Debian/Ubuntu: python3-venv), ~250 MB disk. On a Mac the firewall may
+ask once whether Python may accept incoming connections (answer as you want the UI reachable from other machines;
+--host 127.0.0.1 keeps it on the Mac only).
 
 Install
 -------

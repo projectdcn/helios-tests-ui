@@ -1,7 +1,8 @@
-"""Build the offline installer bundle of the helios-tests web UI for a Linux server.
+"""Build the offline installer bundle of the helios-tests web UI for a Linux server or a Mac.
 
-    python tools/build_ui_installer.py                    # -> dist/helios-ui-<version>.tar.gz
-    python tools/build_ui_installer.py --ref HEAD --out dist --wheelhouse-cache ~/.cache/helios-wheels
+    python tools/build_ui_installer.py                    # -> dist/helios-ui-<version>.tar.gz (Linux)
+    python tools/build_ui_installer.py --target macos     # -> dist/helios-ui-<version>-macos.tar.gz
+    python tools/build_ui_installer.py --target all --ref HEAD --out dist --wheelhouse-cache ~/.cache/helios-wheels
 
 The bundle (one top directory helios-ui-<version>/):
     app/            the COMMITTED code of <ref> (git archive), without workbooks (testplan/*.xlsx), local
@@ -9,7 +10,8 @@ The bundle (one top directory helios-ui-<version>/):
                     (version, commit, date) and MANIFEST.txt (the file list; the UI sends exactly these files to the
                     jump host, as git archive does in a checkout)
     wheelhouse/     every runtime dependency (pytest, paramiko, PyYAML, requests, websocket-client, openpyxl and
-                    theirs) as wheels for Linux x86_64 (manylinux) and CPython 3.10 / 3.11 / 3.12; PYTHONS lists them
+                    theirs) as wheels for the target: Linux x86_64 (manylinux), CPython 3.10 - 3.12; or macOS
+                    (Apple silicon arm64 + Intel x86_64), CPython 3.10 - 3.14; PYTHONS lists them, TARGET names it
     requirements.txt, install.sh, uninstall.sh, README-INSTALL.txt (from tools/installer/ of <ref>), VERSION
     helios-debug/   the committed HEAD of the separate helios-debug repo (link check, debug guide), when found next to
                     this repo or given with --debug-repo (skip: --no-debug); installed next to app/, where the HC-012
@@ -36,6 +38,13 @@ ROOT = Path(__file__).resolve().parent.parent
 PYTHONS = ("3.10", "3.11", "3.12")
 # manylinux2014 == manylinux_2_17 (CentOS 7 / glibc 2.17+); 2_28 for packages that dropped 2014 (e.g. cryptography)
 PLATFORMS = ("manylinux2014_x86_64", "manylinux_2_17_x86_64", "manylinux_2_28_x86_64")
+MACOS_MAX = (14, 0)                      # newest macOS tag downloaded for (wheels for older macOS run on newer)
+# per target: Python versions, file-name suffix and the CPU architectures (one pip download each)
+TARGETS = {
+    "linux": {"label": "Linux x86_64", "pythons": PYTHONS, "suffix": "", "archs": ("x86_64",)},
+    "macos": {"label": "macOS arm64 + x86_64", "pythons": ("3.10", "3.11", "3.12", "3.13", "3.14"), "suffix": "-macos",
+              "archs": ("arm64", "x86_64")},
+}
 EXTRA_DEPS = ("openpyxl>=3.1",)          # [tools]: workbook pick in the UI, select_cases.py
 EXCLUDE = ("testplan/*.xlsx", "testplan/~$*", "inventory/*.local.yaml", "*.bak", "*.bak-*",
            "*.bak.*", "*/~$*", "~$*")
@@ -79,41 +88,51 @@ def requirements(repo: Path, ref: str = "HEAD") -> list[str]:
     return deps
 
 
-def pip_download_argv(req: Path, dest: Path, py: str, pip: list[str] | None = None) -> list[str]:
+def _platforms(target: str, arch: str) -> list[str]:
+    """Wheel platform tags a machine of <target>/<arch> accepts, newest first."""
+    if target == "macos":
+        from packaging import tags
+        return list(tags.mac_platforms(MACOS_MAX, arch))
+    return ["manylinux2014_x86_64"] + [f"manylinux_2_{g}_x86_64" for g in range(28, 4, -1)] + \
+        ["manylinux2010_x86_64", "manylinux1_x86_64"]
+
+
+def pip_download_argv(req: Path, dest: Path, py: str, pip: list[str] | None = None, target: str = "linux",
+                      arch: str = "x86_64") -> list[str]:
     a = list(pip or [sys.executable, "-m", "pip"]) + ["download", "--disable-pip-version-check", "--no-input",
                                                       "-r", str(req), "--dest", str(dest), "--only-binary=:all:",
                                                       "--implementation", "cp", "--python-version", py]
-    for p in PLATFORMS:
+    for p in (PLATFORMS if target == "linux" else _platforms(target, arch)):
         a += ["--platform", p]
     return a
 
 
-def target_env(py: str) -> dict:
-    """PEP 508 marker environment of CPython <py> on Linux x86_64 (pip evaluates markers for the HOST Python even
+def target_env(py: str, target: str = "linux", arch: str = "x86_64") -> dict:
+    """PEP 508 marker environment of CPython <py> on the target (pip evaluates markers for the HOST Python even
     with --python-version, so e.g. pytest's ``tomli; python_version < "3.11"`` would be missed from a newer Mac)."""
-    return {"python_version": py, "python_full_version": f"{py}.0", "sys_platform": "linux", "os_name": "posix",
-            "platform_system": "Linux", "platform_machine": "x86_64", "platform_release": "",
-            "platform_version": "", "implementation_name": "cpython", "implementation_version": f"{py}.0",
-            "platform_python_implementation": "CPython", "extra": ""}
+    mac = target == "macos"
+    return {"python_version": py, "python_full_version": f"{py}.0", "sys_platform": "darwin" if mac else "linux",
+            "os_name": "posix", "platform_system": "Darwin" if mac else "Linux", "platform_machine": arch,
+            "platform_release": "", "platform_version": "", "implementation_name": "cpython",
+            "implementation_version": f"{py}.0", "platform_python_implementation": "CPython", "extra": ""}
 
 
-def _supported_tags(py: str) -> set:
+def _supported_tags(py: str, target: str = "linux", arch: str = "x86_64") -> set:
     from packaging import tags
     major, minor = (int(x) for x in py.split("."))
-    plats = ["manylinux2014_x86_64"] + [f"manylinux_2_{g}_x86_64" for g in range(28, 4, -1)] + \
-        ["manylinux2010_x86_64", "manylinux1_x86_64"]
+    plats = _platforms(target, arch)
     return set(tags.cpython_tags((major, minor), platforms=plats)) | \
         set(tags.compatible_tags((major, minor), f"cp{major}{minor}", platforms=plats))
 
 
-def missing_for(reqs: list[str], wheelhouse: Path, py: str) -> list[str]:
-    """Requirements (with their dependencies, markers evaluated for <py> on Linux) that no wheel in ``wheelhouse``
-    satisfies for CPython <py> / manylinux x86_64. [] = the wheelhouse installs offline there."""
+def missing_for(reqs: list[str], wheelhouse: Path, py: str, target: str = "linux", arch: str = "x86_64") -> list[str]:
+    """Requirements (with their dependencies, markers evaluated for <py> on the target) that no wheel in
+    ``wheelhouse`` satisfies for CPython <py> on <target>/<arch>. [] = the wheelhouse installs offline there."""
     import zipfile
 
     from packaging.requirements import Requirement
     from packaging.utils import canonicalize_name, parse_wheel_filename
-    ok_tags, env = _supported_tags(py), target_env(py)
+    ok_tags, env = _supported_tags(py, target, arch), target_env(py, target, arch)
     have: dict[str, list] = {}
     for w in wheelhouse.glob("*.whl"):
         name, ver, _, wtags = parse_wheel_filename(w.name)
@@ -142,30 +161,35 @@ def missing_for(reqs: list[str], wheelhouse: Path, py: str) -> list[str]:
     return sorted(set(missing))
 
 
-def build_wheelhouse(req: Path, dest: Path, pythons=PYTHONS, run=subprocess.run, log=print) -> list[str]:
-    """Download the wheels for every Python version into one folder (an abi3 / pure wheel lands there once), then
-    add what the markers of the TARGET Python need, until every version resolves offline from it. Returns the wheel
-    file names."""
+def build_wheelhouse(req: Path, dest: Path, pythons=None, run=subprocess.run, log=print, target: str = "linux") -> list[str]:
+    """Download the wheels for every Python version (and, for macOS, both CPU architectures) into one folder (an
+    abi3 / pure wheel lands there once), then add what the markers of the TARGET Python need, until every version
+    resolves offline from it. Returns the wheel file names."""
+    t = TARGETS[target]
+    pythons = pythons or t["pythons"]
     dest.mkdir(parents=True, exist_ok=True)
     reqs = [ln.strip() for ln in req.read_text().splitlines() if ln.strip() and not ln.startswith("#")]
     for py in pythons:
-        log(f"  wheels for CPython {py} (Linux x86_64)")
-        r = run(pip_download_argv(req, dest, py), capture_output=True, text=True)
-        if r.returncode != 0:
-            raise SystemExit(f"pip download for {py} failed:\n{(r.stderr or r.stdout)[-2000:]}")
-        for _ in range(6):
-            miss = missing_for(reqs, dest, py)
-            if not miss:
-                break
-            log(f"    + for {py}: {', '.join(miss)}")
-            extra = req.with_name(f"extra-{py}.txt")
-            extra.write_text("".join(f"{m}\n" for m in miss))
-            r = run(pip_download_argv(extra, dest, py), capture_output=True, text=True)
+        for arch in t["archs"]:
+            log(f"  wheels for CPython {py} ({'Linux' if target == 'linux' else 'macOS'} {arch})")
+            r = run(pip_download_argv(req, dest, py, target=target, arch=arch), capture_output=True, text=True)
             if r.returncode != 0:
-                raise SystemExit(f"pip download for {py} failed:\n{(r.stderr or r.stdout)[-2000:]}")
-        else:
-            raise SystemExit(f"the wheelhouse does not resolve for {py}: {', '.join(missing_for(reqs, dest, py))}")
+                raise SystemExit(f"pip download for {py} {arch} failed:\n{(r.stderr or r.stdout)[-2000:]}")
+            for _ in range(6):
+                miss = missing_for(reqs, dest, py, target, arch)
+                if not miss:
+                    break
+                log(f"    + for {py} {arch}: {', '.join(miss)}")
+                extra = req.with_name(f"extra-{py}-{arch}.txt")
+                extra.write_text("".join(f"{m}\n" for m in miss))
+                r = run(pip_download_argv(extra, dest, py, target=target, arch=arch), capture_output=True, text=True)
+                if r.returncode != 0:
+                    raise SystemExit(f"pip download for {py} {arch} failed:\n{(r.stderr or r.stdout)[-2000:]}")
+            else:
+                raise SystemExit(f"the wheelhouse does not resolve for {py} {arch}: "
+                                 f"{', '.join(missing_for(reqs, dest, py, target, arch))}")
     (dest / "PYTHONS").write_text(" ".join(pythons) + "\n")
+    (dest / "TARGET").write_text(target + "\n")
     return sorted(p.name for p in dest.glob("*.whl"))
 
 
@@ -192,11 +216,12 @@ def debug_files(debug_repo: Path | None) -> tuple[list[tuple[str, bytes, int]], 
 
 
 def build(repo: Path, out_dir: Path, ref: str = "HEAD", wheelhouse: Path | None = None,
-          wheel_builder=build_wheelhouse, log=print, debug_repo: Path | None = None) -> Path:
-    """Write <out_dir>/helios-ui-<version>.tar.gz and return its path. ``wheelhouse``: a ready folder (with PYTHONS)
-    to put in as is; else ``wheel_builder(requirements.txt, dest)`` makes one."""
+          wheel_builder=build_wheelhouse, log=print, debug_repo: Path | None = None, target: str = "linux") -> Path:
+    """Write <out_dir>/helios-ui-<version>[-macos].tar.gz and return its path. ``wheelhouse``: a ready folder (with
+    PYTHONS) to put in as is; else ``wheel_builder(requirements.txt, dest)`` makes one."""
     ver, sha, when = version_of(repo, ref)
-    top = f"helios-ui-{ver}"
+    tgt = TARGETS[target]
+    top = f"helios-ui-{ver}{tgt['suffix']}"
     mtime = int(time.mktime(time.strptime(when, "%Y-%m-%d %H:%M:%S")))
     raw = git(repo, "archive", "--format=tar", sha, binary=True)
     files: list[tuple[str, bytes, int]] = []           # (repo path, data, mode)
@@ -212,7 +237,7 @@ def build(repo: Path, out_dir: Path, ref: str = "HEAD", wheelhouse: Path | None 
     reqs = requirements(repo, sha)
     dfiles, dinfo = debug_files(debug_repo)
     info = {"version": ver, "commit": sha, "commit_date": when, "built": time.strftime("%Y-%m-%d %H:%M:%S %z"),
-            "ref": ref, "requirements": reqs, "pythons": list(PYTHONS)}
+            "ref": ref, "requirements": reqs, "pythons": list(tgt["pythons"]), "target": target}
     if dinfo:
         info["helios_debug"] = dinfo
     manifest = "# files of this bundle's code (git archive of the commit in BUILD_INFO.json, minus local files)\n" + \
@@ -223,9 +248,12 @@ def build(repo: Path, out_dir: Path, ref: str = "HEAD", wheelhouse: Path | None 
         req = Path(tmp) / "requirements.txt"
         req.write_text("".join(f"{r}\n" for r in reqs))
         if wheelhouse is None:
-            log(f"downloading wheels ({', '.join(PYTHONS)}) for: {', '.join(reqs)}")
+            log(f"downloading wheels ({tgt['label']}; {', '.join(tgt['pythons'])}) for: {', '.join(reqs)}")
             wheelhouse = Path(tmp) / "wheelhouse"
-            wheel_builder(req, wheelhouse)
+            if wheel_builder is build_wheelhouse:
+                wheel_builder(req, wheelhouse, target=target)
+            else:
+                wheel_builder(req, wheelhouse)
         if not (wheelhouse / "PYTHONS").is_file():
             raise SystemExit(f"{wheelhouse}: no PYTHONS file (not a wheelhouse made by this script)")
         part = out.with_suffix(".part")
@@ -242,6 +270,7 @@ def build(repo: Path, out_dir: Path, ref: str = "HEAD", wheelhouse: Path | None 
             add("app/MANIFEST.txt", manifest.encode())
             add("requirements.txt", req.read_bytes())
             add("VERSION", f"{ver}\n".encode())
+            add("TARGET", f"{target}\n".encode())        # install.sh checks it against the machine
             for w in sorted(wheelhouse.iterdir()):
                 if w.is_file() and (w.suffix == ".whl" or w.name == "PYTHONS"):
                     add(f"wheelhouse/{w.name}", w.read_bytes())
@@ -259,6 +288,8 @@ def main(argv=None) -> int:
     ap.add_argument("--debug-repo", type=Path, default=ROOT.parent / "helios-debug",
                     help="the helios-debug repo to bundle (default ../helios-debug next to this repo)")
     ap.add_argument("--no-debug", action="store_true", help="leave helios-debug out (HC-012 then skips on the server)")
+    ap.add_argument("--target", choices=("linux", "macos", "all"), default="linux",
+                    help="linux (default: x86_64, CPython 3.10-3.12), macos (arm64 + x86_64, CPython 3.10-3.14) or all")
     a = ap.parse_args(argv)
     if shutil.which("git") is None:
         raise SystemExit("git is needed")
@@ -266,27 +297,34 @@ def main(argv=None) -> int:
                            capture_output=True, text=True).stdout.strip()
     if dirty and a.ref == "HEAD":
         print("note: uncommitted changes are NOT in the bundle (it packs the committed HEAD)", file=sys.stderr)
-    wh = a.wheelhouse
-    if wh is None and a.wheelhouse_cache:
-        ver, sha, _ = version_of(ROOT, a.ref)
-        with tempfile.TemporaryDirectory() as tmp:
-            req = Path(tmp) / "requirements.txt"
-            req.write_text("".join(f"{r}\n" for r in requirements(ROOT, sha)))
-            build_wheelhouse(req, a.wheelhouse_cache.expanduser())
-        wh = a.wheelhouse_cache.expanduser()
     dbg = None if a.no_debug else a.debug_repo.expanduser()
     if dbg is not None and not (dbg / ".git").exists():
         print(f"note: no helios-debug repo at {dbg} - bundle without it (HC-012 skips on the server)", file=sys.stderr)
         dbg = None
-    out = build(ROOT, a.out, a.ref, wh, debug_repo=dbg)
-    with tarfile.open(out) as t:
-        names = t.getnames()
-    wheels = [n for n in names if n.endswith(".whl")]
-    dbgn = [n for n in names if "/helios-debug/" in n]
-    print(f"{out}  ({out.stat().st_size / 1e6:.1f} MB, {len(names)} files, {len(wheels)} wheels, "
-          f"{len(dbgn)} helios-debug files)")
-    print(f"install: scp {out.name} <user>@<server>: && ssh <user>@<server> "
-          f"'tar -xzf {out.name} && {out.name[:-7]}/install.sh'")
+    for target in (("linux", "macos") if a.target == "all" else (a.target,)):
+        wh = a.wheelhouse
+        if wh is None and a.wheelhouse_cache:
+            cache = a.wheelhouse_cache.expanduser()
+            if target != "linux":                 # one cache per target (its own PYTHONS / TARGET)
+                cache = cache.with_name(f"{cache.name}-{target}")
+            ver, sha, _ = version_of(ROOT, a.ref)
+            with tempfile.TemporaryDirectory() as tmp:
+                req = Path(tmp) / "requirements.txt"
+                req.write_text("".join(f"{r}\n" for r in requirements(ROOT, sha)))
+                build_wheelhouse(req, cache, target=target)
+            wh = cache
+        out = build(ROOT, a.out, a.ref, wh, debug_repo=dbg, target=target)
+        with tarfile.open(out) as t:
+            names = t.getnames()
+        wheels = [n for n in names if n.endswith(".whl")]
+        dbgn = [n for n in names if "/helios-debug/" in n]
+        print(f"{out}  ({TARGETS[target]['label']}; {out.stat().st_size / 1e6:.1f} MB, {len(names)} files, "
+              f"{len(wheels)} wheels, {len(dbgn)} helios-debug files)")
+        if target == "linux":
+            print(f"install: scp {out.name} <user>@<server>: && ssh <user>@<server> "
+                  f"'tar -xzf {out.name} && {out.name[:-7]}/install.sh'")
+        else:
+            print(f"install on the Mac: tar -xzf {out.name} && {out.name[:-7]}/install.sh")
     return 0
 
 

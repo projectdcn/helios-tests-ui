@@ -635,3 +635,47 @@ def test_backup_settings_keeps_small_things_and_the_last_five(tmp_path):
     assert (last / "data" / "results" / "runs" / "mr3" / "ui-defaults.json").is_file()
     assert not (last / "data" / "results" / "runs" / "mr3" / "mr3-20261020-0101").exists()     # no results
     assert oct(last.stat().st_mode)[-3:] == "700"
+
+
+# ------------------------------------------------------------------ macOS bundle (20 Oct: install file for Linux and macOS)
+def test_macos_wheel_download_and_markers_target_both_mac_architectures(tmp_path):
+    a = bi.pip_download_argv(tmp_path / "r.txt", tmp_path / "d", "3.14", target="macos", arch="arm64")
+    plats = [a[i + 1] for i, x in enumerate(a) if x == "--platform"]
+    assert "macosx_14_0_arm64" in plats and "macosx_11_0_arm64" in plats and "macosx_10_9_universal2" in plats
+    assert not any("manylinux" in p for p in plats)
+    env = bi.target_env("3.12", "macos", "x86_64")
+    assert env["sys_platform"] == "darwin" and env["platform_system"] == "Darwin" and env["platform_machine"] == "x86_64"
+    assert bi.TARGETS["macos"]["archs"] == ("arm64", "x86_64") and "3.14" in bi.TARGETS["macos"]["pythons"]
+    # Linux stays as it was
+    lin = bi.pip_download_argv(tmp_path / "r", tmp_path / "d", "3.12")
+    assert [lin[i + 1] for i, x in enumerate(lin) if x == "--platform"] == list(bi.PLATFORMS)
+
+
+def test_macos_bundle_is_named_and_marked_and_its_installer_checks_the_os(tmp_path):
+    wh = tmp_path / "wh-mac"
+    _wheel(wh, "pytest", ["pluggy>=1"])
+    _wheel(wh, "pluggy")
+    v = f"{sys.version_info[0]}.{sys.version_info[1]}"
+    _wheel(wh, "PyYAML", tag=f"cp{v.replace('.', '')}-cp{v.replace('.', '')}-macosx_11_0_arm64", ver="6.0.3")
+    (wh / "PYTHONS").write_text(f"3.10 3.11 3.12 3.13 3.14 {v}\n")
+    out = bi.build(_repo(tmp_path), tmp_path / "dist", wheelhouse=wh, log=lambda s: None, target="macos")
+    assert out.name.endswith("-macos.tar.gz")
+    top = out.name[:-len(".tar.gz")]
+    m = _members(out)
+    assert f"{top}/TARGET" in m and f"{top}/install.sh" in m
+    with tarfile.open(out) as t:
+        assert t.extractfile(f"{top}/TARGET").read() == b"macos\n"
+        assert json.loads(t.extractfile(f"{top}/app/BUILD_INFO.json").read())["target"] == "macos"
+        t.extractall(tmp_path / "x", filter="data")
+    env = {k: v for k, v in os.environ.items() if k != "HELIOS_UI_INSTALL_ANY_OS"}
+    r = subprocess.run([str(tmp_path / "x" / top / "install.sh"), "--dry-run", "--online", "--python", sys.executable,
+                        "--prefix", str(tmp_path / "p")], capture_output=True, text=True, timeout=120, env=env)
+    if sys.platform == "darwin":
+        assert r.returncode == 0 and "macOS: no systemd" in r.stdout, r.stdout + r.stderr
+    else:
+        assert r.returncode != 0 and "this bundle is for macOS" in r.stderr
+    # and the Linux bundle on a Mac says which file to use
+    lin = _bundle_dir(tmp_path / "lin")
+    r = subprocess.run([str(lin / "install.sh"), "--dry-run"], capture_output=True, text=True, timeout=120, env=env)
+    if sys.platform == "darwin":
+        assert r.returncode != 0 and "-macos.tar.gz" in r.stderr

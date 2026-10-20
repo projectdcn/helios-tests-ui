@@ -588,13 +588,19 @@ linger_advice() {
 
 # ------------------------------------------------------------------ checks
 step "checks"
-if [ "$(uname -s)" != Linux ]; then
+# the bundle is built for one OS (TARGET: linux = helios-ui-<version>.tar.gz, macos = helios-ui-<version>-macos.tar.gz)
+TARGET=$(cat "$HERE/TARGET" 2>/dev/null || echo linux)
+case "$TARGET" in macos) WANT_OS=Darwin; OS_LABEL=macOS ;; *) WANT_OS=Linux; OS_LABEL=Linux ;; esac
+if [ "$(uname -s)" != "$WANT_OS" ]; then
     if [ "${HELIOS_UI_INSTALL_ANY_OS:-0}" = 1 ]; then
-        warn "not Linux ($(uname -s)): continuing because HELIOS_UI_INSTALL_ANY_OS=1 (for testing the installer)"
+        warn "not $OS_LABEL ($(uname -s)): continuing because HELIOS_UI_INSTALL_ANY_OS=1 (for testing the installer)"
+    elif [ "$(uname -s)" = Darwin ]; then
+        die "this bundle is for $OS_LABEL; on a Mac use helios-ui-<version>-macos.tar.gz"
     else
-        die "this installer is for Linux (this is $(uname -s))"
+        die "this bundle is for $OS_LABEL (this is $(uname -s)); on Linux use helios-ui-<version>.tar.gz"
     fi
 fi
+[ "$(uname -s)" = Darwin ] && say "macOS: no systemd - the UI runs in the background (bin/helios-ui start / stop) and does not start by itself after a reboot"
 
 if [ "$ROLLBACK" = 1 ]; then
     [ -d "$PREFIX/app.prev" ] && [ -d "$PREFIX/venv.prev" ] || die "nothing to roll back to: no $PREFIX/app.prev + venv.prev"
@@ -637,7 +643,8 @@ if [ -n "$PYTHON" ]; then
         || die "--python $PYTHON is $("$PYTHON" -V 2>&1); Python >= $MIN_PY is needed"
     py_ok "$PYTHON" || die "--python $PYTHON ($("$PYTHON" -V 2>&1)): the bundle has wheels for Python $SUPPORTED only; use one of those or --online"
 else
-    for c in python3 python3.12 python3.11 python3.10; do
+    for c in python3 python3.14 python3.13 python3.12 python3.11 python3.10 \
+             /opt/homebrew/bin/python3 /usr/local/bin/python3; do
         if command -v "$c" >/dev/null 2>&1 && py_ok "$c"; then PYTHON=$(command -v "$c"); break; fi
     done
     [ -n "$PYTHON" ] || die "no Python >= $MIN_PY found$([ "$ONLINE" = 0 ] && echo " with wheels in this bundle ($SUPPORTED)"). Install python3 (>= $MIN_PY), or give --python /path/to/python3.X"
@@ -648,7 +655,8 @@ if ! "$PYTHON" -c 'import venv, ensurepip' >/dev/null 2>&1; then
     PYMM=${PYV%.*}
     die "the Python venv module is not available for $PYTHON. Install it (needs an admin), e.g.:
     sudo apt install python3-venv        (or python$PYMM-venv)   Debian / Ubuntu
-    sudo dnf install python3             (venv is included)       RHEL / Rocky / Fedora"
+    sudo dnf install python3             (venv is included)       RHEL / Rocky / Fedora
+    brew install python@3.12             (macOS; /usr/bin/python3 of the Command Line Tools is too old)"
 fi
 
 # free space: the venv + code take ~2-3x the bundle; at least 250 MB
