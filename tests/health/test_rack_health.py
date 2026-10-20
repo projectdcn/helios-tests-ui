@@ -10,7 +10,7 @@ import re
 import pytest
 
 from helios.afmctl import Afmctl
-from helios.compute import render
+from helios.compute import bmc_cmd, render
 from helios.datapath import use_sudo
 from helios.preflight import _gpu_users
 from helios.rack import fan_out
@@ -62,7 +62,7 @@ def test_bmc_power_on(rack, computes, inventory, checks, record_property):
         bmc = c.host.extra.get("bmc")
         if not bmc:
             return None
-        return rack.runner.run(render(tmpl, name=c.name, host=c.host.host, bmc=bmc), timeout=60)
+        return rack.runner.run(bmc_cmd(render(tmpl, name=c.name, host=c.host.host, bmc=bmc), c.name), timeout=60)
 
     for c, r, exc in fan_out(query, computes):
         if r is None and not exc:

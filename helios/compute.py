@@ -1,6 +1,9 @@
 """Compute-tray driver (MI-series GPUs on IFoE)."""
 from __future__ import annotations
 
+import os
+import re
+
 from .inventory import Host
 from .transport import CmdResult, Transport
 
@@ -49,6 +52,25 @@ class ComputeTray:
 
     def close(self) -> None:
         self.t.close()
+
+
+BMC_ENV = "HELIOS_BMC_PASSWORD"
+_BMC_REF = re.compile(r"\$(?:\{HELIOS_BMC_PASSWORD\}|HELIOS_BMC_PASSWORD(?![A-Za-z0-9_]))")
+
+
+def bmc_env(node: str) -> str:
+    """The environment variable with one node's own BMC password (the UI hands it to the run):
+    HELIOS_BMC_PASSWORD_<NODE> (upper case, anything but letters / digits as _)."""
+    return f"{BMC_ENV}_" + re.sub(r"[^A-Za-z0-9]", "_", node).upper()
+
+
+def bmc_cmd(cmd: str, node: str, environ=None) -> str:
+    """A BMC command for ``node``: its own password variable instead of the rack-wide $HELIOS_BMC_PASSWORD when the
+    run has one (switches and trays may have different BMC passwords). Only the variable NAME changes - the shell
+    expands it, the password never appears in the command line or the log."""
+    env = os.environ if environ is None else environ
+    var = bmc_env(node)
+    return _BMC_REF.sub("$" + var, cmd) if env.get(var) else cmd
 
 
 def render(template: str, **kw) -> str:

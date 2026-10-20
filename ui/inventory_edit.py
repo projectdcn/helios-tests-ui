@@ -27,7 +27,7 @@ from .config import find_secrets
 ROLES = (("switches", "switch"), ("computes", "compute"))
 DATE_RX = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 # form columns per role; every other key of an entry is kept in 'extra' (YAML)
-COLUMNS = {"switches": ("name", "host", "user", "port", "key_file", "afm_name"),
+COLUMNS = {"switches": ("name", "host", "user", "port", "key_file", "bmc", "afm_name"),
            "computes": ("name", "host", "user", "gpus", "bmc", "slot", "afm_name")}
 INT_KEYS = ("port", "gpus", "slot")
 

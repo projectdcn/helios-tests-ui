@@ -44,8 +44,11 @@ def _now() -> str:
 class Run:
     def __init__(self, rid: str, rack: str, job: Job, password: str | None, log_dir: Path,
                  filters: dict | None = None, password_source: str | None = None, notes: list[str] | None = None,
-                 started_by: str | None = None):
+                 started_by: str | None = None, secrets: dict[str, str] | None = None):
         self.id, self.rack, self.job = rid, rack, job
+        # other saved secrets for the run's environment, e.g. {"HELIOS_BMC_PASSWORD": ...}; memory only, like the AFM one
+        self._secrets = {k: v for k, v in (secrets or {}).items() if v}
+        self.has_bmc_password = "HELIOS_BMC_PASSWORD" in self._secrets
         self.started_by = started_by or None        # "Name (address)" of the browser that started it (ui/presence.py)
         self.stopped_by: str | None = None
         self.filters = dict(filters or {})          # test-plan pick of the form (for "Run again"), never a secret
@@ -74,6 +77,7 @@ class Run:
                 "created": self.created, "started": self.started, "ended": self.ended, "rc": self.rc,
                 "results": self.results, "verdict": self.verdict, "error": self.error,
                 "has_password": self.has_password, "password_source": self.password_source,
+                "has_bmc_password": self.has_bmc_password,
                 "lines": len(self.lines), "current": self.current if self.status == "running" else None,
                 "session": self.session, "started_by": self.started_by, "stopped_by": self.stopped_by}
 
@@ -99,14 +103,16 @@ class RunManager:
 
     # ------------------------------------------------------------- queue
     def submit(self, rack: str, req: dict, password: str | None = None, password_source: str | None = None,
-               notes: list[str] | None = None, started_by: str | None = None) -> Run:
+               notes: list[str] | None = None, started_by: str | None = None,
+               secrets: dict[str, str] | None = None) -> Run:
         if rack not in self.profiles:
             raise JobError(f"unknown rack {rack!r}")
         job = Job.from_request(req)
         filters = clean_filters(req.get("filters"))
         p = self.profiles[rack]
         rid = f"{rack}-{time.strftime('%Y%m%d-%H%M%S')}-" + "".join(random.choices(string.ascii_lowercase, k=4))
-        run = Run(rid, rack, job, password, p.results_dir / "ui-runs", filters, password_source, notes, started_by)
+        run = Run(rid, rack, job, password, p.results_dir / "ui-runs", filters, password_source, notes, started_by,
+                  secrets)
         if started_by:
             run.notes.append(f"started by {started_by}")
         try:
@@ -146,7 +152,8 @@ class RunManager:
                     self.active[rack] = None
 
     def _log(self, run: Run, fh, line: str) -> None:
-        line = redact(line, (run._password, *(v for k, v in os.environ.items() if SECRET_NAME.search(k))))
+        line = redact(line, (run._password, *run._secrets.values(),
+                             *(v for k, v in os.environ.items() if SECRET_NAME.search(k))))
         m = re.search(r"\bstart (\S+::\S+)", line)
         if m:
             run.current = m.group(1)
@@ -166,10 +173,11 @@ class RunManager:
             try:
                 pw = {"typed": "given (memory only)", "keychain": f"from the {self.store_label} (memory only)"}
                 log(f"# run {run.id} on {run.rack} ({self.profiles[run.rack].runner}); "
-                    f"AFM password {pw.get(run.password_source, 'not given')}")
+                    f"AFM password {pw.get(run.password_source, 'not given')}; BMC password "
+                    f"{'from the ' + self.store_label + ' (memory only)' if run.has_bmc_password else 'not given'}")
                 for note in run.notes:
                     log(f"# {note}")
-                rc, new = runner.execute(run.id, run.job, run._password, log)
+                rc, new = runner.execute(run.id, run.job, run._password, log, secrets=run._secrets)
                 run.rc, run.results = rc, new
                 self._post(run, log)
                 run.status = "stopped" if run.stop_requested else "finished"
@@ -180,7 +188,7 @@ class RunManager:
                 run.status, run.error = "error", f"{type(e).__name__}: {e}"
                 log(f"ERROR: {run.error}")
             finally:
-                run._password = None
+                run._password, run._secrets = None, {}
                 run.ended = _now()
                 self._session(run, log)
                 self._retention(run, log)
@@ -256,7 +264,7 @@ class RunManager:
             if run.status == "queued":
                 if run in self.queues[run.rack]:
                     self.queues[run.rack].remove(run)
-                run.status, run.ended, run._password = "cancelled", _now(), None
+                run.status, run.ended, run._password, run._secrets = "cancelled", _now(), None, {}
                 run.save()
                 with run.cond:
                     run.cond.notify_all()

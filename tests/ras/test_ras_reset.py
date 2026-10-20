@@ -16,7 +16,7 @@ import time
 import pytest
 
 from helios import datapath
-from helios.compute import render
+from helios.compute import bmc_cmd, render
 from helios.rack import fan_out
 from helios.wait import wait_for_ssh, wait_until
 
@@ -135,8 +135,8 @@ def _power_event(kind, rack, computes, inventory, checks, record_property):
             pytest.skip(f"{target.name}: no 'bmc' in inventory")
         if "{pdu_outlet}" in tmpl and not extra.get("pdu_outlet"):
             pytest.skip(f"{target.name}: no 'pdu_outlet' in inventory")
-        r = rack.runner.run(render(tmpl, name=target.name, host=target.host.host, bmc=extra.get("bmc", ""),
-                                   pdu_outlet=extra.get("pdu_outlet", "")), timeout=120)
+        r = rack.runner.run(bmc_cmd(render(tmpl, name=target.name, host=target.host.host, bmc=extra.get("bmc", ""),
+                                   pdu_outlet=extra.get("pdu_outlet", "")), target.name), timeout=120)
     assert r.ok, f"{target.name}: {kind} command failed rc={r.rc} {r.tail()!r}"
 
     boot_timeout = float(inventory.th("ras.boot_timeout_s", 900))

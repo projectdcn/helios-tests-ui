@@ -30,6 +30,8 @@ from pathlib import Path
 from urllib.parse import parse_qs, quote, unquote, urlparse
 
 from . import defaults, inventory_edit, plan, presence, presets, sessions, share, sshkeys, testplan
+from helios.compute import bmc_env
+
 from .config import ROOT, afm_username, inventory_rack_name, load_config
 from .keychain import Keychain, KeychainError, account
 from .runner import JobError, NAME_RX, TC_RX
@@ -39,6 +41,7 @@ from .version import build_info, version
 STATIC = Path(__file__).resolve().parent / "static"
 ALLOWED_HOSTS = {"127.0.0.1", "localhost", "[::1]"}
 MAX_BODY = 4 * 1024 * 1024
+BMC_ENV = "HELIOS_BMC_PASSWORD"                   # what the inventory's BMC commands read (ipmitool -E: $IPMI_PASSWORD)
 UPLOAD_BODY = 30 * 1024 * 1024                    # a test-plan workbook upload (base64 in JSON; ui/testplan.py)
 # files of a results folder offered as single downloads (the zip has everything)
 DOWNLOADABLE = ("report.html", "health.html", "tc_summary.csv", "tc_results.csv", "health.json", "health-notes.txt",
@@ -92,15 +95,21 @@ class App:
             p.workbook = testplan.chosen(p, self.configured_workbook[n])
 
     def saved_passwords(self) -> list[str]:
-        """The AFM passwords saved for the racks (to blank them in a shared zip); never sent anywhere."""
+        """The AFM and BMC passwords saved for the racks (to blank them in a shared zip); never sent anywhere."""
         out = []
         for rack in self.profiles:
+            accts = []
             try:
-                acct = self.keychain_account(rack)
-                if self.keychain.available() and self.keychain.has(acct):
-                    out.append(self.keychain.get(acct) or "")
-            except Exception:  # noqa: BLE001 - a rack without inventory / an unreadable store: nothing to add
+                accts = [self.keychain_account(rack, "afm"), self.keychain_account(rack, "bmc")]
+                accts += [self.keychain_account(rack, "bmc", n["name"]) for n in self.bmc_nodes(rack)]
+            except Exception:  # noqa: BLE001 - a rack without inventory: what could be named so far
                 pass
+            for acct in accts:
+                try:
+                    if self.keychain.available() and self.keychain.has(acct):
+                        out.append(self.keychain.get(acct) or "")
+                except Exception:  # noqa: BLE001 - an unreadable store: nothing to add
+                    pass
         return [p for p in out if p]
 
     @property
@@ -108,14 +117,42 @@ class App:
         """Where a remembered AFM password goes: the macOS Keychain or the password file (Linux)."""
         return getattr(self.keychain, "label", "macOS Keychain")
 
-    def keychain_account(self, rack: str) -> str:
+    def keychain_account(self, rack: str, which: str = "afm", node: str | None = None) -> str:
+        """The store account of the rack's AFM password, or (which="bmc") of its BMC password - the rack's default
+        (HELIOS_BMC_PASSWORD) or one node's own (``node``: HELIOS_BMC_PASSWORD_<NODE>) for the BMC commands, e.g.
+        ipmitool in commands.health.bmc_power / ras.dc_cycle (switches and trays may differ)."""
         p = self.profile(rack)
+        if which == "bmc":
+            return account(p.name, f"bmc+{node}" if node else "bmc+ipmi")
         return account(p.name, afm_username(p.inventory))
 
-    def password_status(self, rack: str) -> dict:
+    def bmc_nodes(self, rack: str) -> list[dict]:
+        """[{name, role, bmc}] of the rack's switches and computes (from its inventory)."""
+        from helios.inventory import load_inventory
+        inv = load_inventory(self.profile(rack).inventory)
+        return [{"name": h.name, "role": h.role, "bmc": str(h.extra.get("bmc") or "")} for h in [*inv.switches, *inv.computes]]
+
+    def bmc_status(self, rack: str) -> dict:
+        """Per node: its BMC address and whether it has its own saved BMC password (never the password)."""
+        avail = self.keychain.available()
+        try:
+            nodes = self.bmc_nodes(rack)
+        except Exception as e:  # noqa: BLE001 - no / broken inventory
+            return {"available": avail, "nodes": [], "error": f"inventory: {e}"}
+        for n in nodes:
+            n["saved"] = False
+            if avail:
+                try:
+                    n["saved"] = self.keychain.has(self.keychain_account(rack, "bmc", n["name"]))
+                except KeychainError as e:
+                    n["error"] = str(e)
+        return {"available": avail, "store": self.store_label, "default": self.password_status(rack, "bmc"),
+                "nodes": nodes}
+
+    def password_status(self, rack: str, which: str = "afm") -> dict:
         """{saved, available, account[, error]}: never the password itself."""
         try:
-            acct = self.keychain_account(rack)
+            acct = self.keychain_account(rack, which)
         except KeychainError as e:
             return {"saved": False, "available": False, "account": None, "error": str(e)}
         out = {"saved": False, "available": self.keychain.available(), "account": acct,
@@ -159,7 +196,27 @@ class App:
                 except KeychainError as e:
                     kc["error"] = str(e)
                     notes.append(f"no AFM password typed and the {self.store_label} could not be read: {e}")
-            run = self.runs.submit(rack, body, password, source, notes, started_by)
+            secrets = {}
+            if self.keychain.available():          # saved BMC passwords (memory only, like the AFM one): the rack's
+                try:                               # default, and each node's own (helios.compute.bmc_cmd uses it)
+                    bmc = self.keychain.get(self.keychain_account(rack, "bmc"))
+                    if bmc:
+                        secrets[BMC_ENV] = bmc
+                    for n in self.bmc_nodes(rack):
+                        acct = self.keychain_account(rack, "bmc", n["name"])
+                        if self.keychain.has(acct):
+                            v = self.keychain.get(acct)
+                            if v:
+                                secrets[bmc_env(n["name"])] = v
+                except KeychainError as e:
+                    notes.append(f"a saved BMC password could not be read: {e}")
+                except Exception:  # noqa: BLE001 - no / broken inventory: the run says so itself
+                    pass
+            if secrets:
+                notes.append("BMC password(s) given (memory only): " + ", ".join(
+                    "default" if k == BMC_ENV else k[len(BMC_ENV) + 1:].lower() for k in secrets))
+            run = self.runs.submit(rack, body, password, source, notes, started_by, secrets)
+            del secrets
         finally:
             del password
         return run, kc
@@ -529,9 +586,12 @@ class Handler(BaseHTTPRequestHandler):
             m = re.fullmatch(r"/api/racks/([^/]+)/sessions", path)
             if m:                                  # the rack's sessions (newest first) + the current one
                 return self.json(sessions.list_sessions(self.app.profile(m.group(1))))
-            m = re.fullmatch(r"/api/racks/([^/]+)/password", path)
+            m = re.fullmatch(r"/api/racks/([^/]+)/bmc-passwords", path)
+            if m:                                  # per node: BMC address + own saved password yes / no
+                return self.json(self.app.bmc_status(m.group(1)))
+            m = re.fullmatch(r"/api/racks/([^/]+)/(password|bmc-password)", path)
             if m:                                  # {saved: bool, ...}: NEVER the password
-                return self.json(self.app.password_status(m.group(1)))
+                return self.json(self.app.password_status(m.group(1), "bmc" if m.group(2) == "bmc-password" else "afm"))
             m = re.fullmatch(r"/api/racks/([^/]+)/testplan", path)
             if m:                                  # the rack's workbooks (uploaded / configured) and the current one
                 return self.json(testplan.listing(self.app.profile(m.group(1)), self.app.configured_workbook[m.group(1)]))
@@ -650,16 +710,29 @@ class Handler(BaseHTTPRequestHandler):
             if path == "/api/runs":
                 run, kc = self.app.start_run(body, started_by=self._by() or None)
                 return self.json({**self.app.runs.get(run.id), "keychain": kc}, 201)
-            m = re.fullmatch(r"/api/racks/([^/]+)/password(/delete)?", path)
+            m = re.fullmatch(r"/api/racks/([^/]+)/nodes/([^/]+)/bmc-password(/delete)?", path)
+            if m:                                  # one node's own BMC password: save / forget; never sent back
+                rack, node = m.group(1), m.group(2)
+                if node not in {n["name"] for n in self.app.bmc_nodes(rack)}:
+                    return self.err(404, f"{node!r} is not a node of {rack}")
+                acct = self.app.keychain_account(rack, "bmc", node)
+                if m.group(3):
+                    self.app.keychain.delete(acct)
+                else:
+                    pw = body.pop("password", None)
+                    self.app.keychain.save(acct, pw)
+                    del pw
+                return self.json(self.app.bmc_status(rack))
+            m = re.fullmatch(r"/api/racks/([^/]+)/(password|bmc-password)(/delete)?", path)
             if m:                                  # Keychain / password file: save / forget; never sent back
-                rack = m.group(1)
-                acct = self.app.keychain_account(rack)
-                if m.group(2):
-                    return self.json({"deleted": self.app.keychain.delete(acct), **self.app.password_status(rack)})
+                rack, which = m.group(1), ("bmc" if m.group(2) == "bmc-password" else "afm")
+                acct = self.app.keychain_account(rack, which)
+                if m.group(3):
+                    return self.json({"deleted": self.app.keychain.delete(acct), **self.app.password_status(rack, which)})
                 pw = body.pop("password", None)
                 self.app.keychain.save(acct, pw)
                 del pw
-                return self.json(self.app.password_status(rack))
+                return self.json(self.app.password_status(rack, which))
             m = re.fullmatch(r"/api/racks/([^/]+)/defaults(/delete)?", path)
             if m:
                 p = self.app.profile(m.group(1))

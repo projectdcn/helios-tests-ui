@@ -254,7 +254,8 @@ class Runner:
             self._stopped.add(run_id)
             return self._procs.get(run_id)
 
-    def execute(self, run_id: str, job: Job, password: str | None, log) -> tuple[int, list[str]]:
+    def execute(self, run_id: str, job: Job, password: str | None, log, secrets: dict | None = None) -> tuple[int, list[str]]:
+        """``secrets``: other {ENV_NAME: value} for the run (e.g. HELIOS_BMC_PASSWORD), handed over like the AFM password."""
         raise NotImplementedError
 
     def stop(self, run_id: str) -> None:
@@ -269,7 +270,7 @@ class LocalRunner(Runner):
         known = str(Path(ROOT, p.known)) if p.known else None
         return [sys.executable, *build_args(job, str(p.inventory), str(p.results_dir), known, no_html=False)]
 
-    def execute(self, run_id, job, password, log):
+    def execute(self, run_id, job, password, log, secrets=None):
         p = self.profile
         if not p.inventory.is_file():
             raise JobError(f"inventory not found: {p.inventory}")
@@ -287,6 +288,9 @@ class LocalRunner(Runner):
             env["HELIOS_SSH_KEY"], env["HELIOS_SSH_KEY_FROM"] = key, "chosen in the UI's Setup tab"
         if password:
             env[password_env(p.inventory)] = password
+        for k, v in (secrets or {}).items():
+            if ENV_RX.match(k) and v:
+                env[k] = v
         argv = self.command(job)
         log("$ " + " ".join(shlex.quote(a) for a in argv))
         proc = self._start(run_id, lambda: self.ex.popen(argv, env=env, cwd=ROOT))
@@ -424,7 +428,7 @@ class SshRunner(Runner):
             t.add(local, arcname=name)
         self._remote(f"mkdir -p {self.results()} && tar -xzf - -C {self.results()}", input=buf.getvalue())
 
-    def command(self, run_id: str, job: Job, with_password: bool) -> str:
+    def command(self, run_id: str, job: Job, with_password: bool, secret_names: list[str] | None = None) -> str:
         s = self.profile.ssh
         args = build_args(job, s.inventory, "results", self.profile.known, no_html=not s.remote_html)
         parts = [f"cd {rq(s.code_dir)}", "export PYTHONUNBUFFERED=1"]
@@ -432,6 +436,10 @@ class SshRunner(Runner):
             var = password_env(self.profile.inventory)
             if not ENV_RX.match(var):
                 raise JobError(f"bad password_env name {var!r}")
+            parts.append(f"IFS= read -r {var} && export {var}")
+        for var in secret_names or []:             # one stdin line each, after the AFM password: never on a command line
+            if not ENV_RX.match(var):
+                raise JobError(f"bad environment variable name {var!r}")
             parts.append(f"IFS= read -r {var} && export {var}")
         parts.append(f"echo $$ > {self.pidfile(run_id)}")
         parts.append("exec " + " ".join(rq(a) for a in [s.python, *args]))
@@ -450,8 +458,9 @@ class SshRunner(Runner):
             t.extractall(dest, members=members, filter="data")
         index_runs([dest / n for n in names], log)
 
-    def execute(self, run_id, job, password, log):
+    def execute(self, run_id, job, password, log, secrets=None):
         p = self.profile
+        secrets = {k: v for k, v in (secrets or {}).items() if v}
         if not p.inventory.is_file():
             raise JobError(f"local inventory copy not found: {p.inventory}")
         self.sync_code(log)
@@ -459,12 +468,14 @@ class SshRunner(Runner):
         if job.kind == "rerun":
             self.ensure_base_run(job.base_run, log)
         before = self._ls()
-        cmd = self.command(run_id, job, bool(password))
+        cmd = self.command(run_id, job, bool(password), list(secrets))
         log(f"$ ssh {p.ssh.target} '{cmd}'")
         proc = self._start(run_id, lambda: self.ex.popen(self.ssh() + [cmd], stdin=True))
         try:
             if password:
                 proc.stdin.write((password + "\n").encode())
+            for v in secrets.values():
+                proc.stdin.write((v + "\n").encode())
             proc.stdin.close()
         except (BrokenPipeError, OSError):
             pass

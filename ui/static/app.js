@@ -152,7 +152,7 @@ function rackChanged() {
     formRack = rack.name;
     restoreForm();
     loadPresets();
-    loadPwStatus();
+    loadPwStatus(); loadBmcDefault();
     loadPlan();
     loadSession();
     loadAccess();
@@ -246,18 +246,83 @@ async function loadSetup() {
   showPub();
   const jump = setup.runner === "ssh";
   $("#inst-where").textContent = jump ? `the jump host of ${rack.title} (its own key reaches the rack's nodes)` : `every switch and compute of ${rack.title}`;
-  $("#inst-targets tbody").replaceChildren(...(setup.targets_error ? [h("tr", {}, h("td", { colspan: 5, class: "err" }, setup.targets_error))] : []),
+  $("#inst-targets tbody").replaceChildren(...(setup.targets_error ? [h("tr", {}, h("td", { colspan: 6, class: "err" }, setup.targets_error))] : []),
     ...setup.targets.map(t => h("tr", { "data-node": t.name }, h("td", {}, t.name), h("td", {}, `${t.user}@${t.host}${t.port !== 22 ? ":" + t.port : ""}`),
       h("td", {}, h("input", { type: "password", class: "node-pw", "data-node": t.name, autocomplete: "off", size: 14,
         "aria-label": `password of ${t.user}@${t.host}`, placeholder: `${t.user} password`,
         onkeydown: ev => { if (ev.key === "Enter") { ev.preventDefault(); installKey([t.name]); } } })),
+      h("td", { class: "bmc-cell muted", "data-node": t.name }, t.role === "jump" ? "(below)" : "…"),
       h("td", { class: "muted inst-res" }, ""),
       h("td", {}, h("button", { type: "button", class: "inst-one", title: `install the key on ${t.name} only`, onclick: () => installKey([t.name]) }, "Install")))));
   const users = [...new Set(setup.targets.map(t => t.user))];
   $("#inst-pw").replaceChildren(...users.map(u => h("label", { class: "inline" }, `Password of every ${u} `,
     h("input", { type: "password", "data-user": u, autocomplete: "off" }))));
   $("#inst-go").disabled = !setup.targets.length;
+  loadBmc();
 }
+
+// ---------------------------------------------------------------- BMC passwords: per node (here) + rack default (Inventory tab)
+async function loadBmc() {
+  const r = rack.name;
+  let d;
+  try { d = await api("GET", `/api/racks/${enc(r)}/bmc-passwords`); } catch (e) { d = { nodes: [], error: e.message }; }
+  if (!rack || rack.name !== r) return;
+  $$(".bmc-store").forEach(x => x.textContent = d.store ? `in the ${d.store}` : "in the password store");
+  const jump = setup && setup.runner === "ssh";
+  $("#bmc-jump").hidden = !jump;
+  const cell = n => {
+    const inp = h("input", { type: "password", size: 12, autocomplete: "new-password", "aria-label": `BMC password of ${n.name}`,
+      placeholder: n.saved ? "saved - type to change" : (d.default && d.default.saved ? "default used" : "BMC password") });
+    const save = async () => {
+      const pw = inp.value; inp.value = "";
+      if (!pw) return;
+      try { await api("POST", `/api/racks/${enc(r)}/nodes/${enc(n.name)}/bmc-password`, { password: pw }); loadBmc(); }
+      catch (e) { st.textContent = e.message; st.className = "err small"; }
+    };
+    inp.addEventListener("keydown", ev => { if (ev.key === "Enter") { ev.preventDefault(); save(); } });
+    const st = h("span", { class: n.saved ? "ok small" : "muted small" }, n.error || (n.saved ? "own ✓" : (d.default && d.default.saved ? "default" : "none")));
+    return [h("div", { class: "muted small" }, n.bmc || "(no bmc address in the inventory)"), inp, " ",
+      h("button", { type: "button", disabled: !d.available, onclick: save }, "Save"), " ",
+      n.saved ? h("button", { type: "button", title: "forget this node's own BMC password (the default applies again)",
+        onclick: async () => { await api("POST", `/api/racks/${enc(r)}/nodes/${enc(n.name)}/bmc-password/delete`, {}).catch(() => {}); loadBmc(); } }, "Forget") : null,
+      " ", st].filter(x => x !== null);
+  };
+  if (jump) {
+    $("#bmc-targets tbody").replaceChildren(...(d.error ? [h("tr", {}, h("td", { colspan: 2, class: "err" }, d.error))] : []),
+      ...d.nodes.map(n => h("tr", {}, h("td", {}, n.name), h("td", { class: "bmc-cell" }, ...cell(n)))));
+    return;
+  }
+  for (const td of $$("#inst-targets .bmc-cell")) {
+    const n = d.nodes.find(x => x.name === td.dataset.node);
+    td.className = "bmc-cell";
+    td.replaceChildren(...(n ? cell(n) : [d.error || "-"]));
+  }
+}
+function bmcMsg(t, cls) { $("#bmc-pw-status").textContent = t; $("#bmc-pw-status").className = cls; }
+async function loadBmcDefault() {
+  const r = rack.name;
+  $$(".bmc-pw-rack").forEach(x => x.textContent = rack.title);
+  let d;
+  try { d = await api("GET", `/api/racks/${enc(r)}/bmc-password`); } catch (e) { d = { available: false, error: e.message }; }
+  if (!rack || rack.name !== r) return;
+  bmcMsg(!d.available ? (d.note || d.error || "no password store") : d.error ? d.error : d.saved ? `saved (${d.store})` : "not saved",
+    d.error ? "err" : d.saved ? "ok" : "muted");
+  $("#bmc-pw-save").disabled = !d.available;
+  $("#bmc-pw-forget").disabled = !d.saved;
+}
+$("#bmc-pw-box").addEventListener("submit", async ev => {
+  ev.preventDefault();
+  const pw = $("#bmc-pw").value;
+  if (!pw) { bmcMsg("type the BMC password first", "err"); return; }
+  $("#bmc-pw").value = "";
+  try { await api("POST", `/api/racks/${enc(rack.name)}/bmc-password`, { password: pw }); await loadBmcDefault(); bmcMsg("saved: nodes without their own use it", "ok"); }
+  catch (e) { bmcMsg(e.message, "err"); }
+});
+$("#bmc-pw-forget").addEventListener("click", async () => {
+  if (!confirm(`Delete the default BMC password of ${rack.title}?`)) return;
+  try { await api("POST", `/api/racks/${enc(rack.name)}/bmc-password/delete`, {}); await loadBmcDefault(); }
+  catch (e) { bmcMsg(e.message, "err"); }
+});
 function showPub() {
   const k = setup && setup.keys.find(x => x.path === $("#key-select").value);
   $("#key-pub").value = k ? k.pub : "";
@@ -975,7 +1040,7 @@ $("#rerun-go").addEventListener("click", async () => {
 });
 
 // ---------------------------------------------------------------- inventory editor
-const COLS = { switches: ["name", "host", "user", "port", "key_file", "afm_name"],
+const COLS = { switches: ["name", "host", "user", "port", "key_file", "bmc", "afm_name"],
                computes: ["name", "host", "user", "gpus", "bmc", "slot", "afm_name"] };
 $("#inv-reload").addEventListener("click", loadInventory);
 // import: a YAML file from the browser's computer goes into the raw editor and is previewed - saved only on Save
