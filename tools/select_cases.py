@@ -85,6 +85,9 @@ def plan_rows(wb_path: Path) -> list[dict]:
             raise WorkbookLayoutError("no 'Testcases' sheet")
         ws = wb["Testcases"]
         check_layout(ws)
+        hdr = next(ws.iter_rows(min_row=2, max_row=2, values_only=True), ())
+        # every titled column by its header (the UI's "any column" filter): {header: cell text}
+        named = [(i, " ".join(str(h).split())) for i, h in enumerate(hdr) if h is not None and str(h).strip()]
         out = []
         for row in ws.iter_rows(min_row=3, values_only=True):
             tid = row[0] if row else None
@@ -96,7 +99,8 @@ def plan_rows(wb_path: Path) -> list[dict]:
                 if not code:
                     continue
             vals = {k: str((row[c - 1] if c <= len(row) else None) or "").strip() for k, c in COLS.items()}
-            out.append({"id": code, "tid": tid, "title": title, **vals})
+            cells = {name: str((row[i] if i < len(row) else None) or "").strip() for i, name in named}
+            out.append({"id": code, "tid": tid, "title": title, **vals, "cells": cells})
         return out
     finally:
         wb.close()

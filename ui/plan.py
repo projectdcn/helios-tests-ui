@@ -19,6 +19,64 @@ _plans: dict[str, tuple[tuple, dict]] = {}
 _auto: tuple[tuple, dict] | None = None
 # filter columns in the order the form shows them (suite is all / afm / ssh, not a workbook column)
 COLUMNS = ("level", "scope", "disruptive", "health", "origin", "status")
+# "any column" filter: a column with at most this many distinct short values gets value checkboxes, else "contains"
+CHOICE_MAX, CHOICE_LEN = 40, 80
+
+
+def any_columns(rows: list[dict]) -> list[dict]:
+    """[{name, values} | {name, free: True}] of every titled workbook column (header text as in row 2)."""
+    names = list(rows[0]["cells"]) if rows else []
+    out = []
+    for n in names:
+        seen = {}
+        for r in rows:
+            v = r["cells"].get(n, "") or sc.EMPTY
+            seen.setdefault(v.lower(), v)
+        vals = sorted(seen.values(), key=_sort_key)
+        if len(vals) <= CHOICE_MAX and all(len(v) <= CHOICE_LEN for v in vals):
+            out.append({"name": n, "values": vals})
+        else:
+            out.append({"name": n, "free": True})
+    return out
+
+
+def parse_cols(text) -> list[dict]:
+    """The "any column" filter as the form stores it (filters["cols"], JSON text): [{col, values: [...]} or
+    {col, contains: "text"}]. Raises JobError on anything else."""
+    if text in (None, ""):
+        return []
+    import json
+    try:
+        rules = json.loads(text) if isinstance(text, str) else text
+    except ValueError:
+        raise JobError("filter cols: JSON list of {col, values | contains}") from None
+    if not isinstance(rules, list):
+        raise JobError("filter cols: JSON list of {col, values | contains}")
+    out = []
+    for r in rules:
+        if not isinstance(r, dict) or not isinstance(r.get("col"), str) or not r["col"].strip():
+            raise JobError("filter cols: every rule needs a column name (col)")
+        if isinstance(r.get("contains"), str):
+            if r["contains"].strip():
+                out.append({"col": r["col"], "contains": r["contains"].strip().lower()})
+        elif isinstance(r.get("values"), list) and all(isinstance(v, str) for v in r["values"]):
+            vals = {v.strip().lower() for v in r["values"] if v.strip()}
+            if vals:
+                out.append({"col": r["col"], "values": vals})
+        else:
+            raise JobError(f"filter cols: {r['col']!r} needs values (a list) or contains (text)")
+    return out
+
+
+def match_cols(row: dict, rules: list[dict]) -> bool:
+    for r in rules:
+        cell = str(row.get("cells", {}).get(r["col"], "")).lower()
+        if "contains" in r:
+            if r["contains"] not in cell:
+                return False
+        elif (cell or sc.EMPTY.lower()) not in r["values"]:
+            return False
+    return True
 
 
 def _tests_signature() -> tuple:
@@ -81,7 +139,7 @@ def load(profile) -> dict:
     cases = [{"id": r["id"], "title": r["title"], **{k: r[k] for k in COLUMNS},
               "automated": r["id"] in auto, "suite": sc.suite_of(auto[r["id"]][0]) if r["id"] in auto else None}
              for r in rows]
-    return {"workbook": wbp.name, "columns": columns, "cases": cases}
+    return {"workbook": wbp.name, "columns": columns, "cases": cases, "any_columns": any_columns(rows)}
 
 
 def pick(profile, filters) -> dict:
@@ -89,11 +147,12 @@ def pick(profile, filters) -> dict:
     test yet. Filters as a run / preset stores them (clean_filters: strings or lists)."""
     f = clean_filters(filters)
     suite = f.pop("suite", "all")
+    rules = parse_cols(f.pop("cols", ""))
     want = sc.wanted(f)
     auto = automated()
     tc, not_auto = [], 0
     for r in _rows(_workbook(profile)):
-        if not sc.matches(r, want):
+        if not sc.matches(r, want) or not match_cols(r, rules):
             continue
         if r["id"] not in auto:
             not_auto += 1

@@ -224,3 +224,27 @@ def test_preset_stores_list_filters_as_strings():
     from ui import presets
     s = presets.normalize({"kind": "pytest", "tc": "TC-SWH-002", "filters": {"level": ["L1", "L2"], "suite": "ssh"}})
     assert s["filters"] == {"level": "L1,L2", "suite": "ssh"}
+
+
+def test_any_column_filter_and_scope_disruptive_status_together():
+    """20 Oct: run cases by scope / disruptive / last status (the fixed filters) and filter on ANY workbook column by
+    its header (values, or 'contains' for free-text columns)."""
+    import json as _json
+    from ui import plan as P
+    rows = [{"id": "TC-1", "title": "link flap", "level": "L1", "status": "FAIL", "scope": "Switch", "origin": "",
+             "disruptive": "Yes", "health": "", "cells": {"Automaton(Yes/No)": "Yes", "Title": "link flap", "Notes": "ct05 down"}},
+            {"id": "TC-2", "title": "bmc power", "level": "L1", "status": "", "scope": "Compute", "origin": "",
+             "disruptive": "", "health": "", "cells": {"Automaton(Yes/No)": "No", "Title": "bmc power", "Notes": ""}}]
+    cols = {c["name"]: c for c in P.any_columns(rows)}
+    assert cols["Automaton(Yes/No)"]["values"] == ["No", "Yes"]
+    rules = P.parse_cols(_json.dumps([{"col": "Automaton(Yes/No)", "values": ["yes"]}, {"col": "Notes", "contains": "CT05"}]))
+    assert [r["id"] for r in rows if P.match_cols(r, rules)] == ["TC-1"]
+    assert [r["id"] for r in rows if P.match_cols(r, P.parse_cols('[{"col": "Notes", "values": ["(empty)"]}]'))] == ["TC-2"]
+    assert P.parse_cols('[{"col": "Notes", "values": []}, {"col": "Title", "contains": " "}]') == []     # empty = no filter
+    with pytest.raises(JobError):
+        P.parse_cols('{"col": "x"}')
+    with pytest.raises(JobError):
+        P.parse_cols('[{"col": "x", "values": "Yes"}]')
+    from ui.runner import clean_filters
+    assert clean_filters({"disruptive": ["Yes"], "status": ["FAIL", "(empty)"], "scope": "Switch",
+                          "cols": '[{"col": "Notes", "contains": "ct05"}]'})["cols"].startswith("[")

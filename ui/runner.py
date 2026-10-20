@@ -37,7 +37,7 @@ class JobError(ValueError):
     pass
 
 
-FILTER_KEYS = ("level", "scope", "disruptive", "health", "origin", "status", "suite")
+FILTER_KEYS = ("level", "scope", "disruptive", "health", "origin", "status", "suite", "cols")   # cols: ui/plan.parse_cols
 SUITES = ("all", "afm", "ssh")
 _FILTER_VALUE_RX = re.compile(r"^[^\x00-\x1f\x7f]{0,2000}$")
 

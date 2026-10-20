@@ -147,8 +147,8 @@
       <legend>Cases</legend>
       <label>Test case ids <textarea name="tc" rows="2" placeholder="TC-SWH-002, TC-AFM-001"></textarea></label>
       <label>or a marker expression <input name="marker" placeholder="healthcheck   /   l1 and not disruptive"></label>
-      <details id="pick">
-        <summary>Pick from the test plan (tools/select_cases.py)</summary>
+      <details id="pick" open>
+        <summary>Pick test cases from the test plan: by Level, Scope, Disruptive, Last status - or any column</summary>
         <p class="muted small">Pick values in any of the filters (none picked = no filter); the matching automated cases are listed below and ticked, and the ticked ones become the test case ids. Ids you typed or edited yourself are not replaced without asking.</p>
         <div class="grid filters">
           <div class="ms" data-col="level"><span class="ms-label" id="ms-level-l">Level</span></div>
@@ -159,6 +159,11 @@
           <div class="ms" data-col="status"><span class="ms-label" id="ms-status-l">Status (last run)</span></div>
           <label>Suite <select name="s_suite"><option>all</option><option>afm</option><option>ssh</option></select></label>
         </div>
+        <div id="anycol">
+          <div id="anycol-rules"></div>
+          <button type="button" id="anycol-add" title="filter on any column of the workbook by its header: pick values, or 'contains' text for free-text columns">+ Filter on another column</button>
+        </div>
+        <input type="hidden" name="s_cols">
         <input type="hidden" name="s_level"><input type="hidden" name="s_scope"><input type="hidden" name="s_disruptive">
         <input type="hidden" name="s_health"><input type="hidden" name="s_origin"><input type="hidden" name="s_status">
         <div class="row">
