@@ -97,10 +97,10 @@ def test_form_round_trip_and_edit(inv):
     form = ie.to_form(data)
     assert ie.from_form(data, form) == {**data, "switches": data["switches"],
                                         "computes": [data["computes"][0], data["computes"][1], data["computes"][2]]}
-    form["computes"].append({"name": "ct04", "host": "10.0.0.14", "slot": "3", "gpus": "4", "extra_yaml": "{bmc_user: x}"})
+    form["computes"].append({"name": "ct04", "host": "10.0.0.14", "slot": "3", "gpus": "4", "extra_yaml": "{pdu_outlet: x}"})
     form["thresholds_yaml"] = "switch: {interface_mtu: 9000}\n"
     out = ie.from_form(data, form)
-    assert out["computes"][3] == {"name": "ct04", "host": "10.0.0.14", "gpus": 4, "slot": 3, "bmc_user": "x"}
+    assert out["computes"][3] == {"name": "ct04", "host": "10.0.0.14", "gpus": 4, "slot": 3, "pdu_outlet": "x"}
     assert out["thresholds"] == {"switch": {"interface_mtu": 9000}} and out["afm"] == data["afm"]
     res = ie.save(inv, {"form": form, "sha": ie.sha(INV)})
     assert res["saved"] and not res["comments_kept"]

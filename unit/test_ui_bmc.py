@@ -76,3 +76,20 @@ def test_bmc_cmd_uses_the_nodes_own_variable_only_when_there_is_one():
     assert bmc_cmd(cmd, "c1", {"HELIOS_BMC_PASSWORD_ST1": "x"}) == cmd
     assert bmc_cmd("X=${HELIOS_BMC_PASSWORD} y", "st1", {"HELIOS_BMC_PASSWORD_ST1": "x"}) == "X=$HELIOS_BMC_PASSWORD_ST1 y"
     assert bmc_cmd("$HELIOS_BMC_PASSWORD_OTHER", "st1", {"HELIOS_BMC_PASSWORD_ST1": "x"}) == "$HELIOS_BMC_PASSWORD_OTHER"
+
+
+def test_bmc_address_and_user_go_into_the_inventory_yaml_with_a_backup(served, tmp_path):
+    """Setup node table: st1 had no bmc address (20 Oct, MR3: CPU-BMC 10.153.80.84) - saved into its inventory
+    entry, comments elsewhere kept, the old file backed up; passwords never go there."""
+    c = served
+    inv = tmp_path / "mr3.yaml"
+    inv.write_text("# MR3 mini rack\n" + inv.read_text())
+    st, d = c.j("POST", "/api/racks/mr3/nodes/st1/bmc", {"bmc": "10.153.80.84", "bmc_user": "admin"})
+    assert st == 200 and next(n for n in d["nodes"] if n["name"] == "st1")["bmc"] == "10.153.80.84"
+    data = yaml.safe_load(inv.read_text())
+    assert data["switches"][0]["bmc"] == "10.153.80.84" and data["switches"][0]["bmc_user"] == "admin"
+    assert inv.read_text().startswith("# MR3 mini rack") and list(tmp_path.glob("mr3.yaml.bak-*"))
+    assert c.j("POST", "/api/racks/mr3/nodes/st1/bmc", {"bmc": "10.0.0.1; rm -rf /"})[0] == 400
+    assert c.j("POST", "/api/racks/mr3/nodes/st1/bmc", {"bmc_password": "x"})[0] == 400
+    st, d = c.j("POST", "/api/racks/mr3/nodes/st1/bmc", {"bmc_user": ""})          # empty = removed
+    assert st == 200 and "bmc_user" not in yaml.safe_load(inv.read_text())["switches"][0]

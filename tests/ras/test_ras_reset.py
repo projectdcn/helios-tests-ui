@@ -7,7 +7,7 @@ All cases are disruptive (--allow-disruptive). Inventory keys under ``commands.r
   datapath_reset   default "afmctl reset device --datapath"   placeholders: {name}
   ready_check      optional; polled until rc=0 after any reset   placeholders: {name}
   partial_stations_down / partial_stations_up   take some IFoE stations down / restore (002, 004)
-  dc_cycle / ac_cycle   run on the test runner (BMC / PDU)     placeholders: {name} {host} {bmc} {pdu_outlet}
+  dc_cycle / ac_cycle   run on the test runner (BMC / PDU)     placeholders: {name} {host} {bmc} {bmc_user} {pdu_outlet}
 """
 from __future__ import annotations
 
@@ -136,7 +136,8 @@ def _power_event(kind, rack, computes, inventory, checks, record_property):
         if "{pdu_outlet}" in tmpl and not extra.get("pdu_outlet"):
             pytest.skip(f"{target.name}: no 'pdu_outlet' in inventory")
         r = rack.runner.run(bmc_cmd(render(tmpl, name=target.name, host=target.host.host, bmc=extra.get("bmc", ""),
-                                   pdu_outlet=extra.get("pdu_outlet", "")), target.name), timeout=120)
+                                   bmc_user=extra.get("bmc_user", ""), pdu_outlet=extra.get("pdu_outlet", "")),
+                                    target.name), timeout=120)
     assert r.ok, f"{target.name}: {kind} command failed rc={r.rc} {r.tail()!r}"
 
     boot_timeout = float(inventory.th("ras.boot_timeout_s", 900))

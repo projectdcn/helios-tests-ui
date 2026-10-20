@@ -271,18 +271,28 @@ async function loadBmc() {
   const jump = setup && setup.runner === "ssh";
   $("#bmc-jump").hidden = !jump;
   const cell = n => {
+    // address + user go into the node's inventory entry (dated backup); the password into the password store
+    const addr = h("input", { size: 13, value: n.bmc, placeholder: "BMC IP address", "aria-label": `BMC address of ${n.name}`, spellcheck: "false" });
+    const user = h("input", { size: 9, value: n.bmc_user, placeholder: "BMC user", "aria-label": `BMC user of ${n.name}`, spellcheck: "false" });
     const inp = h("input", { type: "password", size: 12, autocomplete: "new-password", "aria-label": `BMC password of ${n.name}`,
       placeholder: n.saved ? "saved - type to change" : (d.default && d.default.saved ? "default used" : "BMC password") });
     const save = async () => {
       const pw = inp.value; inp.value = "";
-      if (!pw) return;
-      try { await api("POST", `/api/racks/${enc(r)}/nodes/${enc(n.name)}/bmc-password`, { password: pw }); loadBmc(); }
-      catch (e) { st.textContent = e.message; st.className = "err small"; }
+      const changed = addr.value.trim() !== n.bmc || user.value.trim() !== n.bmc_user;
+      if (!pw && !changed) { st.textContent = "nothing changed"; st.className = "muted small"; return; }
+      try {
+        if (changed) {
+          const res = await api("POST", `/api/racks/${enc(r)}/nodes/${enc(n.name)}/bmc`, { bmc: addr.value.trim(), bmc_user: user.value.trim() });
+          if (res.backup) $("#inst-msg").textContent = `${n.name}: BMC saved in the inventory (backup ${res.backup.split("/").pop()})`;
+        }
+        if (pw) await api("POST", `/api/racks/${enc(r)}/nodes/${enc(n.name)}/bmc-password`, { password: pw });
+        loadBmc();
+      } catch (e) { st.textContent = e.message; st.className = "err small"; }
     };
-    inp.addEventListener("keydown", ev => { if (ev.key === "Enter") { ev.preventDefault(); save(); } });
-    const st = h("span", { class: n.saved ? "ok small" : "muted small" }, n.error || (n.saved ? "own ✓" : (d.default && d.default.saved ? "default" : "none")));
-    return [h("div", { class: "muted small" }, n.bmc || "(no bmc address in the inventory)"), inp, " ",
-      h("button", { type: "button", disabled: !d.available, onclick: save }, "Save"), " ",
+    for (const x of [addr, user, inp]) x.addEventListener("keydown", ev => { if (ev.key === "Enter") { ev.preventDefault(); save(); } });
+    const st = h("span", { class: n.saved ? "ok small" : "muted small" }, n.error || (n.saved ? "own ✓" : (d.default && d.default.saved ? "default" : "no password")));
+    return [h("div", { class: "row tight" }, addr, user), inp, " ",
+      h("button", { type: "button", onclick: save, title: "address and user into the inventory, password into the password store" }, "Save"), " ",
       n.saved ? h("button", { type: "button", title: "forget this node's own BMC password (the default applies again)",
         onclick: async () => { await api("POST", `/api/racks/${enc(r)}/nodes/${enc(n.name)}/bmc-password/delete`, {}).catch(() => {}); loadBmc(); } }, "Forget") : null,
       " ", st].filter(x => x !== null);
@@ -1040,8 +1050,8 @@ $("#rerun-go").addEventListener("click", async () => {
 });
 
 // ---------------------------------------------------------------- inventory editor
-const COLS = { switches: ["name", "host", "user", "port", "key_file", "bmc", "afm_name"],
-               computes: ["name", "host", "user", "gpus", "bmc", "slot", "afm_name"] };
+const COLS = { switches: ["name", "host", "user", "port", "key_file", "bmc", "bmc_user", "afm_name"],
+               computes: ["name", "host", "user", "gpus", "bmc", "bmc_user", "slot", "afm_name"] };
 $("#inv-reload").addEventListener("click", loadInventory);
 // import: a YAML file from the browser's computer goes into the raw editor and is previewed - saved only on Save
 $("#inv-import-btn").addEventListener("click", () => $("#inv-import").click());

@@ -130,7 +130,8 @@ class App:
         """[{name, role, bmc}] of the rack's switches and computes (from its inventory)."""
         from helios.inventory import load_inventory
         inv = load_inventory(self.profile(rack).inventory)
-        return [{"name": h.name, "role": h.role, "bmc": str(h.extra.get("bmc") or "")} for h in [*inv.switches, *inv.computes]]
+        return [{"name": h.name, "role": h.role, "bmc": str(h.extra.get("bmc") or ""),
+                 "bmc_user": str(h.extra.get("bmc_user") or "")} for h in [*inv.switches, *inv.computes]]
 
     def bmc_status(self, rack: str) -> dict:
         """Per node: its BMC address and whether it has its own saved BMC password (never the password)."""
@@ -710,6 +711,16 @@ class Handler(BaseHTTPRequestHandler):
             if path == "/api/runs":
                 run, kc = self.app.start_run(body, started_by=self._by() or None)
                 return self.json({**self.app.runs.get(run.id), "keychain": kc}, 201)
+            m = re.fullmatch(r"/api/racks/([^/]+)/nodes/([^/]+)/bmc", path)
+            if m:                                  # a node's BMC address / user -> its inventory entry (dated backup)
+                p = self.app.profile(m.group(1))
+                if not body or set(body) - {"bmc", "bmc_user"}:      # a password never goes into the inventory
+                    return self.err(400, "send bmc and / or bmc_user only (passwords: .../bmc-password)")
+                vals = {k: (str(body[k]).strip() if body.get(k) is not None else None) for k in ("bmc", "bmc_user") if k in body}
+                with self.app.edit_lock:
+                    res = inventory_edit.save(p.inventory, {"node_keys": {"node": m.group(2), "set": vals}})
+                return self.json({"saved": res["saved"], "backup": res["backup"], "warnings": res["warnings"],
+                                  **self.app.bmc_status(m.group(1))})
             m = re.fullmatch(r"/api/racks/([^/]+)/nodes/([^/]+)/bmc-password(/delete)?", path)
             if m:                                  # one node's own BMC password: save / forget; never sent back
                 rack, node = m.group(1), m.group(2)

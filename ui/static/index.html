@@ -76,7 +76,7 @@
   <div class="box">
     <h3>Install the key on <span id="inst-where"></span></h3>
     <p class="muted small">Each password is used once to add the key to that account's <code>~/.ssh/authorized_keys</code>, then key-only login is checked. Passwords are not saved or logged; nodes where key login already works need none. Type a node's password in its row (wins), or one password per account below for every node of that account.</p>
-    <table id="inst-targets"><thead><tr><th>Node</th><th>Account</th><th>Password (this node, used once)</th><th>BMC: address, own password (saved)</th><th>Result</th><th></th></tr></thead><tbody></tbody></table>
+    <table id="inst-targets"><thead><tr><th>Node</th><th>Account</th><th>Password (this node, used once)</th><th>BMC: address, user, own password (saved)</th><th>Result</th><th></th></tr></thead><tbody></tbody></table>
     <form id="inst-form" class="row" autocomplete="off">
       <span id="inst-pw"></span>
       <button type="submit" class="primary" id="inst-go">Install key</button>
@@ -84,7 +84,7 @@
     </form>
     <div id="bmc-jump" hidden>
       <h4>BMC passwords of the rack's nodes</h4>
-      <table id="bmc-targets"><thead><tr><th>Node</th><th>BMC: address, own password (saved)</th></tr></thead><tbody></tbody></table>
+      <table id="bmc-targets"><thead><tr><th>Node</th><th>BMC: address, user, own password (saved)</th></tr></thead><tbody></tbody></table>
     </div>
     <p class="muted small">BMC password: a node's own one (saved here) is used for that node; nodes without one use the
       rack's default BMC password (Inventory tab). Kept <span class="bmc-store">in the password store</span> of the UI

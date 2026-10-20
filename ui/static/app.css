@@ -92,6 +92,7 @@ fieldset { min-width: 0; }
 #logout { margin-left: 8px; }
 #users { margin-left: auto; }
 #inst-targets .inst-one { white-space: nowrap; }
+.bmc-cell .row.tight { gap: 4px; margin: 0 0 4px; flex-wrap: nowrap; }
 #inst-targets td:nth-child(2) { white-space: nowrap; }
 #tp-box.drop, #tab-inventory.drop { outline: 2px dashed var(--accent, #2563eb); outline-offset: 4px; }
 #users::first-letter { color: var(--pass, #16a34a); }

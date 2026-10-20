@@ -27,8 +27,10 @@ from .config import find_secrets
 ROLES = (("switches", "switch"), ("computes", "compute"))
 DATE_RX = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 # form columns per role; every other key of an entry is kept in 'extra' (YAML)
-COLUMNS = {"switches": ("name", "host", "user", "port", "key_file", "bmc", "afm_name"),
-           "computes": ("name", "host", "user", "gpus", "bmc", "slot", "afm_name")}
+COLUMNS = {"switches": ("name", "host", "user", "port", "key_file", "bmc", "bmc_user", "afm_name"),
+           "computes": ("name", "host", "user", "gpus", "bmc", "bmc_user", "slot", "afm_name")}
+BMC_ADDR_RX = re.compile(r"^[A-Za-z0-9][A-Za-z0-9.:-]{0,252}$")
+BMC_USER_RX = re.compile(r"^[A-Za-z0-9_][A-Za-z0-9_.@-]{0,63}$")
 INT_KEYS = ("port", "gpus", "slot")
 
 
@@ -408,6 +410,26 @@ def _find_node(data: dict, node: str) -> tuple[str, int]:
     raise EditError([f"no switch / compute named {node!r} in the inventory"])
 
 
+def set_node_keys(text: str, node: str, values: dict) -> tuple[str, bool]:
+    """(new text, comments kept): set / remove (None or "") keys of one switch / compute entry, e.g. its BMC
+    address and user from the Setup tab's node table. Only that entry is re-written (merge_text)."""
+    old_data = yaml.safe_load(text) or {}
+    key, i = _find_node(old_data, node)
+    new_data = copy.deepcopy(old_data)
+    e = new_data[key][i]
+    if isinstance(e, str):
+        e = new_data[key][i] = {"name": e}
+    for k, v in values.items():
+        if v in (None, ""):
+            e.pop(k, None)
+        else:
+            e[k] = v
+    merged = merge_text(text, old_data, new_data)
+    if merged:
+        return merged[0], not merged[1]
+    return _dump(new_data), False
+
+
 def _patch_text(text: str, key: str, node: str, q: dict | None) -> str | None:
     """Edit only the node's entry; None when the layout is not one this handles (caller re-writes the YAML)."""
     lines = text.splitlines(keepends=True)
@@ -541,6 +563,15 @@ def prepare(path: Path, req: dict) -> dict:
         qr = req["quarantine"] or {}
         new, kept = set_quarantine(old, str(qr.get("node") or ""), bool(qr.get("enabled")), qr.get("reason") or "",
                                    (qr.get("until") or "").strip() or None)
+    elif "node_keys" in req:
+        nk = req["node_keys"] or {}
+        vals = dict(nk.get("set") or {})
+        for k, rx in (("bmc", BMC_ADDR_RX), ("bmc_user", BMC_USER_RX)):
+            if vals.get(k) not in (None, "") and not rx.match(str(vals[k])):
+                raise EditError([f"{nk.get('node')}: {k} {vals[k]!r} is not valid"])
+        if set(vals) - {"bmc", "bmc_user"}:
+            raise EditError(["only bmc and bmc_user can be set here"])
+        new, kept = set_node_keys(old, str(nk.get("node") or ""), vals)
     elif "form" in req:
         old_data = yaml.safe_load(old) or {}
         new_data = from_form(old_data, req["form"])
