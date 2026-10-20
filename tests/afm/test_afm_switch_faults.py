@@ -98,7 +98,14 @@ def test_congestion_detected_on_incast(ops, rack, computes, inventory, datapath_
     unicast-queue watermark of those ports reaches congestion_wm_factor (4) x the idle peak and at least
     congestion_wm_min_bytes (100 000). Afterwards no queue drops grow on them, every port that was up is up, and the
     system vPOD's planes are back. Watermarks refresh every switch.watermark_interval_s (120 s), so each read waits for
-    one interval after a clear."""
+    one interval after a clear.
+
+    BLOCKED (not FAILED) when no real incast can be made: fewer than congestion_min_sources (3) Ready trays that passed
+    the datapath pre-flight, or a load that did not run - a TransferBench job failed or it ran shorter than the
+    watermark interval. g02-g17 19 Oct 00:05 UTC: 2 sources, one rank died ('recv: Invalid argument', shared master
+    port - fixed by incast_base_port), 6.6 s of one-to-one traffic; the run then reported 'no congestion seen', which
+    judged the switch on a load that never happened (it ran during the port-bouncing storm, 18 Oct 15:18 - 19 Oct
+    01:00 UTC, with few trays Ready)."""
     datapath.require_transferbench_cross(inventory)
     th = lambda k, d: inventory.th(k, d)  # noqa: E731
     by_name = {t.name: t for t in computes}
@@ -123,6 +130,12 @@ def test_congestion_detected_on_incast(ops, rack, computes, inventory, datapath_
         pytest.skip(f"none of congestion_source_trays {want_src} is a Ready compute that passed the pre-flight")
     record_property("destination", f"{dst.name} (slot {dst_slot})")
     record_property("sources", [t.name for t in srcs])
+    record_property("ready_trays", [f"{t.name} (slot {s_})" for s_, t in trays])      # evidence that survives a cut log
+    min_src = int(th("datapath.congestion_min_sources", min(3, n_src)))
+    if len(srcs) < min_src:
+        pytest.fail(f"incast pre-flight failed - only {len(srcs)} source tray(s) ({', '.join(t.name for t in srcs) or 'none'}) "
+                    f"are Ready and passed the datapath pre-flight, an incast needs {min_src} "
+                    f"(thresholds.datapath.congestion_min_sources); Ready trays: {[t.name for _, t in trays]}", pytrace=False)
     ports = _slot_ports(rack, dst_slot)
     up = {k for k, v in ports.items() if v == "up"}
     checks.check(up, f"no up switch port cabled to {dst.name} (slot {dst_slot})")
@@ -140,8 +153,15 @@ def test_congestion_detected_on_incast(ops, rack, computes, inventory, datapath_
     drops0 = _drops(rack, up)
     # loaded peak: clear, load for at least one interval, wait for the next refresh
     _clear_wm(rack, up)
-    load = datapath.transferbench_incast(dst, srcs, inventory, checks,
-                                         max(float(th("datapath.congestion_traffic_s", 150)), interval))
+    want_s = max(float(th("datapath.congestion_traffic_s", 150)), interval)
+    load = datapath.transferbench_incast(dst, srcs, inventory, checks, want_s)
+    broken = [k for rnd in load["bw_gbps"] for k, v in rnd.items() if v is None]
+    if broken or load["seconds"] < interval:
+        record_property("traffic", {"rounds": load["rounds"], "seconds": load["seconds"], "failed_jobs": sorted(set(broken))})
+        pytest.fail(f"incast pre-flight failed - the load was not generated: {load['rounds']} round(s), "
+                    f"{load['seconds']} s of the {want_s:.0f} s wanted"
+                    + (f", TransferBench failed for {', '.join(sorted(set(broken)))}" if broken else "")
+                    + " - congestion not judged.\n" + "\n".join(f"  - {f}" for f in checks.failures), pytrace=False)
     time.sleep(interval)
     loaded = _watermarks(rack, up)
     drops1 = _drops(rack, up)
