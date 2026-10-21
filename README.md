@@ -125,11 +125,15 @@ export HELIOS_BMC_PASSWORD=...                   # simulator BMC password: selft
 | QoS | `--qos none` (g02-g17 default, as the real rack: no PFC), `mr3` (blantons-mr3-sw 20 Oct, with its six TC-SWH-063 findings), `lossless` (complete: TC-SWH-063 passes) |
 | Data path | TransferBench jobs become flows over the cabled planes; switch counters follow the load and the QoS: below line rate a few KB of queue; over it, lossless classes pause the sources (PFC Tx, PG / queue at xoff, no drops), lossy ones drop. Single-node / 2-rank a2a / one-way incast (`cmdline` with `R<rank>G<gpu>`) give g02-g17-like bandwidths |
 | Faults | ~100 (`selftest/fake_rack.py`, `fake_afm.py`), switched on / off at run time through the control API |
-| Timing | instant by default; `--realistic`: a link comes back ~4 s after `startup`; `--time-scale` scales failover timers |
+| Timing | instant by default; `--realistic`: a link comes back ~4 s after `startup`, a tray reboots in 60 s; `--time-scale` scales the failover timers and the written inventory's test timers (1 = real-rack waits) |
+| Power | a tray's OS reboot (`systemctl reboot`) or Redfish `ComputerSystem.Reset` on its BMC (the written `commands.ras.dc_cycle`) drops its SSH sessions, refuses new ones, takes it out of AFM (computenode_unreachable) and brings it back |
 | State | saved every 30 s and on exit (`~/.helios-vrack/state.pickle`, 0600) and restored at the next start with the clocks shifted; `--fresh` starts clean |
 
-- In-process on the same layout: `.venv/bin/pytest tests/afm --inventory selftest/inventory-g02-g17.yaml
-  --allow-disruptive` (281 pass, 58 skip); through the virtual rack over SSH the same.
+- Results (21 Oct): `tests/afm` 282 pass, 58 skip (in-process on the g02-g17 and 3-switch layouts; the same through the
+  virtual rack over SSH); all other suites through the virtual rack, disruptive included, 500 pass, 114 skip, 12 fail -
+  TC-SWH-031 / TC-SWA-223 (no LLDP neighbours on the GPU ports), which fail the same way on the real g02-g17. A
+  real-timing sample (`--time-scale 1 --realistic`: TC-E2E-144, TC-CTL-098, TC-AFM-011/012, TC-E2E-055/122, TC-SWH-060/061)
+  passes in 7 min.
 - It is a simulation: counters, bandwidths and timing are modelled - for developing and checking tests, not for
   judging the product.
 

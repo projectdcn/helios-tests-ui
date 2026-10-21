@@ -774,6 +774,7 @@ class FakeSwitchTransport:
         st, sim, i = self.st, self.st.sim, self.i
         res = None
         with st.lock:
+            sim._due_links()            # realistic timing: a link due back is up for the switch CLI as well
             if cmd == "docker exec afm-agent ps -eo pid,etimes,args":
                 body = self.run("docker exec afm-agent ps -eo pid,args").stdout
                 sa, na = (600, 900) if "node_agent_first" in st.f else (900, 600)

@@ -252,12 +252,45 @@ def _filter(argv: list[str], data: str) -> tuple[int, str] | None:
 class Node:
     """One simulated host: its SSH port and the fake transport that answers its commands."""
 
+    reboot_s = 2.0                       # set by main: 60 s with --realistic, else 30 s x time scale (>= 2 s)
+
     def __init__(self, name: str, role: str, port: int, transport):
         self.name, self.role, self.port, self.t = name, role, port, transport
+        self.down_until = 0.0
+        self.sessions: list = []         # live paramiko transports, dropped by a reboot
+
+    @property
+    def rebooting(self) -> bool:
+        return time.monotonic() < self.down_until
+
+    def reboot(self, delay: float = 0.0) -> None:
+        """Power cycle / OS reboot of a compute tray: after ``delay`` its SSH sessions drop and new ones are refused,
+        AFM loses its management connection (event), and ``reboot_s`` later it is back."""
+        def down():
+            self.down_until = time.monotonic() + self.reboot_s
+            st = self.t.st
+            if self.role == "compute":
+                with st.lock:
+                    st.sim.mgmt_compute(self.t.slot, True)
+            for tr in list(self.sessions):
+                try:
+                    tr.close()
+                except Exception:  # noqa: BLE001
+                    pass
+            threading.Timer(self.reboot_s, up).start()
+
+        def up():
+            if self.role == "compute":
+                with self.t.st.lock:
+                    self.t.st.sim.mgmt_compute(self.t.slot, False)
+        threading.Timer(max(0.0, delay), down).start()
 
     def run(self, raw: str, timeout: float = 120) -> tuple[int, str, str]:
         cmd, sudo, env = unwrap(raw)
         if not cmd.strip():
+            return 0, "", ""
+        if self.role == "compute" and re.search(r"\bsystemctl\s+reboot\b|\breboot\b\s*(-f)?\s*$", cmd):
+            self.reboot(delay=2.0)         # 'nohup sh -c "sleep 2; systemctl reboot" &' - answers, then goes down
             return 0, "", ""
         r = self.t.run(cmd, timeout=timeout, sudo=sudo, env=env or None)
         if r.rc == 127 and NO_RULE in (r.stderr or "") and len(split_shell(cmd)) > 1:
@@ -386,7 +419,11 @@ def _shell(node: Node, chan: paramiko.Channel) -> None:
 
 
 def _client(node: Node, sock: socket.socket, host_key: paramiko.PKey, keys: set) -> None:
+    if node.rebooting:                   # powered off: the connection is refused, like a rebooting host
+        sock.close()
+        return
     tr = paramiko.Transport(sock)
+    node.sessions = [s for s in node.sessions if s.is_active()] + [tr]
     tr.add_server_key(host_key)
     try:
         tr.start_server(server=_Server(node, keys))
@@ -564,6 +601,22 @@ def write_inventory(path: Path, st: State, nodes: list[Node], afm_url: str, topo
         import yaml
         tpl = yaml.safe_load((ROOT / "selftest" / template).read_text()) or {}
         rest = {k: tpl[k] for k in ("commands", "thresholds") if k in tpl}
+        # the self-test inventory's timers are sized for its own time scale (0.05): rescale them to this rack's, so a
+        # real-timing rack (--time-scale 1) gets real waits (fdb_reconcile_s 15 -> 300, link_watch_s 1 -> 20, ...)
+        afm = (rest.get("thresholds") or {}).get("afm") or {}
+        t0 = float(afm.get("time_scale", time_scale) or time_scale)
+        if afm and abs(t0 - time_scale) > 1e-9:
+            f = time_scale / t0
+            for group in ("afm", "switch"):
+                g = (rest.get("thresholds") or {}).get(group) or {}
+                for k, v in list(g.items()):
+                    if k.endswith("_s") and isinstance(v, (int, float)) and not isinstance(v, bool):
+                        g[k] = round(v * f, 3)
+            afm["time_scale"] = time_scale
+        ras = rest.setdefault("commands", {}).setdefault("ras", {})
+        # power cycle through the tray's simulated BMC (Redfish reset; the password stays a variable name)
+        ras["dc_cycle"] = ("curl -skf -u {bmc_user}:$HELIOS_BMC_PASSWORD -X POST -H 'Content-Type: application/json' "
+                           "-d '{{\"ResetType\": \"PowerCycle\"}}' {bmc}/redfish/v1/Systems/system/Actions/ComputerSystem.Reset")
         if time_scale < 1:
             sw = rest.setdefault("thresholds", {}).setdefault("switch", {})
             for k, v in _WINDOWS.items():
@@ -616,6 +669,7 @@ def main(argv=None) -> int:
         h = Host(name=ct_fmt.format(n=s + 1), host=f"10.0.1.{s + 1}", role="compute")
         nodes.append(Node(h.name, "compute", port, FakeComputeTransport(h, st, s, ReplayTransport(h, replay))))
         port += 1
+    Node.reboot_s = 60.0 if a.realistic else max(2.0, 30.0 * a.time_scale)
     host_key, keys = _host_key(state_dir), {(k.get_name(), k.asbytes()) for k in _keys(state_dir)}
     if not keys:
         print(f"no public key in {state_dir / 'authorized_keys'} - SSH logins will fail", file=sys.stderr)
@@ -625,7 +679,8 @@ def main(argv=None) -> int:
     bmc_base = a.bmc_port or a.ssh_port + 200
     for k, n in enumerate(nodes):
         build = fake_redfish.blanton if n.role == "switch" else fake_redfish.openbmc
-        n.bmc = fake_redfish.RedfishServer(build, n.role, (a.bind, bmc_base + k)).start()
+        reset = (lambda body, node=n: node.reboot()) if n.role == "compute" else None
+        n.bmc = fake_redfish.RedfishServer(build, n.role, (a.bind, bmc_base + k), on_reset=reset).start()
     _control(st, a.bind, a.afm_port + 1)
     inv = state_dir / "inventory.local.yaml"
     write_inventory(inv, st, nodes, afm.url, a.topology, a.bind, template, a.time_scale)

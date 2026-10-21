@@ -151,7 +151,7 @@ def openbmc(power="On", fw="2.14.0", temp=45.0, crit_log=False):
 class RedfishServer:
     """HTTPS Redfish service over one tree builder (self-signed certificate, like a BMC)."""
 
-    def __init__(self, build, role: str, bind: tuple[str, int], power=lambda: "On"):
+    def __init__(self, build, role: str, bind: tuple[str, int], power=lambda: "On", on_reset=None):
         auth = "Basic " + base64.b64encode(f"{BMC_USER[role]}:{BMC_PW}".encode()).decode()
 
         class H(BaseHTTPRequestHandler):
@@ -181,10 +181,26 @@ class RedfishServer:
                 self._send(200, (body if isinstance(body, str) else json.dumps(body)).encode(), ctype)
 
             def do_POST(self):
+                raw = self.rfile.read(int(self.headers.get("Content-Length") or 0))
+                # the one action a simulated tray BMC accepts: a system reset (power cycle); everything else read-only
+                if on_reset and self.path.rstrip("/") == "/redfish/v1/Systems/system/Actions/ComputerSystem.Reset":
+                    if self.headers.get("Authorization") != auth:
+                        return self._send(401, b'{"error": "unauthorized"}')
+                    try:
+                        body = json.loads(raw or b"{}")
+                    except ValueError:
+                        return self._send(400, b'{"error": "invalid JSON"}')
+                    if body.get("ResetType") not in ("PowerCycle", "ForceRestart", "GracefulRestart"):
+                        return self._send(400, b'{"error": "ResetType PowerCycle / ForceRestart / GracefulRestart"}')
+                    on_reset(body)
+                    return self._send(204)
+                self._send(405, b'{"error": "read-only simulated BMC"}')
+
+            def do_PATCH(self):
                 self.rfile.read(int(self.headers.get("Content-Length") or 0))
                 self._send(405, b'{"error": "read-only simulated BMC"}')
 
-            do_PATCH = do_PUT = do_DELETE = do_POST
+            do_PUT = do_DELETE = do_PATCH
 
         self.httpd = ThreadingHTTPServer(bind, H)
         self.httpd.daemon_threads = True
