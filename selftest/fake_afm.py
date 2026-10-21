@@ -183,6 +183,7 @@ class State:
 class Handler(BaseHTTPRequestHandler):
     protocol_version = "HTTP/1.1"
     st: State  # set by FakeAfm
+    tls = True   # set by FakeAfm: False on the virtual rack's plain-HTTP browser view
 
     def log_message(self, *a):  # quiet
         pass
@@ -397,7 +398,9 @@ class Handler(BaseHTTPRequestHandler):
         sid = secrets.token_hex(16)
         st.sessions[sid] = body["username"]
         st.record(body["username"], "Login", "User", body["username"], "/v1/login")
-        flags = "; Path=/; Secure; HttpOnly" + ("" if "cookie_flags" in st.f else "; SameSite=Strict")
+        # Secure only over HTTPS: the virtual rack's plain-HTTP browser view (tls False) would otherwise get a cookie
+        # Safari / Firefox refuse to store on http://127.0.0.1, and every view after sign-in would answer 401
+        flags = "; Path=/" + ("; Secure" if self.tls else "") + "; HttpOnly" + ("" if "cookie_flags" in st.f else "; SameSite=Strict")
         o = copy.deepcopy(u["obj"])
         if body["username"] != "admin":
             o["status"]["roles"] = st.user_roles(body["username"])
@@ -418,7 +421,7 @@ class Handler(BaseHTTPRequestHandler):
             st.sessions[sid] = body["username"]
             st.record(body["username"], "Login", "User", body["username"], "/v1/login")
             o = obj("User", body["username"], {"type": kind}, {"authenticators": [kind], "roles": []})
-            return self._send(200, o, {"Set-Cookie": f"sid={sid}; Path=/; Secure; HttpOnly; SameSite=Strict",
+            return self._send(200, o, {"Set-Cookie": f"sid={sid}; Path=/{'; Secure' if self.tls else ''}; HttpOnly; SameSite=Strict",
                                        "Grpc-Metadata-Csrf-Token": secrets.token_hex(8)})
         return self._send(401, {"result": {"Str": "Unauthorized"}, "message": ["Invalid username/password"], "code": 401})
 
@@ -910,7 +913,7 @@ class FakeAfm:
     def __init__(self, faults: set[str] | None = None, topology: dict | None = None, bind: tuple[str, int] = ("127.0.0.1", 0),
                  state: "State | None" = None, tls: bool = True):
         self.state = state or State(set(faults or ()), topology)
-        handler = type("H", (Handler,), {"st": self.state})
+        handler = type("H", (Handler,), {"st": self.state, "tls": tls})
         self.httpd = ThreadingHTTPServer(bind, handler)
         self.httpd.daemon_threads = True
         self.tls = tls
