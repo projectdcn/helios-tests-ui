@@ -118,6 +118,8 @@ thresholds:
     congestion_min_sources: 2      # 3 trays: an incast of 2 sources onto 1 (the g02-g17 default is 3)
 
   switch:
+    expected_up_ports: described       # as the real g02-g17 inventory: only cabled (described) ports must be up
+    port_speed_overrides: {Ethernet513: 100G, Ethernet514: 100G}   # the two 100G uplinks
     watermark_interval_s: 0
     watermark_margin_s: 0.5
     queue_window_s: 1

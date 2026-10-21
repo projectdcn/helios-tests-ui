@@ -532,8 +532,15 @@ def load_state(path: Path, meta: dict):
     return st, f"restored the rack state saved {time.time() - float(d['wall']):.0f} s ago"
 
 
+# switch watch windows (thresholds.switch) the L1 cases wait out per switch: scaled with --time-scale, so a run on the
+# virtual rack at 0.05 takes minutes; at 1.0 the real-rack defaults stay
+_WINDOWS = {"err_window_s": 30, "fec_window_s": 30, "link_poll_s": 10, "link_watch_s": 120, "mgmt_window_s": 60,
+            "pfc_window_s": 30, "queue_window_s": 30, "rss_window_s": 60, "traffic_window_s": 35,
+            "watermark_interval_s": 120, "fan_response_window_s": 120, "poll_interval_s": 10}
+
+
 def write_inventory(path: Path, st: State, nodes: list[Node], afm_url: str, topo_name: str, base: str,
-                    template: str | None = None) -> None:
+                    template: str | None = None, time_scale: float = 1.0) -> None:
     sw = [n for n in nodes if n.role == "switch"]
     ct = [n for n in nodes if n.role == "compute"]
     lines = [f"# virtual rack ({topo_name}) - written by selftest/vrack.py; simulated, nothing here is a real host",
@@ -557,6 +564,10 @@ def write_inventory(path: Path, st: State, nodes: list[Node], afm_url: str, topo
         import yaml
         tpl = yaml.safe_load((ROOT / "selftest" / template).read_text()) or {}
         rest = {k: tpl[k] for k in ("commands", "thresholds") if k in tpl}
+        if time_scale < 1:
+            sw = rest.setdefault("thresholds", {}).setdefault("switch", {})
+            for k, v in _WINDOWS.items():
+                sw.setdefault(k, max(1, round(v * time_scale)))
         if rest:
             lines.append(yaml.safe_dump(rest, sort_keys=False).rstrip())
     path.write_text("\n".join(lines) + "\n")
@@ -617,7 +628,7 @@ def main(argv=None) -> int:
         n.bmc = fake_redfish.RedfishServer(build, n.role, (a.bind, bmc_base + k)).start()
     _control(st, a.bind, a.afm_port + 1)
     inv = state_dir / "inventory.local.yaml"
-    write_inventory(inv, st, nodes, afm.url, a.topology, a.bind, template)
+    write_inventory(inv, st, nodes, afm.url, a.topology, a.bind, template, a.time_scale)
     print(f"virtual rack '{a.topology}' up ({n_sw} switches, {n_ct} compute trays, switch QoS {st.sim.qos}) - "
           "simulated, loopback only")
     print(f"  AFM      {afm.url}   (simulator login: user {ADMIN[0]}, password in selftest/fake_afm.py ADMIN)")

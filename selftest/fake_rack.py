@@ -103,6 +103,7 @@ class Sim:
         # realistic timing (vrack --realistic; 0 = instant, as the self-tests want): seconds a link takes to come
         # back after 'startup' (x time_scale), and the delayed link-ups waiting: (sw, ns, port) -> (due, quiet)
         self.link_up_s = 0.0
+        self.flap_count: dict[tuple, tuple] = {}        # (sw, ns, port) -> (times down, last down UTC) - APPL_DB
         self.pending_up: dict[tuple, tuple] = {}
         self.wm_cleared: dict[tuple, float] = {}
         # links: (sw, ns, port) -> {"since", "known", "coupled"}; a link fails after the vPOD policy's threshold
@@ -253,6 +254,12 @@ class Sim:
             self._qos_cache[key] = fake_qos.tables(self.qos, sorted(self.ports(i, ns), key=lambda x: int(x[8:])))
         return self._qos_cache[key]
 
+    @staticmethod
+    def port_mbps(e: dict) -> str:
+        """CONFIG_DB / STATE_DB speed (Mb/s) of a port from its layout speed ('400G' -> '400000')."""
+        sp = str(e.get("speed", "400G")).upper().rstrip("G")
+        return str(int(float(sp) * 1000)) if sp.replace(".", "").isdigit() else "400000"
+
     def all_ports(self, i, ns) -> list[tuple[str, dict]]:
         """Every switch port of an ASIC in EthernetN order with its lanes / speed / alias (a recorded layout lists the
         uncabled ports and 100G uplinks too; the generated layouts only have cabled 400G ports)."""
@@ -326,6 +333,8 @@ class Sim:
                         self.sticky.add(k)
                 self.failed_evt.discard(k)
             elif k not in self.links_down:
+                n, _ = self.flap_count.get(k, (0, ""))
+                self.flap_count[k] = (n + 1, datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S"))
                 if "cp_lost_on_link_down" in self.f:
                     self.stopped |= set(self.sb_pid)
                 self.links_down[k] = {"since": time.monotonic(), "known": self.agent_up[i], "admin": k == key}
@@ -634,7 +643,8 @@ class Sim:
         users = [] if "no_vlan_for_vpod" in self.f else sorted(
             v["meta"]["name"] for v in self.st.objs["VPod"].values()
             if not v["meta"]["name"].endswith(".system") and v["spec"].get("GPUs"))
-        return ["Vlan100", "Vlan200", "Vlan300"] + [f"Vlan{1000 + n}" for n in range(len(users))] + user
+        base = ["Vlan100"] if self.layout else ["Vlan100", "Vlan200", "Vlan300"]     # g02-g17: the one fabric VLAN
+        return base + [f"Vlan{1000 + n}" for n in range(len(users))] + user
 
     # ------------------------------------------------------------ lab equipment (runner-side commands)
     def mgmt_compute(self, slot, down: bool):
@@ -695,6 +705,13 @@ class Sim:
         if self.phase_sw(i) not in ("admitted", "drained"):
             return 0
         return sum(len(v["spec"].get("GPUs") or []) for v in objs["VPod"].values()) + self.stale_macs
+
+
+def gpu_mac(acc: int, pid: int) -> str:
+    """The MAC of accelerator ``acc``'s GPU port ``pid``, as on g02-g17: 02:00:00:<acc / 4>:<acc % 4>:<port>, the plane
+    in the last byte. The same address is the tray's own port MAC (afmctl show port), every peer's destination
+    entry for that (accelerator, port) (afmctl accelerator-addr) and the static FDB entry on the switch port."""
+    return f"02:00:00:{acc // 4:02x}:{acc % 4:02x}:{pid:02x}"
 
 
 def _table(headers: list[str], rows: list[list[str]]) -> str:
@@ -763,6 +780,9 @@ class FakeSwitchTransport:
                 res = self._res(cmd, "".join(
                     f"{ln.split(None, 1)[0]:>6} {sa + 1 if 'afm_agent.sh' in ln else sa if 'switch-agent' in ln else na:>6} "
                     f"{ln.split(None, 1)[1]}\n" for ln in body.splitlines() if ln.strip()))
+            elif cmd == "docker exec afm-agent ps -eo args":     # SonicSwitch.sb_node_agent_slots: no pid column
+                body = self.run("docker exec afm-agent ps -eo pid,args").stdout
+                res = self._res(cmd, "".join(ln.split(None, 1)[1] + "\n" for ln in body.splitlines() if ln.strip()))
             elif cmd == "docker exec afm-agent ps -eo pid,args":
                 lines = ["    1 /usr/bin/afm_agent.sh"] + ([] if "no_switch_agent_process" in st.f else ["   20 /switch-agent"]) \
                     if sim.agent_up[i] else []
@@ -785,7 +805,7 @@ class FakeSwitchTransport:
             elif m := re.fullmatch(r"docker (stop|start) afm-controller", cmd):
                 sim.controller(i, m.group(1))
                 res = self._res(cmd, "afm-controller\n")
-            elif cmd.startswith("docker inspect -f") and cmd.endswith("afm-controller"):
+            elif cmd.startswith("docker inspect -f") and cmd.endswith("afm-controller") and "StartedAt" in cmd:
                 t = datetime.fromtimestamp(sim.ctrl_started[i], timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%fZ")
                 res = self._res(cmd, f"{t} {sim.ctrl_restarts[i]}\n")
             elif cmd == "date +%s":
@@ -877,9 +897,17 @@ class FakeSwitchTransport:
             elif m := re.fullmatch(r"sonic-db-cli(?: -n (asic\d+))? CONFIG_DB keys 'VLAN\|\*'", cmd):
                 res = self._res(cmd, "".join(f"VLAN|{v}\n" for v in sim.vlans(i)))
             elif m := re.fullmatch(r"show mac(?: -n (asic\d+))?", cmd):
-                n = sim.macs(i, st.objs)
-                rows = "".join(f"  {k + 1}  Vlan100  02:00:00:00:{k:02x}:00  Ethernet{k}  Static\n" for k in range(n))
-                res = self._res(cmd, "  No.  Vlan  MacAddress  Port  Type\n-----  ----  ----  ----  ----\n" + rows)
+                # the switch's static FDB entries (one per GPU port of an admitted compute, as CONFIG_DB FDB) while
+                # the switch is admitted, plus fault stale_macs leftovers
+                rows = []
+                if sim.phase_sw(i) in ("admitted", "drained"):
+                    for ns_ in ([m.group(1)] if m.group(1) else ["asic0", "asic1"]):
+                        for ln in self._fdb_lines(ns_):
+                            _, vlan, mac, port = ln.split("|")
+                            rows.append([vlan.replace("Vlan", ""), mac.upper(), port, "Static"])
+                rows += [["100", f"02:00:00:FF:{k:02X}:00", "Ethernet0", "Static"] for k in range(sim.stale_macs)]
+                res = self._res(cmd, _table(["No.", "Vlan", "MacAddress", "Port", "Type"],
+                                            [[str(n + 1)] + r for n, r in enumerate(rows)]) + f"Total number of entries {len(rows)}\n")
             elif m := re.fullmatch(r"show interfaces status -n (asic\d+) -d all", cmd):
                 ns_ = m.group(1)
                 cabled = sim.ports(i, ns_)
@@ -901,6 +929,26 @@ class FakeSwitchTransport:
             elif m := re.fullmatch(r"config interface -n (asic\d+) (shutdown|startup) (Ethernet\d+)", cmd):
                 ok = sim.set_link(i, m.group(1), m.group(3), m.group(2) == "startup")
                 res = self._res(cmd, rc=0 if ok else 1)
+            elif "CONFIG_DB keys 'PORT|Ethernet*'" in cmd and cmd.startswith("for k in") and "hget \"$k\" speed" in cmd:
+                # SonicSwitch.port_speeds: "<port> <CONFIG_DB speed> <STATE_DB oper speed>" (Mb/s)
+                ns = re.search(r"-n (asic\d+)", cmd).group(1)
+                res = self._res(cmd, "".join(f"{p} {sim.port_mbps(e)} {sim.port_mbps(e) if sim.link_state(i, ns, p) == 'up' else ''}\n"
+                                             for p, e in sim.all_ports(i, ns)))
+            elif "STATE_DB keys 'PORT_TABLE|Ethernet*'" in cmd and cmd.startswith("for k in"):
+                # SonicSwitch.port_states: STATE_DB PORT_TABLE, CONFIG_DB speed, APPL_DB flap count / last down
+                ns = re.search(r"-n (asic\d+)", cmd).group(1)
+                cabled, lines = sim.ports(i, ns), []
+                for p, e in sim.all_ports(i, ns):
+                    up = p in cabled and sim.link_state(i, ns, p) == "up"
+                    sp = sim.port_mbps(e)
+                    lines.append(f"{p}|S|" + repr({"admin_status": sim.admin(i, ns, p), "oper_status": "up" if up else "down",
+                                                   "netdev_oper_status": "up" if up else "down", "speed": sp if up else "",
+                                                   "mtu": str(sim.mtu.get((i, ns, p), 9100)), "fec": "rs",
+                                                   "link_training_status": "off", "host_tx_ready": "true" if up else "false"}))
+                    lines.append(f"{p}|C|{sp}")
+                    fc, last = sim.flap_count.get((i, ns, p), (0, ""))
+                    lines.append(f"{p}|A|{fc}|{last}")
+                res = self._res(cmd, "\n".join(lines) + "\n")
             elif "CONFIG_DB keys 'PORT|Ethernet*'" in cmd and cmd.startswith("for k in"):
                 ns = re.search(r"-n (asic\d+)", cmd).group(1)
                 off = 1 if "desc_acc_off_by_one" in st.f else 0
@@ -913,8 +961,10 @@ class FakeSwitchTransport:
                 lines = []
                 for p, (s, g, acc, pid) in sim.ports(i, ns).items():
                     c = sim.computes.get(sim.cname(s))
-                    if c and c["status"]["admission-phase"] == "admitted" and sim.lane_used(i, ns, p):
-                        lines.append(f"FDB|Vlan100|02:00:00:{acc:02x}:{pid:02x}:01|{p}")
+                    # only GPUs in a vPOD: AFM takes the others' ports out of the VLAN, their MACs with them
+                    if c and c["status"]["admission-phase"] == "admitted" and sim.lane_used(i, ns, p) \
+                            and sim.port_vlan(i, ns, p) == "trunk":
+                        lines.append(f"FDB|Vlan100|{gpu_mac(acc, pid)}|{p}")
                 if "stale_fdb" in st.f and lines:
                     lines.append(f"FDB|Vlan2|02:00:00:ff:00:01|{lines[0].rsplit('|', 1)[1]}")
                 lines = self._fdb_apply(ns, lines)
@@ -982,6 +1032,8 @@ class FakeSwitchTransport:
                         ["Port"] + [f"PG{g}" for g in range(8)],
                         [[p] + [f"{fab.pgwm.get((i, ns, p, f'PG{g}'), 0.0):.0f}" for g in range(8)] for p in ports])
                 res = self._res(cmd, out)
+            elif sim.layout and re.fullmatch(r"sonic-db-cli -n asic\d+ APPL_DB keys 'LLDP_ENTRY_TABLE:\*'", cmd):
+                res = self._res(cmd, "")        # g02-g17: the GPU ports run no LLDP - no neighbours on fabric ports
             elif (m := re.fullmatch(r"sonic-db-cli -n (asic\d+) CONFIG_DB keys '([A-Z0-9_]+)\|\*'", cmd)) \
                     and m.group(2) in fake_qos.QOS_TABLES:
                 tbl = sim.qos_tables(i, m.group(1)).get(m.group(2)) or {}
@@ -1002,8 +1054,9 @@ class FakeSwitchTransport:
             elif m := re.fullmatch(r"docker exec afm-agent curl -s -m 5 localhost:(\d+)/api/runtime/requests", cmd):
                 slot = int(m.group(1)) - 13000
                 ok = sim.agent_up[i] and sim.slot_host(slot) == i and "no_agent_requests" not in st.f
-                res = self._res(cmd, json.dumps([{"id": f"req-{slot}", "created-at": now(), "status": "applied"}]) if ok else "",
-                                0 if ok else 7)
+                res = self._res(cmd, json.dumps([{"id": f"req-{slot}", "created-at": now(), "status": "applied",
+                                                  "config-status": {"state": 1}, "completed-by-agent-at": now()}])
+                                if ok else "", 0 if ok else 7)
             elif m := re.fullmatch(r"config vlan (add|del) -n (asic\d+) (\d+)", cmd):
                 (sim.user_vlans.setdefault(i, set()).add if m.group(1) == "add" else sim.user_vlans.setdefault(i, set()).discard)(int(m.group(3)))
                 res = self._res(cmd)
@@ -1017,8 +1070,13 @@ class FakeSwitchTransport:
                 conn = (c is not None and c["status"]["admission-phase"] == "admitted") or slot not in sim.sb_pid \
                     or "control_path_kept" in st.f
                 conn = conn and not sim.disconnected
-                res = self._res(cmd, json.dumps({"is-connected": conn, "healthy": True}) if sim.agent_up[i] else "",
-                                0 if sim.agent_up[i] else 7)
+                ctrls = list(sim.quorum)
+                live = [ip for k, ip in enumerate(sim.quorum) if sim.ctrl_up.get(k, True)]
+                res = self._res(cmd, json.dumps({"is-connected": conn, "healthy": True, "configured-controllers": ctrls,
+                                                 "current-controllers": live if conn else [], "unhealthy-services": [],
+                                                 "restart-required": False, "health-conditions": [],
+                                                 "git-version": "202505I20260915070938_x100.15"})
+                                if sim.agent_up[i] else "", 0 if sim.agent_up[i] else 7)
         if res is None:
             return self.fallback.run(cmd, timeout=timeout, sudo=sudo, env=env)
         log.debug("[%s] $ %s", self.host.name, build_command(cmd, sudo, env))
@@ -1104,14 +1162,14 @@ class FakeComputeTransport:
             mac = pid in sim.used or "mch_mac_on_unused" in self.st.f
             out.append({"id": str(pid), "spec": {"station_id": str(pid // 2 + (1 if "mch_station_ids_wrong" in self.st.f
                                                                                and pid == 7 else 0)),
-                                                  "nw_mac_addr": f"02:00:{self.slot:02x}:{g:02x}:{pid:02x}:01" if mac else "",
+                                                  "nw_mac_addr": gpu_mac(self._acc(g), pid) if mac else "",
                                                   "admin_state": "disabled" if dis else
                                                   "idle" if (self.slot, g, pid) in sim.cmp_admin_down else "enabled"},
                         "status": {"name": f"netport{pid}",
                                    "link_status": "LINK_DISABLED" if dis else "LINK_UP" if up else "LINK_DOWN",
                                    "ifcp": {"port_id": str(pid), "link_up": "yes" if up else "no",
                                             "ll_up": "yes" if ll else "no", "in_error": "no",
-                                            "peer_device_id": str(k[0]) if k else "", "peer_port_id": k[2][8:] if k else "",
+                                            "peer_device_id": str(k[0] + 1) if k else "", "peer_port_id": k[2][8:] if k else "",
                                             "peer_enabled": "yes" if ll else "no", "peer_in_error": "no"}}})
         return out
 
@@ -1171,7 +1229,7 @@ class FakeComputeTransport:
                         if "fwd_table_incomplete" in st.f and peers:
                             peers = peers[1:]
                         ports.append({"port_id": str(pid), "accelerator_addr": [
-                            {"accelerator_id": str(a), "mac_addr": f"02:00:00:{a:02x}:{pid:02x}:00"} for a in peers]})
+                            {"accelerator_id": str(a), "mac_addr": gpu_mac(int(a), pid)} for a in peers]})
                     devs.append({"bdf": self.bdf(g), "port": ports})
                 out = json.dumps({"device": devs})
             elif m := re.fullmatch(r"afmctl show station(?: -b (\S+))? --json", c):
