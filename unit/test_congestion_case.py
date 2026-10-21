@@ -68,7 +68,7 @@ def run(monkeypatch, n_trays, load, loaded_wm=500000.0, snaps=None, **th):
     def ports_by_slot(rack, slots, speeds=None):
         out = {s: {("st1", "asic0", f"Ethernet{s}"): "up"} for s in slots}
         if speeds is not None:
-            speeds.update({k: 400.0 for v in out.values() for k in v})
+            speeds.update({k: float(th.get("_port_gbps", 400.0)) for v in out.values() for k in v})
         return out
     monkeypatch.setattr(T, "_ports_by_slot", ports_by_slot)
     monkeypatch.setattr(T, "_clear_wm", lambda rack, ports: None)
@@ -86,7 +86,7 @@ def run(monkeypatch, n_trays, load, loaded_wm=500000.0, snaps=None, **th):
     monkeypatch.setattr(T.datapath, "require_transferbench_cross", lambda inv: None)
     monkeypatch.setattr(T.datapath, "transferbench_incast", lambda dst, srcs, inv, checks, s: load(srcs, checks))
     props = {}
-    T.test_congestion_detected_on_incast(Ops(n_trays), None, trays, Inv(**th), None, None, Checks(),
+    T.test_congestion_detected_on_incast(Ops(n_trays), None, trays, Inv(**{k: v for k, v in th.items() if k != "_port_gbps"}), None, None, Checks(),
                                          lambda k, v: props.__setitem__(k, v))
     return props
 
@@ -118,6 +118,14 @@ def test_a_real_incast_is_judged(monkeypatch):
     assert ev["queue_watermark_peak_bytes"] == {"UC0": 500000.0}
     with pytest.raises(pytest.fail.Exception, match="no congestion seen"):  # a real load, low watermark: a real FAIL
         run(monkeypatch, 6, ok, loaded_wm=20000.0)
+
+
+def test_a_load_far_below_line_rate_is_blocked_not_failed(monkeypatch):
+    """g02-g17 21 Oct: 1487.7 GB/s into 144 x 400G = 0.21 of the destination's line rate, watermark 23 KB."""
+    ok = lambda srcs, checks: {"rounds": 25, "seconds": 154.5, "bw_gbps": [{f"{s.name}->ct06": 372.0 for s in srcs}]}  # noqa: E731
+    with pytest.raises(pytest.fail.Exception, match=r"pre-flight failed - the load used only 0\.21 of ct06's line rate") as e:
+        run(monkeypatch, 6, ok, loaded_wm=23100.0, _port_gbps=57600.0)
+    assert "congestion not judged" in str(e.value) and "no congestion seen" not in str(e.value)
 
 
 def test_lossless_drops_fail_lossy_drops_are_only_recorded(monkeypatch):
@@ -156,6 +164,30 @@ Ethernet257       3       0       0       0       0       0       0       0
 -----------  ------  ------  ------  ------  ------  ------  ------  ------
 Ethernet257       0   1,204       0       0       0       0       0       0
 """
+
+
+G0217_QCOUNTERS = """Ethernet257 Last cached time for asic1 was 2026-10-20T21:14:54.526519
+       Port    TxQ    Counter/pkts    Counter/bytes    Drop/pkts    Drop/bytes
+-----------  -----  --------------  ---------------  -----------  ------------
+Ethernet257    UC0           1,710          178,024            0             0
+Ethernet257    UC1               8              512            0             0
+
+Ethernet258 Last cached time for asic1 was 2026-10-20T21:14:54.526519
+       Port    TxQ    Counter/pkts    Counter/bytes    Drop/pkts    Drop/bytes
+-----------  -----  --------------  ---------------  -----------  ------------
+Ethernet258    UC0           9,000          900,000            7             0
+"""
+
+
+def test_queue_counters_read_every_port_table():
+    """g02-g17 21 Oct: one table per port - only Ethernet257 was read before, so the destination's ports were missed."""
+    from helios.sonic import SonicSwitch
+    sw = SonicSwitch.__new__(SonicSwitch)
+    sw.run = lambda cmd, **kw: SimpleNamespace(stdout=G0217_QCOUNTERS, ok=True)
+    sw.sh = lambda cmd, **kw: G0217_QCOUNTERS
+    assert sw.queue_stats("asic1")[("Ethernet258", "UC0")] == (9000.0, 7.0)
+    assert sw.queue_counters("asic1") == {("Ethernet257", "UC0"): 0.0, ("Ethernet257", "UC1"): 0.0,
+                                          ("Ethernet258", "UC0"): 7.0}
 
 
 def test_sonic_counter_parsers_on_mr3_output():

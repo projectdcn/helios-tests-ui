@@ -412,11 +412,17 @@ class SonicSwitch:
     def vlan_hash(self, vlan: str, ns: str | None) -> dict[str, str]:
         return self.db_hash("CONFIG_DB", f"VLAN|{vlan}", ns)
 
+    @staticmethod
+    def _queue_rows(out: str) -> list[dict[str, str]]:
+        """'show queue counters' rows: one table per port on a full switch ('Ethernet257 Last cached time ...',
+        header, rows, blank line, next port) - g02-g17 21 Oct; MR3 printed one table for a single named port."""
+        return [r for block in re.split(r"\n\s*\n", out) for r in parse_table(block)]
+
     def queue_counters(self, ns: str | None) -> dict[tuple[str, str], float]:
         """{(port, queue): drop packets} from 'show queue counters'."""
         out = self.sh(f"show queue counters{_ns_flag(ns)}", sudo=True, timeout=300)
         res = {}
-        for r in parse_table(out.split(":", 1)[1] if out.lstrip().startswith("For namespace") else out):
+        for r in self._queue_rows(out):
             v = r.get("Drop/pkts", "").replace(",", "")
             if r.get("Port") and v.isdigit():
                 res[(r["Port"], r.get("TxQ", ""))] = float(v)
@@ -434,7 +440,7 @@ class SonicSwitch:
         """{(port, queue): (packets, drop packets)} from 'show queue counters'."""
         out = self.run(f"show queue counters{_ns_flag(ns)}", sudo=True, timeout=300).stdout
         res = {}
-        for r in parse_table(out.split(":", 1)[1] if out.lstrip().startswith("For namespace") else out):
+        for r in self._queue_rows(out):
             n, d = (r.get(k, "").replace(",", "") for k in ("Counter/pkts", "Drop/pkts"))
             if r.get("Port") and n.isdigit() and d.isdigit():
                 res[(r["Port"], r.get("TxQ", ""))] = (float(n), float(d))

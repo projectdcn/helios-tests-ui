@@ -350,6 +350,14 @@ def test_congestion_detected_on_incast(ops, rack, computes, inventory, datapath_
                                           for k in drops1 if drops1[k] > drops0.get(k, 0)})
     idle_max, loaded_max = max(idle.values() or [0]), max(loaded.values() or [0])
     need = max(float(th("switch.congestion_wm_factor", 4)) * idle_max, float(th("switch.congestion_wm_min_bytes", 100000)))
+    util, min_util = summary["destination_utilisation"], float(th("switch.congestion_min_utilisation", 0.9))
+    if loaded_max < need and util is not None and util < min_util:
+        # g02-g17 21 Oct 04:13 UTC: 4 two-rank a2a jobs moved 1487.7 GB/s into ct12's 144 x 400G ports (0.21 of
+        # them) - nothing can queue at that load, so 'no congestion seen' would judge the switch on a non-incast
+        pytest.fail(f"incast pre-flight failed - the load used only {util} of {dst.name}'s line rate "
+                    f"({summary['total_GBps']} GB/s into {summary['destination_line_rate_Gbps']:.0f} Gb/s, "
+                    f"switch.congestion_min_utilisation {min_util}): no incast, congestion not judged "
+                    f"(highest queue watermark {loaded_max:.0f} B, idle {idle_max:.0f} B)", pytrace=False)
     checks.check(loaded_max >= need, f"no congestion seen on the {len(up)} ports towards {dst.name}: highest queue "
                                      f"watermark {loaded_max:.0f} B under load, idle {idle_max:.0f} B (needs {need:.0f} B); "
                                      f"load {summary['total_GBps']} GB/s into {summary['destination_line_rate_Gbps']:.0f} Gb/s "
