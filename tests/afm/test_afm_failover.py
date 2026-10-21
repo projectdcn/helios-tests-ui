@@ -36,6 +36,21 @@ def _expected(ops, sel) -> set[tuple]:
     return {(_cname(ops, cab[0]), cab[1], cab[3]) for _, _, _, cab in sel}
 
 
+def _tray_view(ops, slot: int, gpu: int) -> tuple[dict[int, dict], str | None]:
+    """The GPU's own view of its ports, read on the tray: {GPU port id: {link, admin, ll_up, peer_enabled, error}}
+    from `afmctl show port` (the GPU found through AFM's acc-id for that index), or ({}, why) when unreadable."""
+    try:
+        name = _cname(ops, slot)
+        acc = next(str(g.get("acc-id")) for g in ops.gpu_info(ops.compute(name)).values() if g.get("index") == gpu)
+        tray = ops.tray(name)
+        bdf = next((d.bdf for d in ops.afmctl(tray).devices() if d.accel_id == acc), None)
+        if bdf is None:
+            return {}, f"{tray.name}: no afmctl device with accelerator id {acc}"
+        return {port: v for (b, port), v in ops.ifcp(tray).items() if b == bdf}, None
+    except Exception as e:  # noqa: BLE001 - evidence only: a tray that does not answer must not decide the case
+        return {}, f"tray view unavailable: {str(e).splitlines()[0][:200]}"
+
+
 def _shut(links, sel):
     for sw, ns, port, _ in sel:
         links.shut(sw, ns, port)
@@ -177,7 +192,10 @@ def test_fo026_multiple_trays_simultaneously(ops, afm_ready, links, checks, reco
 @pytest.mark.tc("TC-E2E-144")
 def test_fo037_all_stations_one_gpu(ops, afm_ready, links, checks, record_property):
     """FO-037: every up port of one GPU shut in rapid sequence: all PortFailed, the vPOD never reaches
-    operation-failed, and everything recovers after the ports return."""
+    operation-failed, and everything recovers after the ports return. With the ports down, all three views of each
+    link are recorded (three_views): the switch port (oper), the GPU port read on the tray (afmctl: link / IFCP) and
+    AFM (oper-state) - g02-g17 17 Oct: ports 22-27 / 34-35 of ct18 GPU0 not PortFailed with every switch port down;
+    the tray's own view was not recorded then."""
     slot = _target(ops)
     sel = ops.gpu_links(slot, 0)
     cap = int(ops.th("fo037_max_ports", 0))
@@ -194,9 +212,29 @@ def test_fo037_all_stations_one_gpu(ops, afm_ready, links, checks, record_proper
     record_property("with_all_ports_down", {"ports": len(sel), "state": st, "planes": ops.planes(sysv),
                                             "switch_ports_not_down": up})
     checks.check(not up, f"switch ports still oper up after shutdown: {up}")
-    missing = sorted(want - ops.failed_gpu_ports())
-    checks.check(ok, f"not all {len(sel)} GPU ports PortFailed: missing {missing[:6]} (cabled to "
-                     f"{[f'{sw.name}/{ns}/{p}' for sw, ns, p, c in sel if (_cname(ops, c[0]), c[1], c[3]) in missing][:6]})")
+    failed = ops.failed_gpu_ports()
+    missing = sorted(want - failed)
+    tray, why = _tray_view(ops, slot, 0)
+    oper: dict[tuple, str] = {}
+    for sw, ns in {(sw, ns) for sw, ns, _p, _c in sel}:       # one status read per switch ASIC
+        rows = {r.get("Interface"): r.get("Oper") for r in sw.interfaces_status(ns)}
+        oper.update({(sw.name, ns, p): rows.get(p) for s2, n2, p, _c in sel if s2 is sw and n2 == ns})
+    views = {}
+    for sw, ns, p, c in sel:
+        afm_state = "PortFailed" if (_cname(ops, c[0]), c[1], c[3]) in failed else "not failed"
+        tv = tray.get(c[3]) or {}
+        views[f"GPU port {c[3]}"] = {"switch": f"{sw.name}/{ns}/{p} {oper.get((sw.name, ns, p)) or 'not listed'}",
+                                     "tray": (f"{tv.get('link')} ll_up={tv.get('ll_up')}" if tv else (why or "not read")),
+                                     "afm": afm_state}
+    record_property("three_views", views)
+    if why:
+        record_property("tray_view_error", why)
+    tray_up = sorted(port for port, v in tray.items() if any(port == c[3] for *_, c in sel) and v.get("link") == "LINK_UP")
+    record_property("tray_link_up_while_switch_down", tray_up)
+    shown = [f"port {m[2]}: switch {views[f'GPU port {m[2]}']['switch']}, tray {views[f'GPU port {m[2]}']['tray']}, AFM not failed"
+             for m in missing]
+    checks.check(ok, f"not all {len(sel)} GPU ports PortFailed: {len(missing)} missing - " + "; ".join(shown[:12])
+                     + (f" (+{len(shown) - 12} more, see three_views)" if len(shown) > 12 else ""))
     checks.check(st != "operation-failed", f"{sysv} operation-failed with one GPU fully disconnected")
     _restore(links, checks, sel)
     _restored(ops, checks, sysv, base)

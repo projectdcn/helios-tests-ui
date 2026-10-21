@@ -30,11 +30,22 @@ LOG_BODY = 3000  # chars of each request/response body kept in the per-test log
 # 18 Oct: the GPU lists of membership PUTs were cut at 3000 chars, which hid where GPUs were lost)
 LOG_BODY_CHANGE = 60000
 
-_SECRET_KEYS = re.compile(r'("(?:password|private-key|recovery-key|recoveryKey|key|token)"\s*:\s*)"[^"]*"', re.I)
+_SECRET_KEYS = re.compile(r'("(?:password|private-key|recovery-key|recoveryKey|token)"\s*:\s*)"[^"]*"', re.I)
+# "key" is a secret in key material (certificates, recovery keys) but a plain field name in selectors - an alert
+# policy requirement {"key": "severity", ...} (TC-CTL-098 18 Oct: the log hid which field the policy matched on).
+# A short identifier-like value is a selector key and stays readable; anything else is masked.
+_KEY_FIELD = re.compile(r'("key"\s*:\s*)"([^"]*)"', re.I)
+_SELECTOR_KEY = re.compile(r"[A-Za-z][\w.\-/]{0,31}")
+
+
+def _selector_key(v: str) -> bool:
+    """'severity', 'meta.name', 'status.oper-state': short, at most 2 capitals (base64 / PEM key material is not)."""
+    return bool(_SELECTOR_KEY.fullmatch(v)) and sum(ch.isupper() for ch in v) <= 2
 
 
 def redact(text: str) -> str:
     text = _SECRET_KEYS.sub(r'\1"<REDACTED>"', text)
+    text = _KEY_FIELD.sub(lambda m: m.group(0) if _selector_key(m.group(2)) else f'{m.group(1)}"<REDACTED>"', text)
     return re.sub(r"(sid=)[^;\s\"]+", r"\1<REDACTED>", text)
 
 

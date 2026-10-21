@@ -348,6 +348,16 @@ def _flap(ops, links, checks, sw, ns, port):
     links.restore(sw, ns, port, checks)
 
 
+def _policy(ops, name: str) -> dict | None:
+    """The stored alert policy (None when AFM does not list it)."""
+    return next((p for p in ops.afm.items(f"{MONITORING}/alertPolicies") if (p.get("meta") or {}).get("name") == name), None)
+
+
+def _hits(policy: dict | None):
+    """status.total-hits of an alert policy (AFM's default event policy shows one), None when AFM reports none."""
+    return ((policy or {}).get("status") or {}).get("total-hits")
+
+
 def _warn_policy_spec(ops) -> dict:
     """An event alert policy matching warn-severity events, built from AFM's own default event policy (which raises
     alerts on this rack - 270 open on 17 Oct, matched requirement 'equals critical') with only the matched value
@@ -371,12 +381,23 @@ def test_alerts_from_alert_policy(ops, afm_ready, uniq, cleanup, links, checks, 
     """An enabled event-based alert policy (thresholds.afm.alert_policy_spec, default resource Event, severity info,
     requirement event severity == warn - a link_down is 'warn') raises an alert referencing it when a switch port
     goes down (held until oper down, then restored). g02-g17 17 Oct: the policy had no requirements - AFM API: 'a
-    selector with no Requirements does not select anything' - so no alert could come (alerts stayed at 236)."""
+    selector with no Requirements does not select anything' - so no alert could come (alerts stayed at 236).
+    The policy is read back after the create (spec as sent, status recorded) and again after the flap: its
+    status.total-hits shows whether AFM matched any event to it, so 'matched but no alert' and 'never matched'
+    are told apart (18 Oct: no alert, warn link events present, policy state not recorded)."""
     name = uniq("ap")
     spec = ops.th("alert_policy_spec", None) or _warn_policy_spec(ops)
     record_property("policy_spec", spec)
     cleanup(f"{MONITORING}/alertPolicies/{name}")
     ops.afm.post(f"{MONITORING}/alertPolicies", {"meta": {"name": name}, "spec": spec})
+    # read it back: a policy AFM stored but changed, disabled or flagged is told apart from one that never fires
+    stored = _policy(ops, name)
+    record_property("policy_stored", {"spec": stored.get("spec"), "status": stored.get("status")} if stored else None)
+    checks.check(stored, f"policy {name} not found after the create (HTTP 200 on the POST)")
+    if stored:
+        diff = {k: (v, (stored.get("spec") or {}).get(k)) for k, v in spec.items() if (stored.get("spec") or {}).get(k) != v}
+        checks.check(not diff, f"policy {name} stored with a different spec: {diff} (sent, stored)")
+    hits0 = _hits(stored)
     slot = ops.compute(ops.pick_compute())["spec"]["slot-id"]
     sw, ns, port, _ = ops.gpu_links(slot)[0]
     since = ops.controller_now()
@@ -387,10 +408,15 @@ def test_alerts_from_alert_policy(ops, afm_ready, uniq, cleanup, links, checks, 
     links.restore(sw, ns, port, checks)
     got = ops.wait(lambda: [a for a in ops.afm.items(f"{MONITORING}/alerts") if name in json.dumps(a)], 300, 10)
     warn = [e.get("type") for e in ops.events(since=since) if e.get("severity") == "warn"]
+    after = _policy(ops, name)
+    hits1 = _hits(after)
     record_property("alerts", len(got or []))
     record_property("warn_events_during_flap", sorted(set(warn)))
+    record_property("policy_after", {"status": (after or {}).get("status"), "total_hits": [hits0, hits1]})
     checks.check(got, f"no alert referencing policy {name} after a link flap (warn events meanwhile: "
-                      f"{sorted(set(warn)) or 'none'})")
+                      f"{sorted(set(warn)) or 'none'}; policy total-hits {hits0} -> {hits1}"
+                      + ("; status " + json.dumps((after or {}).get("status"))[:300] if (after or {}).get("status") else "")
+                      + ")")
     checks.assert_all()
 
 
