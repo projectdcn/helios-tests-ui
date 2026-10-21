@@ -65,7 +65,7 @@ def run(monkeypatch, n_trays, load, loaded_wm=500000.0, snaps=None, **th):
     trays = [SimpleNamespace(name=f"ct{i:02d}") for i in range(1, n_trays + 1)]
     monkeypatch.setattr(T, "_ready_slots", lambda ops: {i: t.name for i, t in enumerate(trays)})
 
-    def ports_by_slot(rack, slots, speeds=None):
+    def ports_by_slot(rack, slots, speeds=None, gpus=None):
         out = {s: {("st1", "asic0", f"Ethernet{s}"): "up"} for s in slots}
         if speeds is not None:
             speeds.update({k: float(th.get("_port_gbps", 400.0)) for v in out.values() for k in v})

@@ -52,9 +52,10 @@ def _slot_ports(rack, slot: int) -> dict[tuple, str]:
     return _ports_by_slot(rack, {slot}).get(slot, {})
 
 
-def _ports_by_slot(rack, slots: set[int], speeds: dict | None = None) -> dict[int, dict[tuple, str]]:
+def _ports_by_slot(rack, slots: set[int], speeds: dict | None = None, gpus: dict | None = None) -> dict[int, dict[tuple, str]]:
     """{slot: {(switch, ns, port): oper}} for the ports cabled to each of ``slots``, in one pass over the switches;
-    ``speeds`` (if given) is filled with {(switch, ns, port): Gb/s} from the Speed column."""
+    ``speeds`` (if given) is filled with {(switch, ns, port): Gb/s} from the Speed column, ``gpus`` with
+    {(switch, ns, port): GPU index} from the description."""
     out: dict[int, dict[tuple, str]] = {}
     for sw in rack.switches.values():
         for ns in sw.namespaces():
@@ -64,6 +65,8 @@ def _ports_by_slot(rack, slots: set[int], speeds: dict | None = None) -> dict[in
                 cab = parse_port_description(d)
                 if cab and cab[0] in slots:
                     out.setdefault(cab[0], {})[(sw.name, ns, p)] = str(rows.get(p, {}).get("Oper", "")).lower()
+                    if gpus is not None:
+                        gpus[(sw.name, ns, p)] = cab[1]
                     if speeds is not None:
                         sp = str(rows.get(p, {}).get("Speed", "")).upper().rstrip("G")
                         speeds[(sw.name, ns, p)] = float(sp) if sp.replace(".", "").isdigit() else 0.0
@@ -228,13 +231,16 @@ def _incast_evidence(c0: dict, c1: dict, peaks: dict, lossless: dict) -> dict:
             "lossless_classes": {_key(k): v for k, v in lossless.items()}}
 
 
-def _load_summary(load: dict, dst_speeds: dict[tuple, float], up: set) -> dict:
+def _load_summary(load: dict, dst_speeds: dict[tuple, float], up: set, gpus: dict | None = None) -> dict:
     """Per-source GB/s of the last round, their total and how much of the destination's line rate they used.
     TransferBench reports achieved (not offered) bandwidth, so ~1.0 means the destination's ports were saturated."""
     last = load["bw_gbps"][-1] if load["bw_gbps"] else {}
     total = sum(v for v in last.values() if v)
+    if load.get("mode") == "one-way" and gpus:                          # one destination GPU: only its ports
+        up = {k for k in up if gpus.get(k) == load.get("dst_gpu")}
     line = sum(dst_speeds.get(k, 0.0) for k in up)                       # Gb/s
     return {"per_source_GBps": last, "total_GBps": round(total, 1), "destination_line_rate_Gbps": line,
+            "load": load.get("mode", "a2a-pairs") + (f" into GPU{load['dst_gpu']}" if load.get("mode") == "one-way" else ""),
             "destination_utilisation": round(total * 8 / line, 2) if line else None}
 
 
@@ -293,8 +299,9 @@ def test_congestion_detected_on_incast(ops, rack, computes, inventory, datapath_
                     f"are Ready and passed the datapath pre-flight, an incast needs {min_src} "
                     f"(thresholds.datapath.congestion_min_sources); Ready trays: {[t.name for _, t in trays]}", pytrace=False)
     speeds: dict[tuple, float] = {}
+    port_gpu: dict[tuple, int] = {}
     src_slot = {t.name: s_ for s_, t in trays}
-    by_slot = _ports_by_slot(rack, {dst_slot} | {src_slot[t.name] for t in srcs}, speeds)
+    by_slot = _ports_by_slot(rack, {dst_slot} | {src_slot[t.name] for t in srcs}, speeds, port_gpu)
     ports = by_slot.get(dst_slot, {})
     up = {k for k, v in ports.items() if v == "up"}
     src_up = {k for t in srcs for k, v in by_slot.get(src_slot[t.name], {}).items() if v == "up"} - up
@@ -332,7 +339,7 @@ def test_congestion_detected_on_incast(ops, rack, computes, inventory, datapath_
     peaks = _best_effort(ev_err, "buffer peaks", _buffer_peaks, rack, up, src_up,
                          default={"queue": {}, "pg": {}, "pool": {}})
     drops1 = _drops(rack, up)
-    summary = _load_summary(load, speeds, up)
+    summary = _load_summary(load, speeds, up, port_gpu)
     record_property("traffic", {"rounds": load["rounds"], "seconds": load["seconds"], **summary})
     ev = _incast_evidence(c0, c1, peaks, lossless)
     if ev_err:

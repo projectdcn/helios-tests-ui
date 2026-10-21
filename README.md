@@ -103,29 +103,35 @@ HELIOS_SELFTEST_DIR_PW=selftest-dir-pw .venv/bin/pytest tests/afm/test_afm_equip
 ### 1b. Virtual rack: a simulated Helios rack over real protocols
 
 `tools/vrack.sh` starts the self-test simulation as a service on 127.0.0.1, so the UI, pytest with an ordinary SSH
-inventory, ssh and curl talk to it as to a rack. The default layout is **g02-g17**, recorded from its 19 Oct link scan
-(`selftest/topologies/g02-g17.json`): 6 switches x 2 ASICs (257 ports each, 216 cabled 400G GPU ports, the real port
-names / lanes / aliases / descriptions), 18 compute trays, 72 GPUs, 36 planes (3 per ASIC).
+inventory, a browser, ssh and curl talk to it as to a rack. The default layout is **g02-g17**, recorded from its
+19 Oct link scan (`selftest/topologies/g02-g17.json`): 6 switches x 2 ASICs (257 ports each, 216 cabled 400G GPU ports,
+the real port names / lanes / aliases / descriptions), 18 compute trays, 72 GPUs, 36 planes (3 per ASIC).
 
 ```bash
 tools/vrack.sh                                   # g02-g17; --topology afm3 (3 sw / 3 trays) | mr3 (1 sw / 2 trays)
 ssh -p 22100 admin@127.0.0.1                     # st1 .. st6 = 22100-22105, ct01 .. ct18 = 22106-22123 (your ~/.ssh keys)
+open http://127.0.0.1:18445/                     # AFM web view (sign in as admin, simulator password below)
 curl -s http://127.0.0.1:18444/                  # control: state; POST /faults {"add": ["no_alerts"], "remove": [...]}
-export HELIOS_AFM_PASSWORD=...                   # the simulator's admin password: selftest/fake_afm.py ADMIN
-.venv/bin/pytest tests/afm --inventory ~/.helios-vrack/inventory.local.yaml --allow-disruptive
+export HELIOS_AFM_PASSWORD=...                   # simulator AFM admin password: selftest/fake_afm.py ADMIN
+export HELIOS_BMC_PASSWORD=...                   # simulator BMC password: selftest/fake_redfish.py BMC_PW
+.venv/bin/pytest tests --inventory ~/.helios-vrack/inventory.local.yaml --allow-disruptive
 ```
 
-- AFM: the fake controller at https://127.0.0.1:18443 (self-signed); the UI's **vrack** profile uses the written
-  inventory. Faults (`selftest/fake_rack.py` / `fake_afm.py`, ~100) switch one product behaviour to its broken
-  form while it runs.
-- Commands: the ones the simulation models answer from its state (ports, links, FDB, VLANs, afmctl, agents,
-  controllers, counters); others fall back to the recorded outputs in `selftest/replay`; a line no rule fits runs
-  as a small shell (`|`, `;`, `&&`, `||` with grep / head / tail / wc / sort / uniq / cut / awk print / sed s///
-  / tr -d, echo).
+| Part | What it is |
+|---|---|
+| AFM | the fake controller: REST + AggWatch on https://127.0.0.1:18443 (what the tests use), the same AFM over plain HTTP on :18445 with a web page (dashboard, compute / switch nodes with GPU port health, vPODs and planes, alerts and policies, events) |
+| Switches / trays | one SSH server each (key login), answered by the simulation: ports, links, FDB, VLANs, QoS config, counters, afmctl, agents, controllers; unmodelled commands fall back to recorded outputs (`selftest/replay`); a line no rule fits runs as a small shell (`\|` `;` `&&` `\|\|`, grep / head / tail / wc / sort / uniq / cut / awk print / sed s/// / tr -d / echo) |
+| BMCs | one Redfish service per node on https://127.0.0.1:22300-22323 (Blanton BMC on switches, OpenBMC on trays), read-only |
+| QoS | `--qos none` (g02-g17 default, as the real rack: no PFC), `mr3` (blantons-mr3-sw 20 Oct, with its six TC-SWH-063 findings), `lossless` (complete: TC-SWH-063 passes) |
+| Data path | TransferBench jobs become flows over the cabled planes; switch counters follow the load and the QoS: below line rate a few KB of queue; over it, lossless classes pause the sources (PFC Tx, PG / queue at xoff, no drops), lossy ones drop. Single-node / 2-rank a2a / one-way incast (`cmdline` with `R<rank>G<gpu>`) give g02-g17-like bandwidths |
+| Faults | ~100 (`selftest/fake_rack.py`, `fake_afm.py`), switched on / off at run time through the control API |
+| Timing | instant by default; `--realistic`: a link comes back ~4 s after `startup`; `--time-scale` scales failover timers |
+| State | saved every 30 s and on exit (`~/.helios-vrack/state.pickle`, 0600) and restored at the next start with the clocks shifted; `--fresh` starts clean |
+
 - In-process on the same layout: `.venv/bin/pytest tests/afm --inventory selftest/inventory-g02-g17.yaml
   --allow-disruptive` (281 pass, 58 skip); through the virtual rack over SSH the same.
-- It is a simulation: counters, bandwidth and timing are modelled values - for developing and checking tests,
-  not for judging the product.
+- It is a simulation: counters, bandwidths and timing are modelled - for developing and checking tests, not for
+  judging the product.
 
 ### 2. On a real rack
 

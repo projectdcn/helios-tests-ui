@@ -158,7 +158,7 @@ FAULTS = {
                                   "IFoE Request    : 33/35 PASS, 2/35 fail"),
                   {"TC-AFM-001", "TC-HW-017", *GATED_TRAFFIC}),  # pre-flight ping probe blocks traffic
     # RAS cases and TC-HW-008 re-validate with the same TransferBench / RCCL workloads
-    "tb_slow": (lambda d: _edit(d / "transferbench.txt", r"612\.48", "212.48"),
+    "tb_slow": (lambda d: _edit(d / "transferbench.txt", r"612\.48", "112.48"),
                 {"TC-AFM-002", "TC-AFM-003", "TC-HW-008", "TC-HW-017", "TC-AFM-LU-001", *RAS_TRAFFIC}),
     "rccl_wrong": (lambda d: _edit(d / "rccl.txt", r"^(\s+2048 .*?)0$", r"\g<1>7"), {"TC-AFM-004", "TC-AFM-005A", *RAS_TRAFFIC}),
     "rccl_truncated": (lambda d: _edit(d / "rccl.txt", r"^\s+1073741824 .*\n", ""),

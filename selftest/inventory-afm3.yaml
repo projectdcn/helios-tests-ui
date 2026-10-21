@@ -39,6 +39,8 @@ commands:
   l2ping:
     mode: afmctl          # discover acc ids + LINK_UP ports via afmctl; ring pairs
   transferbench:
+    # one-way many-to-one incast for TC-SWH-060 (datapath.transferbench_incast): every source GPU into one GPU of the destination
+    incast_cmd: "TB_NUM_RANKS={num_ranks} TB_RANK={rank} TB_MASTER_ADDR={master_addr} TB_SINGLE_LOG=1 TransferBench cmdline '{transfers}' {size}"
     in_domain: "TransferBench a2a {size}"
     rank_cmd: "TB_NUM_RANKS={num_ranks} TB_RANK={rank} TB_MASTER_ADDR={master_addr} TB_SINGLE_LOG=1 TransferBench a2a {size}"
   rccl:

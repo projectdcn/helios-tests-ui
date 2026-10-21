@@ -18,6 +18,9 @@ from datetime import datetime, timezone
 
 from helios.transport import CmdResult, build_command
 
+import fake_fabric
+import fake_qos
+
 log = logging.getLogger("helios.cmd")
 PLANES = 36
 MCH_MASK = "000fff333000fff333"   # plan lane mask, station 0 first: 6 two-port, 6 one-port, 6 empty
@@ -59,6 +62,8 @@ class Sim:
         # layout (selftest/topologies/<name>.json, e.g. g02-g17): the recorded cabling - every switch port with its
         # lanes / alias / speed, the cabled ones with (slot, GPU, GPU port); planes = GPU port ids, 3 per ASIC there
         self.layout = layout
+        self.qos = "none" if layout else "mr3"        # switch QoS profile (fake_qos); fake_topology.qos overrides
+        self._qos_cache: dict[tuple, dict] = {}
         if layout:
             n_switches, n_computes = int(layout["switches"]), int(layout["computes"])
             self._lay = {}
@@ -94,8 +99,11 @@ class Sim:
         # repairs an edit after FDB_RECONCILE_S unless fault no_fdb_reconcile
         self.fdb_edits: dict[tuple, tuple] = {}
         # congestion case: TransferBench last seen per compute slot, watermark clears per (sw, ns)
-        self.tb_at: dict[int, float] = {}
-        self.tb_n: dict[int, int] = {}                # TransferBench runs per slot (PFC / queue counters grow)
+        self.fabric = fake_fabric.Fabric(self)        # data path: TransferBench flows -> switch counters
+        # realistic timing (vrack --realistic; 0 = instant, as the self-tests want): seconds a link takes to come
+        # back after 'startup' (x time_scale), and the delayed link-ups waiting: (sw, ns, port) -> (due, quiet)
+        self.link_up_s = 0.0
+        self.pending_up: dict[tuple, tuple] = {}
         self.wm_cleared: dict[tuple, float] = {}
         # links: (sw, ns, port) -> {"since", "known", "coupled"}; a link fails after the vPOD policy's threshold
         self.links_down: dict[tuple[int, str, str], dict] = {}
@@ -238,6 +246,13 @@ class Sim:
         return {f"Ethernet{a * 256 + ((s * 4 + g) * len(pids) + j) * 2}": (s, g, s * 4 + g, p)
                 for s in range(self.n_ct) for g in range(4) for j, p in enumerate(pids)}
 
+    def qos_tables(self, i, ns) -> dict[str, dict]:
+        """CONFIG_DB QoS tables of one ASIC for the switch QoS profile (fake_qos), over its cabled ports."""
+        key = (i, ns, self.qos)
+        if key not in self._qos_cache:
+            self._qos_cache[key] = fake_qos.tables(self.qos, sorted(self.ports(i, ns), key=lambda x: int(x[8:])))
+        return self._qos_cache[key]
+
     def all_ports(self, i, ns) -> list[tuple[str, dict]]:
         """Every switch port of an ASIC in EthernetN order with its lanes / speed / alias (a recorded layout lists the
         uncabled ports and 100G uplinks too; the generated layouts only have cabled 400G ports)."""
@@ -276,11 +291,17 @@ class Sim:
                     for pid in self.gpu_pids():
                         self.ifcp_stuck.add((s, g, pid))
 
-    def set_link(self, i, ns, port, up: bool, quiet: bool = False):
+    def set_link(self, i, ns, port, up: bool, quiet: bool = False, now: bool = False):
         key = (i, ns, port)
         ports = self.ports(i, ns)
         if port not in ports:
             return False
+        if up and not now and self.link_up_s > 0 and key in self.links_down:
+            # realistic timing (vrack --realistic): the link trains and IFCP comes up a few seconds after
+            # 'startup'; until then it stays down on the switch and in AFM (refresh applies it when due)
+            self.pending_up[key] = (time.monotonic() + self.link_up_s * float(self.time_scale), quiet)
+            return True
+        self.pending_up.pop(key, None)
         if not self.lane_used(i, ns, port) and "events_on_unused_lanes" not in self.f:
             quiet = True
         keys = [key]
@@ -354,8 +375,18 @@ class Sim:
                                                   "event-type": etype}})
 
     # ------------------------------------------------------------ derived state
+    def _due_links(self):
+        """Apply the delayed link-ups (realistic timing) whose time has come."""
+        if not self.pending_up:
+            return
+        now = time.monotonic()
+        for k, (t, quiet) in sorted(self.pending_up.items(), key=lambda kv: kv[1][0]):
+            if t <= now:
+                self.set_link(*k, True, quiet=quiet, now=True)
+
     def refresh(self, objs):
         """Recompute conditions, membership and vPOD status from the simulated state."""
+        self._due_links()
         if "stale_switch_events" in self.f:
             for i in range(self.n_sw):
                 if self.phase_sw(i) == "absent" and i not in self.identity_reset and self.agent_up[i]:
@@ -910,59 +941,64 @@ class FakeSwitchTransport:
                     sim.fdb_edits[key] = (port, time.monotonic())
                 res = self._res(cmd, "1\n")
             elif m := re.fullmatch(r"show queue watermark unicast -n (asic\d+)", cmd):
-                ns = m.group(1)
-                clr = sim.wm_cleared.get((i, ns), 0.0)
-                rows = []
-                for p, (slot, *_r) in sorted(sim.ports(i, ns).items(), key=lambda x: int(x[0][8:])):
-                    hot = sim.tb_at.get(slot, -1) > clr and "no_congestion_watermark" not in st.f
-                    rows.append(f"{p:>11}  {6000000 if hot else 2000:>7}  {1000:>6}      0      0      0      0      0    420")
+                ns, fab = m.group(1), sim.fabric
+                rows = [[p] + [f"{fab.qwm.get((i, ns, p, f'UC{q}'), 0.0):.0f}" for q in range(8)] for p, _ in sim.all_ports(i, ns)]
                 res = self._res(cmd, f"Egress shared pool occupancy per unicast queue: (Namespace {ns})\n"
-                                     "       Port      UC0     UC1    UC2    UC3    UC4    UC5    UC6    UC7\n"
-                                     "-----------  -------  ------  -----  -----  -----  -----  -----  -----\n" + "\n".join(rows) + "\n")
+                                     + _table(["Port"] + [f"UC{q}" for q in range(8)], rows))
             elif m := re.fullmatch(r"sonic-clear queue watermark unicast -n (asic\d+)", cmd):
                 sim.wm_cleared[(i, m.group(1))] = time.monotonic()
+                sim.fabric.clear_queue_wm(i, m.group(1))
                 res = self._res(cmd, "Cleared\n")
-            elif re.fullmatch(r"sonic-clear (priority-group watermark shared|buffer_pool watermark) -n asic\d+", cmd):
+            elif m := re.fullmatch(r"sonic-clear (?:priority-group watermark shared|buffer_pool watermark) -n (asic\d+)", cmd):
+                sim.fabric.clear_buffer_wm(i, m.group(1))
                 res = self._res(cmd, "Cleared\n")
-            elif re.fullmatch(r"sonic-db-cli -n asic\d+ CONFIG_DB hgetall 'PORT_QOS_MAP\|Ethernet\d+'", cmd):
-                res = self._res(cmd, repr({"dot1p_to_tc_map": "IFOE_TC_MAP", "tc_to_pg_map": "IFOE_PG_MAP",
-                                           "tc_to_queue_map": "IFOE_QUEUE_MAP", "pfc_enable": "0,1"}) + "\n")
-            elif re.fullmatch(r"sonic-db-cli -n asic\d+ CONFIG_DB hgetall '(DOT1P_TO_TC_MAP\|IFOE_TC_MAP|"
-                              r"TC_TO_PRIORITY_GROUP_MAP\|IFOE_PG_MAP|TC_TO_QUEUE_MAP\|IFOE_QUEUE_MAP)'", cmd):
-                res = self._res(cmd, repr({"0": "0", "1": "1", "7": "7"}) + "\n")
             elif m := re.fullmatch(r"show (pfc counters|queue counters|priority-group drop counters|"
                                    r"priority-group watermark shared|buffer_pool watermark) -n (asic\d+)", cmd):
-                # TC-SWH-060 incast evidence: each TransferBench run on a slot adds PFC0 pauses towards it and UC0
-                # packets on its ports (fault lossless_incast_drops: UC0 drops too); PG7 has a few lossy drops
+                # counters of the data-path model (fake_fabric): TransferBench flows over the cabled planes
                 what, ns = m.groups()
-                ps = sorted(sim.ports(i, ns).items(), key=lambda x: int(x[0][8:]))
-                n = lambda slot: sim.tb_n.get(slot, 0)  # noqa: E731
-                z = "      0" * 6
+                fab, ports = sim.fabric, [p for p, _ in sim.all_ports(i, ns)]
                 if what == "pfc counters":
-                    hdr = "-----------" + "  ------" * 8
-                    rx = "\n".join(f"{p:>11}       0       0{z}" for p, _ in ps)
-                    tx = "\n".join(f"{p:>11}  {n(s) * 5000:>6}       0{z}" for p, (s, *_r) in ps)
-                    out = f"    Port Rx    PFC0    PFC1    PFC2    PFC3    PFC4    PFC5    PFC6    PFC7\n{hdr}\n{rx}\n\n" \
-                          f"    Port Tx    PFC0    PFC1    PFC2    PFC3    PFC4    PFC5    PFC6    PFC7\n{hdr}\n{tx}\n"
+                    blk = lambda d: _table([f"Port {d}"] + [f"PFC{q}" for q in range(8)],  # noqa: E731
+                                           [[p] + [f"{fab.pfc.get((i, ns, p, d, q), 0.0):,.0f}" for q in range(8)] for p in ports])
+                    out = f"Last cached time was {datetime.now(timezone.utc).isoformat()}\n" + blk("Rx") + "\n" + blk("Tx")
                 elif what == "queue counters":
-                    drop = "lossless_incast_drops" in st.f
-                    rows = []
-                    for p, (s, *_r) in ps:
-                        rows.append(f"{p:>11}    UC0  {n(s) * 1000000:>14}  {n(s) * 4000000:>15}  {n(s) * 3 if drop else 0:>11}  {0:>12}")
-                        rows.append(f"{p:>11}    UC7  {10:>14}  {840:>15}  {0:>11}  {0:>12}")
-                    out = ("       Port    TxQ    Counter/pkts    Counter/bytes    Drop/pkts    Drop/bytes\n"
-                           "-----------  -----  --------------  ---------------  -----------  ------------\n" + "\n".join(rows) + "\n")
+                    stamp = f"Last cached time for {ns} was {datetime.now(timezone.utc).isoformat()}"
+                    out = "\n".join(f"{p} {stamp}\n" + _table(["Port", "TxQ", "Counter/pkts", "Counter/bytes", "Drop/pkts", "Drop/bytes"], [
+                        [p, f"UC{q}", f"{fab.q[(i, ns, p, f'UC{q}')][0]:,.0f}" if (i, ns, p, f"UC{q}") in fab.q else "0",
+                         f"{fab.q[(i, ns, p, f'UC{q}')][0] * 4096:,.0f}" if (i, ns, p, f"UC{q}") in fab.q else "0",
+                         f"{fab.q[(i, ns, p, f'UC{q}')][1]:,.0f}" if (i, ns, p, f"UC{q}") in fab.q else "0",
+                         f"{fab.q[(i, ns, p, f'UC{q}')][1] * 4096:,.0f}" if (i, ns, p, f"UC{q}") in fab.q else "0"]
+                        for q in range(8)]) for p in ports)
                 elif what == "buffer_pool watermark":
-                    out = ("                 Pool    Bytes\n---------------------  -------\n"
-                           "          egress_pool  1243620\ningress_lossless_pool  1990800\n")
+                    pools = sorted((sim.qos_tables(i, ns).get("BUFFER_POOL") or {}))
+                    out = f"Shared pool maximum occupancy: (Namespace {ns})\n" + _table(
+                        ["Pool", "Bytes"], [[pl, f"{fab.pool.get((i, ns, pl), 0.0):.0f}"] for pl in pools])
+                elif what == "priority-group drop counters":
+                    out = "Ingress PG dropped packets:\n" + _table(["Port"] + [f"PG{g}" for g in range(8)], [
+                        [p] + [f"{fab.pg_drop.get((i, ns, p, f'PG{g}'), 0.0) + (fab.idle_pg7_drops(i, ns, p) if g == 7 else 0):.0f}"
+                               for g in range(8)] for p in ports])
                 else:
-                    pgw = what.endswith("shared")
-                    clr = sim.wm_cleared.get((i, ns), 0.0)
-                    rows = [f"{p:>11}  {(3000000 if pgw and sim.tb_at.get(s, -1) > clr else 0):>7}      0{'      0' * 5}  {420 if pgw else 5:>5}"
-                            for p, (s, *_r) in ps]
-                    out = ("       Port      PG0    PG1    PG2    PG3    PG4    PG5    PG6    PG7\n"
-                           "-----------  -------  -----  -----  -----  -----  -----  -----  -----\n" + "\n".join(rows) + "\n")
+                    out = f"Ingress shared pool occupancy per PG: (Namespace {ns})\n" + _table(
+                        ["Port"] + [f"PG{g}" for g in range(8)],
+                        [[p] + [f"{fab.pgwm.get((i, ns, p, f'PG{g}'), 0.0):.0f}" for g in range(8)] for p in ports])
                 res = self._res(cmd, out)
+            elif (m := re.fullmatch(r"sonic-db-cli -n (asic\d+) CONFIG_DB keys '([A-Z0-9_]+)\|\*'", cmd)) \
+                    and m.group(2) in fake_qos.QOS_TABLES:
+                tbl = sim.qos_tables(i, m.group(1)).get(m.group(2)) or {}
+                res = self._res(cmd, "".join(f"{m.group(2)}|{k}\n" for k in sorted(tbl)))
+            elif (m := re.fullmatch(r"sonic-db-cli -n (asic\d+) CONFIG_DB hgetall '([A-Z0-9_]+)\|(.+)'", cmd)) \
+                    and m.group(2) in fake_qos.QOS_TABLES:
+                res = self._res(cmd, repr((sim.qos_tables(i, m.group(1)).get(m.group(2)) or {}).get(m.group(3), {})) + "\n")
+            elif m := re.fullmatch(r"sonic-cfggen -n (asic\d+) -d --print-data|cat /etc/sonic/config_db(\d)\.json", cmd):
+                # running / saved CONFIG_DB: the recorded dump with this switch's QoS profile (same in both, so the
+                # running-vs-saved check stays clean)
+                ns = m.group(1) or f"asic{m.group(2)}"
+                base = self.fallback.run(cmd, timeout=timeout, sudo=sudo, env=env)
+                try:
+                    data = json.loads(base.stdout) if base.ok else {}
+                except ValueError:
+                    data = {}
+                res = self._res(cmd, json.dumps(fake_qos.merge(data, sim.qos_tables(i, ns)), indent=4, sort_keys=True) + "\n")
             elif m := re.fullmatch(r"docker exec afm-agent curl -s -m 5 localhost:(\d+)/api/runtime/requests", cmd):
                 slot = int(m.group(1)) - 13000
                 ok = sim.agent_up[i] and sim.slot_host(slot) == i and "no_agent_requests" not in st.f
@@ -1102,11 +1138,14 @@ class FakeComputeTransport:
         st, sim = self.st, self.st.sim
         c = re.sub(r"\s+2>(/dev/null|&1)$", "", cmd.strip())
         out, rc = None, 0
+        if re.search(r"(^|[\s/])TransferBench(\s|$)", c):
+            # the data-path model (fake_fabric); outside the rack lock - rank 0 waits for its other ranks
+            rc, out = sim.fabric.transferbench(self.slot, c)
+            log.debug("[%s] $ %s", self.host.name, build_command(cmd, sudo, env))
+            log.debug("[%s] rc=%s 0.00s (sim)%s", self.host.name, rc, ("\n" + out.rstrip()) if out else "")
+            return CmdResult(self.host.name, cmd, rc, out, "" if rc == 0 else out)
         with st.lock:
             st.sim.refresh(st.objs)
-            if "TransferBench" in c:
-                sim.tb_at[self.slot] = time.monotonic()      # the congestion case's watermarks rise on these ports
-                sim.tb_n[self.slot] = sim.tb_n.get(self.slot, 0) + 1
             if c == "amd-smi process --json":
                 out = json.dumps([{"gpu": g, "process_list": [{"process_info": {"name": "gpu-collectives", "pid": 4242 + g}}]
                                    if "gpu_busy" in st.f else []} for g in range(4)])

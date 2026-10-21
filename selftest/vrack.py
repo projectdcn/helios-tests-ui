@@ -20,6 +20,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import shlex
 import socket
 import sys
@@ -36,6 +37,7 @@ sys.path.insert(0, str(ROOT / "selftest"))
 
 from fake_afm import ADMIN, FakeAfm, State  # noqa: E402
 from fake_rack import FakeComputeTransport, FakeSwitchTransport  # noqa: E402
+import fake_redfish  # noqa: E402
 from helios.inventory import Host  # noqa: E402
 from helios.transport import ReplayTransport  # noqa: E402
 
@@ -77,7 +79,9 @@ def unwrap(cmd: str) -> tuple[str, bool, dict]:
             if rest[:2] == ["bash", "-c"] and len(rest) == 3:
                 cmd = rest[2]
                 continue
-            cmd = shlex.join(rest) if rest else ""
+            # 'sudo [-n] cmd ...' typed by a person: drop the prefix from the text as it is, so ';' '|' '&&' in the
+            # rest stay operators (re-quoting the split tokens would turn them into arguments)
+            cmd = re.sub(r"^\s*sudo(?:\s+-\w+)*\s+", "", cmd, count=1)
             continue
         if tok[:1] == ["env"] and len(tok) > 1 and "=" in tok[1]:
             # only build_command's own wrapper (env K=V bash -c '...'); a test's 'env K=V tool ...' is the command
@@ -151,6 +155,10 @@ def _filter(argv: list[str], data: str) -> tuple[int, str] | None:
             return 2, ""
         rx = [(_re.escape(p) if "F" in flags else (p if "E" in flags else p.replace("\\|", "|").replace("\\(", "(").replace("\\)", ")")))
               for p in pats]
+        if "w" in flags:
+            rx = [rf"(?<![\w]){r}(?![\w])" for r in rx]
+        if "x" in flags:
+            rx = [rf"^(?:{r})$" for r in rx]
         cre = _re.compile("|".join(f"(?:{r})" for r in rx), _re.I if "i" in flags else 0)
         hit = [ln for ln in lines if bool(cre.search(ln)) != ("v" in flags)]
         if "o" in flags and "v" not in flags:
@@ -465,6 +473,65 @@ def _host_key(state_dir: Path) -> paramiko.PKey:
     return paramiko.Ed25519Key.from_private_key_file(str(f))
 
 
+STATE_FILE = "state.pickle"
+STATE_VERSION = 1
+
+
+def _shift_clock(st, delta: float) -> None:
+    """Move every monotonic timestamp the simulation keeps by ``delta`` (the monotonic clock restarts with the
+    machine): a link down for 40 s before the restart is still down for 40 s after it."""
+    sim = st.sim
+    for d in getattr(sim, "links_down", {}).values():
+        if isinstance(d, dict) and isinstance(d.get("since"), (int, float)):
+            d["since"] += delta
+    for name in ("removed_at", "reconf_at", "readmit_at", "wm_cleared"):
+        dd = getattr(sim, name, None) or {}
+        for k, v in list(dd.items()):
+            if isinstance(v, (int, float)):
+                dd[k] = v + delta
+    for vp in (getattr(sim, "back", None) or {}).values():
+        for k, v in list(vp.items()):
+            vp[k] = v + delta
+    for k, v in list((getattr(sim, "fdb_edits", None) or {}).items()):
+        sim.fdb_edits[k] = (v[0], v[1] + delta)
+    for name in ("last_agent_restart", "last_ctrl_restart"):
+        if isinstance(getattr(sim, name, None), (int, float)):
+            setattr(sim, name, getattr(sim, name) + delta)
+    fab = getattr(sim, "fabric", None)
+    if fab is not None:
+        fab.t0 += delta
+        for f in fab.recent:
+            f["t"] += delta
+
+
+def save_state(st, path: Path, meta: dict) -> None:
+    """Atomically pickle the rack state (0600) with the clocks it was taken at."""
+    import pickle
+    with st.lock:
+        blob = pickle.dumps({"version": STATE_VERSION, "meta": meta, "mono": time.monotonic(), "wall": time.time(),
+                             "state": st})
+    tmp = path.with_suffix(".tmp")
+    tmp.write_bytes(blob)
+    tmp.chmod(0o600)
+    tmp.replace(path)
+
+
+def load_state(path: Path, meta: dict):
+    """The saved State when it was taken with the same topology / QoS profile, else None (and why)."""
+    import pickle
+    if not path.exists():
+        return None, "no saved state"
+    try:
+        d = pickle.loads(path.read_bytes())        # our own 0600 file in the 0700 state dir
+    except Exception as e:  # noqa: BLE001
+        return None, f"saved state unreadable ({e}) - starting fresh"
+    if d.get("version") != STATE_VERSION or d.get("meta") != meta:
+        return None, f"saved state is for {d.get('meta')} - starting fresh"
+    st = d["state"]
+    _shift_clock(st, time.monotonic() - float(d["mono"]))
+    return st, f"restored the rack state saved {time.time() - float(d['wall']):.0f} s ago"
+
+
 def write_inventory(path: Path, st: State, nodes: list[Node], afm_url: str, topo_name: str, base: str,
                     template: str | None = None) -> None:
     sw = [n for n in nodes if n.role == "switch"]
@@ -475,8 +542,11 @@ def write_inventory(path: Path, st: State, nodes: list[Node], afm_url: str, topo
              "  switch: {user: admin}", "  compute: {user: admin, gpus: 4}", "switches:"]
     # afm_name pairs each node with its AFM object: every node is the same loopback address here, so the tests'
     # by-IP lookups (controller -> switch, ComputeNode -> tray) cannot work
-    lines += [f"  - {{name: {n.name}, host: {base}, port: {n.port}, afm_name: {st.sim.sname(k)}}}" for k, n in enumerate(sw)]
-    lines += ["computes:"] + [f"  - {{name: {n.name}, host: {base}, port: {n.port}, afm_name: {st.sim.cname(k)}}}"
+    def bmc(n):                  # its simulated Redfish BMC (password: $HELIOS_BMC_PASSWORD = fake_redfish.BMC_PW)
+        b = getattr(n, "bmc", None)
+        return f", bmc: '{b.url}', bmc_user: {fake_redfish.BMC_USER[n.role]}" if b else ""
+    lines += [f"  - {{name: {n.name}, host: {base}, port: {n.port}, afm_name: {st.sim.sname(k)}{bmc(n)}}}" for k, n in enumerate(sw)]
+    lines += ["computes:"] + [f"  - {{name: {n.name}, host: {base}, port: {n.port}, afm_name: {st.sim.cname(k)}{bmc(n)}}}"
                               for k, n in enumerate(ct)]
     lines += ["afm:", f"  url: {afm_url}", "  verify_tls: false", "  auth:", "    kind: session",
               f"    username: {ADMIN[0]}", "    password_env: HELIOS_AFM_PASSWORD   # simulator password: selftest/fake_afm.py ADMIN",
@@ -498,18 +568,32 @@ def main(argv=None) -> int:
     ap.add_argument("--bind", default="127.0.0.1")
     ap.add_argument("--ssh-port", type=int, default=22100, help="first SSH port (switches, then compute trays)")
     ap.add_argument("--afm-port", type=int, default=18443, help="AFM HTTPS port; the control API is on the next port")
+    ap.add_argument("--bmc-port", type=int, default=None, help="first BMC (Redfish HTTPS) port (default ssh-port + 200)")
     ap.add_argument("--faults", default=os.environ.get("HELIOS_FAKE_AFM_FAULTS", ""))
     ap.add_argument("--state-dir", default=str(Path("~/.helios-vrack").expanduser()))
     ap.add_argument("--time-scale", type=float, default=1.0, help="simulated delays x this (self-tests use 0.05)")
+    ap.add_argument("--fresh", action="store_true", help="ignore the saved rack state (<state-dir>/state.pickle)")
+    ap.add_argument("--realistic", action="store_true",
+                    help="real-rack delays: a link comes back ~4 s after 'startup' (training + IFCP), not at once")
+    ap.add_argument("--qos", choices=("none", "mr3", "lossless"), default=None,
+                    help="switch QoS / PFC profile (default: none on g02-g17 as on the real rack, mr3 elsewhere)")
     a = ap.parse_args(argv)
     if a.bind not in ("127.0.0.1", "localhost", "::1"):
         ap.error("the virtual rack binds to the loopback address only")
     state_dir = Path(a.state_dir)
     state_dir.mkdir(mode=0o700, parents=True, exist_ok=True)
     n_sw, n_ct, extra, template, sw_fmt, ct_fmt = TOPOLOGIES[a.topology]
-    st = State(set(filter(None, a.faults.split(","))),
-               {"switches": n_sw, "computes": n_ct, "time_scale": a.time_scale, **extra})
+    topo = {"switches": n_sw, "computes": n_ct, "time_scale": a.time_scale, **extra, **({"qos": a.qos} if a.qos else {}),
+            **({"link_up_s": 4.0} if a.realistic else {})}
+    meta = {"topology": a.topology, "qos": a.qos, "time_scale": a.time_scale, "realistic": a.realistic}
+    st, why = (None, "--fresh") if a.fresh else load_state(state_dir / STATE_FILE, meta)
+    if st is None:
+        st = State(set(filter(None, a.faults.split(","))), topo)
+    elif a.faults:
+        st.f |= set(filter(None, a.faults.split(",")))
     afm = FakeAfm(state=st, bind=(a.bind, a.afm_port)).start()
+    # the same AFM over plain HTTP for a browser (no self-signed certificate to accept); loopback only
+    view = FakeAfm(state=st, bind=(a.bind, a.afm_port + 2), tls=False).start()
     replay = str(ROOT / "selftest" / "replay")
     nodes: list[Node] = []
     port = a.ssh_port
@@ -526,21 +610,37 @@ def main(argv=None) -> int:
         print(f"no public key in {state_dir / 'authorized_keys'} - SSH logins will fail", file=sys.stderr)
     for n in nodes:
         threading.Thread(target=_listen, args=(n, a.bind, host_key, keys), daemon=True).start()
+    # one read-only Redfish BMC per node (fake_redfish): Blanton BMCs on the switches, OpenBMC on the trays
+    bmc_base = a.bmc_port or a.ssh_port + 200
+    for k, n in enumerate(nodes):
+        build = fake_redfish.blanton if n.role == "switch" else fake_redfish.openbmc
+        n.bmc = fake_redfish.RedfishServer(build, n.role, (a.bind, bmc_base + k)).start()
     _control(st, a.bind, a.afm_port + 1)
     inv = state_dir / "inventory.local.yaml"
     write_inventory(inv, st, nodes, afm.url, a.topology, a.bind, template)
-    print(f"virtual rack '{a.topology}' up ({n_sw} switches, {n_ct} compute trays) - simulated, loopback only")
+    print(f"virtual rack '{a.topology}' up ({n_sw} switches, {n_ct} compute trays, switch QoS {st.sim.qos}) - "
+          "simulated, loopback only")
     print(f"  AFM      {afm.url}   (simulator login: user {ADMIN[0]}, password in selftest/fake_afm.py ADMIN)")
+    print(f"  AFM page {view.url}/   (web view of the same AFM, plain HTTP for a browser)")
     print(f"  control  http://{a.bind}:{a.afm_port + 1}/   (GET state; POST /faults {{\"add\": [..], \"remove\": [..]}})")
     for n in nodes:
         print(f"  ssh -p {n.port} admin@{a.bind}   # {n.name} ({n.role})")
+    print(f"  BMCs     https://{a.bind}:{bmc_base}..{bmc_base + len(nodes) - 1}  (Redfish, read-only; users root / admin, "
+          "password fake_redfish.BMC_PW -> $HELIOS_BMC_PASSWORD)")
     print(f"  inventory: {inv}")
     sys.stdout.flush()
+    print(f"  state: {why}; saved every 30 s and on exit to {state_dir / STATE_FILE} (--fresh ignores it)")
+    sys.stdout.flush()
+    import signal
+    signal.signal(signal.SIGTERM, lambda *_: (_ for _ in ()).throw(KeyboardInterrupt()))
     try:
         while True:
-            time.sleep(3600)
+            time.sleep(30)
+            save_state(st, state_dir / STATE_FILE, meta)
     except KeyboardInterrupt:
+        save_state(st, state_dir / STATE_FILE, meta)
         afm.stop()
+        view.stop()
     return 0
 
 

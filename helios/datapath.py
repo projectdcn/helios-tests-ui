@@ -281,6 +281,9 @@ def transferbench_incast(dst, srcs, inventory, checks: Checks, duration_s: float
     time (rank 0 on the source, rank 1 on ``dst``), round after round until ``duration_s`` has passed, so the switch
     ports towards ``dst`` carry the sum. Needs commands.transferbench.rank_cmd. Returns {"rounds": n, "bw_gbps":
     [{pair: GB/s}, ...], "seconds": s}; a failed job is recorded in ``checks`` and ends the load."""
+    one_way = inventory.cmd("transferbench.incast_cmd")
+    if one_way:
+        return _incast_one_way(one_way, dst, srcs, inventory, checks, duration_s, size)
     tmpl = inventory.cmd("transferbench.rank_cmd")
     if not tmpl:
         pytest.skip("commands.transferbench.rank_cmd not set (multi-rank TransferBench needed for an incast)")
@@ -314,6 +317,39 @@ def transferbench_incast(dst, srcs, inventory, checks: Checks, duration_s: float
         if any(v is None for v in bw.values()) or time.monotonic() - t0 >= duration_s:
             break
     return {"rounds": len(rounds), "bw_gbps": rounds, "seconds": round(time.monotonic() - t0, 1)}
+
+
+def _incast_one_way(tmpl: str, dst, srcs, inventory, checks: Checks, duration_s: float, size: str | None) -> dict:
+    """commands.transferbench.incast_cmd: ONE TransferBench job of len(srcs)+1 ranks - rank 0 on ``dst``, rank k on
+    source k - in which every GPU of every source writes one-way into GPU ``transferbench.incast_dst_gpu`` (0) of
+    ``dst`` (transfer syntax (RkGg->RkGg->R0Gd), TransferBench >= 1.66 rank prefix). That GPU's 36 ports are the
+    bottleneck: N sources x 4 GPUs offer far more than its line rate - a many-to-one incast, unlike the 2-rank a2a
+    jobs (two-way, spread over all 144 ports: g02-g17 21 Oct, 0.21 of line rate). Placeholders: {num_ranks} {rank}
+    {master_addr} {transfers} {size}; the rank port is TB_MASTER_PORT=transferbench.incast_base_port."""
+    regexes, kw, timeout = _tb_common(inventory, size)
+    g_dst = int(inventory.cmd("transferbench.incast_dst_gpu", 0))
+    se = int(inventory.cmd("transferbench.incast_subexecutors", 32))
+    ranks = [dst] + list(srcs)
+    xfers = [f"(R{k}G{g}->R{k}G{g}->R0G{g_dst})" for k in range(1, len(ranks)) for g in range(int(getattr(srcs[0], "gpus", 4) or 4))]
+    expr = f"{len(xfers)} {se} " + " ".join(xfers)
+    port = int(inventory.cmd("transferbench.incast_base_port", 47100))
+    tag = f"{','.join(s.name for s in srcs)}->{dst.name}:GPU{g_dst}"
+    t0 = time.monotonic()
+    rounds: list[dict] = []
+    while True:
+        jobs = [(node, f"TB_MASTER_PORT={port} " + render(tmpl, rank=r, num_ranks=len(ranks), master_addr=addr(dst),
+                                                          name=node.name, gpus=node.gpus, transfers=expr, **kw))
+                for r, node in enumerate(ranks)]
+        res = run_ranks(jobs, timeout, sudo=use_sudo(inventory))
+        for node, r, e in res[1:]:
+            checks.check(not e and r.ok, f"{tag}: rank on {node.name} failed: {e or f'rc={r.rc} {r.tail()!r}'}")
+        _, r0, e0 = res[0]
+        bw = _tb_check(tag, r0, e0, regexes, None, checks)
+        rounds.append({tag: bw})
+        if bw is None or time.monotonic() - t0 >= duration_s:
+            break
+    return {"rounds": len(rounds), "bw_gbps": rounds, "seconds": round(time.monotonic() - t0, 1),
+            "mode": "one-way", "dst_gpu": g_dst}
 
 
 def require_transferbench_cross(inventory) -> None:

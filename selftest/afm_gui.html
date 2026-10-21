@@ -1,0 +1,147 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Virtual AFM</title>
+<style>
+:root{--bg:#14161a;--panel:#1d2026;--line:#2c3038;--fg:#e6e8eb;--dim:#9aa1ab;--ok:#4cc38a;--warn:#e5b454;--bad:#ef6b6b;--acc:#7aa2f7}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--fg);font:14px/1.4 system-ui,-apple-system,Segoe UI,Arial,sans-serif}
+header{display:flex;align-items:center;gap:16px;padding:12px 20px;border-bottom:1px solid var(--line);background:var(--panel)}
+header b{font-size:16px}header .tag{color:var(--warn);font-size:12px;border:1px solid var(--warn);border-radius:4px;padding:1px 6px}
+header .right{margin-left:auto;color:var(--dim);font-size:12px}
+nav{display:flex;gap:4px;padding:8px 20px;border-bottom:1px solid var(--line);flex-wrap:wrap}
+nav button{background:none;border:1px solid transparent;color:var(--dim);padding:6px 12px;border-radius:6px;cursor:pointer;font:inherit}
+nav button.on{color:var(--fg);border-color:var(--line);background:var(--panel)}
+main{padding:16px 20px}
+.cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:12px;margin-bottom:16px}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:12px}
+.card .n{font-size:26px;font-weight:600}.card .l{color:var(--dim);font-size:12px}
+table{width:100%;border-collapse:collapse;background:var(--panel);border:1px solid var(--line);border-radius:8px;overflow:hidden}
+th,td{text-align:left;padding:7px 10px;border-bottom:1px solid var(--line);font-size:13px;vertical-align:top}
+th{color:var(--dim);font-weight:600;background:#181b20}tr:last-child td{border-bottom:none}
+.ok{color:var(--ok)}.warn{color:var(--warn)}.bad{color:var(--bad)}.dim{color:var(--dim)}
+.login{max-width:340px;margin:12vh auto;background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:24px}
+.login input{width:100%;margin:6px 0 12px;padding:8px;border-radius:6px;border:1px solid var(--line);background:#111317;color:var(--fg);font:inherit}
+.login button{width:100%;padding:9px;border:0;border-radius:6px;background:var(--acc);color:#0b0d10;font-weight:600;cursor:pointer}
+.err{color:var(--bad);min-height:1.4em}.ports{font-family:ui-monospace,Menlo,monospace;font-size:11px;letter-spacing:1px}
+@media (max-width:640px){main,header,nav{padding-left:12px;padding-right:12px}td,th{padding:6px}}
+</style></head>
+<body>
+<div id="login" class="login" hidden>
+  <h3 style="margin-top:0">Virtual AFM</h3>
+  <p class="dim" style="margin-top:0">Simulated controller of the virtual rack. Sign in with the simulator's admin user.</p>
+  <label>User<input id="u" value="admin" autocomplete="username"></label>
+  <label>Password<input id="p" type="password" autocomplete="current-password"></label>
+  <div class="err" id="lerr"></div><button id="go">Sign in</button>
+</div>
+<div id="app" hidden>
+  <header><b>Virtual AFM</b><span class="tag">SIMULATED</span><span id="cl" class="dim"></span><span class="right" id="upd"></span></header>
+  <nav id="tabs"></nav>
+  <main id="view"></main>
+</div>
+<script>
+"use strict";
+const API = {cluster: "/configs/cluster/v1/cluster", computes: "/configs/cluster/v1/computenodes",
+  switches: "/configs/cluster/v1/switchnodes", vpods: "/configs/cluster/v1/vpods",
+  alerts: "/configs/monitoring/v1/alerts", policies: "/configs/monitoring/v1/alertPolicies", events: "/events/v1/events"};
+const TABS = ["Dashboard", "Compute nodes", "Switch nodes", "vPODs", "Alerts", "Events"];
+let tab = "Dashboard", data = {};
+const $ = s => document.querySelector(s);
+const esc = v => String(v ?? "").replace(/[&<>"]/g, c => ({"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;"}[c]));
+const cls = s => /ready|admitted|online|healthy|started|true|up/i.test(s) ? "ok" : /degraded|pending|warn/i.test(s) ? "warn" : /fail|down|error|critical|absent/i.test(s) ? "bad" : "";
+
+async function get(path) {
+  const r = await fetch(path, {credentials: "same-origin"});
+  if (r.status === 401) throw new Error("401");
+  if (!r.ok) return null;
+  return r.json();
+}
+const items = o => (o && (o.items || o.events || o.Items)) || [];
+
+async function load() {
+  try {
+    data.cluster = await get(API.cluster);               // one request first: signed out -> the login form
+    const keys = Object.keys(API).filter(k => k !== "cluster"), res = await Promise.all(keys.map(k => get(API[k])));
+    keys.forEach((k, i) => data[k] = res[i]);
+    $("#upd").textContent = "updated " + new Date().toLocaleTimeString();
+    render();
+  } catch (e) {
+    if (e.message === "401") { $("#app").hidden = true; $("#login").hidden = false; }
+  }
+}
+
+function gpuInfo(c) { return (((c.status || {})["scale-up-info"] || {})["gpu-info"]) || {}; }
+
+function render() {
+  $("#tabs").innerHTML = TABS.map(t => `<button class="${t === tab ? "on" : ""}" data-t="${esc(t)}">${esc(t)}</button>`).join("");
+  document.querySelectorAll("#tabs button").forEach(b => b.onclick = () => { tab = b.dataset.t; render(); });
+  const cl = data.cluster || {}, q = ((cl.status || {})["quorum-status"] || {}).members || [];
+  $("#cl").textContent = `${(cl.meta || {}).name || ""} · leader ${(cl.status || {}).leader || "?"} · quorum ${q.length}`;
+  const v = $("#view"), cs = items(data.computes), ss = items(data.switches), vs = items(data.vpods);
+  const al = items(data.alerts), ev = items(data.events);
+  if (tab === "Dashboard") {
+    let ready = 0, failed = 0;
+    cs.forEach(c => Object.values(gpuInfo(c)).forEach(g => (g.ports || []).forEach(p => p["oper-state"] === "PortFailed" ? failed++ : ready++)));
+    const sys = vs[0] || {}, st = sys.status || {};
+    v.innerHTML = `<div class="cards">
+      ${card(cs.length, "Compute nodes", cs.filter(c => (c.status || {})["admission-phase"] !== "admitted").length + " not admitted")}
+      ${card(ss.length, "Switch nodes", ss.filter(s => (s.status || {})["admission-phase"] !== "admitted").length + " not admitted")}
+      ${card(`${st["available-switch-planes"] ?? "?"}/${st["provisioned-switch-planes"] ?? "?"}`, "Planes " + esc((sys.meta || {}).name || ""), `<span class="${cls(st["vpod-state"])}">${esc(st["vpod-state"] || "")}</span>`)}
+      ${card(ready + failed, "GPU ports", `<span class="${failed ? "bad" : "ok"}">${failed} PortFailed</span>`)}
+      ${card(al.length, "Alerts", al.filter(a => /critical/i.test(JSON.stringify(a))).length + " critical")}
+      ${card(ev.length, "Events")}</div>` + eventsTable(ev.slice(-15).reverse());
+  } else if (tab === "Compute nodes") {
+    v.innerHTML = table(["Name", "Slot", "Admission", "GPUs", "GPU ports (· ready, x failed)"], cs.map(c => {
+      const g = Object.values(gpuInfo(c)).sort((a, b) => (a.index || 0) - (b.index || 0));
+      return [esc(c.meta.name), esc((c.spec || {})["slot-id"]), st_((c.status || {})["admission-phase"]), g.length,
+        `<span class="ports">${g.map(x => "G" + x.index + " " + (x.ports || []).map(p => p["oper-state"] === "PortFailed" ? '<b class="bad">x</b>' : "·").join("")).join("<br>")}</span>`];
+    }));
+  } else if (tab === "Switch nodes") {
+    v.innerHTML = table(["Name", "IP", "Role", "Admission", "Ports failed / total"], ss.map(s => {
+      const ports = (((s.status || {})["asic-info"] || {}).asics || []).flatMap(a => a.ports || []);
+      const bad = ports.filter(p => p["oper-state"] === "PortFailed").length;
+      return [esc(s.meta.name), esc((s.spec || {})["ip-address"]), esc((s.spec || {})["switch-role"]),
+        st_((s.status || {})["admission-phase"]), `<span class="${bad ? "bad" : "ok"}">${bad}</span> / ${ports.length}`];
+    }));
+  } else if (tab === "vPODs") {
+    v.innerHTML = table(["Name", "State", "GPUs", "Planes (prov / avail / eff)", "Failover policy", "Pending ops"], vs.map(x => {
+      const s = x.status || {}, sp = x.spec || {};
+      return [esc(x.meta.name), st_(s["vpod-state"]), (sp.GPUs || []).length,
+        `${s["provisioned-switch-planes"] ?? ""} / ${s["available-switch-planes"] ?? ""} / ${s["effective-switch-planes"] ?? ""}`,
+        esc(sp["failover-policy"]), esc((s["pending-ops"] || []).map(p => p.operation).join(", "))];
+    }));
+  } else if (tab === "Alerts") {
+    const pol = items(data.policies);
+    v.innerHTML = `<h4>Alert policies</h4>` + table(["Name", "Resource", "Severity", "Requirements", "Enabled"], pol.map(p => {
+      const s = p.spec || {};
+      return [esc(p.meta.name), esc(s.resource), esc(s.severity), esc(JSON.stringify(s.requirements || [])), esc(s.enable)];
+    })) + `<h4>Alerts (${al.length})</h4>` + table(["Created", "Severity", "Message", "Policy"], al.slice(-200).reverse().map(a => {
+      const s = a.spec || {}, st = a.status || {};
+      return [esc((a.meta || {})["creation-time"]), st_(st.severity || s.severity), esc(st.message || s.message || ""),
+        esc(((st.reason || {})["alert-policy-id"]) || s["alert-policy"] || "")];
+    }));
+  } else {
+    v.innerHTML = eventsTable(ev.slice(-300).reverse());
+  }
+}
+const card = (n, l, sub = "") => `<div class="card"><div class="n">${n}</div><div class="l">${esc(l)}</div><div class="l">${sub}</div></div>`;
+const st_ = s => `<span class="${cls(s)}">${esc(s)}</span>`;
+function table(h, rows) {
+  if (!rows.length) return `<p class="dim">Nothing to show.</p>`;
+  return `<table><tr>${h.map(x => `<th>${esc(x)}</th>`).join("")}</tr>${rows.map(r => `<tr>${r.map(c => `<td>${c}</td>`).join("")}</tr>`).join("")}</table>`;
+}
+function eventsTable(ev) {
+  return table(["Time", "Severity", "Type", "Message"], ev.map(e => [esc((e.meta || {})["creation-time"] || e.time || ""),
+    st_(e.severity), esc(e.type), esc(e.message)]));
+}
+
+$("#go").onclick = async () => {
+  $("#lerr").textContent = "";
+  const r = await fetch("/v1/login", {method: "POST", credentials: "same-origin", headers: {"Content-Type": "application/json"},
+    body: JSON.stringify({username: $("#u").value, password: $("#p").value, tenant: "default"})});
+  if (!r.ok) { $("#lerr").textContent = "Sign-in failed (" + r.status + ")"; return; }
+  $("#login").hidden = true; $("#app").hidden = false; load();
+};
+$("#p").addEventListener("keydown", e => { if (e.key === "Enter") $("#go").click(); });
+$("#app").hidden = false;
+load();
+setInterval(() => { if (!$("#app").hidden) load(); }, 5000);
+</script></body></html>

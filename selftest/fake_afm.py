@@ -89,6 +89,9 @@ class State:
             topo["switches"], topo["computes"] = layout["switches"], layout["computes"]
         self.sim = Sim(self, int(topo.get("switches", 1)), int(topo.get("computes", 2)), topo.get("mch"), layout)
         self.sim.time_scale = float(topo.get("time_scale", 1))
+        if topo.get("qos"):
+            self.sim.qos = str(topo["qos"])
+        self.sim.link_up_s = float(topo.get("link_up_s", 0))
         n_ct = int(topo.get("computes", 2))
         self.objs = {
             "ComputeNode": self.sim.computes,
@@ -124,6 +127,21 @@ class State:
             self.sim.ctrl_restarts[0] += 1
 
     # ---------------------------------------------------------------- RBAC
+
+    # ---------------------------------------------------------------- persistence (selftest/vrack.py --state-dir)
+    def __getstate__(self):
+        d = dict(self.__dict__)
+        d.pop("lock", None)
+        d["watchers"] = []                      # live AggWatch streams do not survive a restart
+        d["rv"] = next(self.rv)                 # itertools.count -> its next value
+        return d
+
+    def __setstate__(self, d):
+        import itertools as _it
+        rv = d.pop("rv", 1000)
+        self.__dict__.update(d)
+        self.lock = threading.RLock()
+        self.rv = _it.count(int(rv))
     def allowed(self, user: str, group: str, kind: str, action: str) -> bool:
         if user == "admin" or "rbac_bypass" in self.f:
             return True
@@ -221,6 +239,15 @@ class Handler(BaseHTTPRequestHandler):
         st = self.st
         if path == "/v1/login" and method == "POST":
             return self._login(body)
+        if method == "GET" and path in ("", "/index.html", "/ui"):
+            # the virtual rack's AFM web page (selftest/afm_gui.html): it signs in through /v1/login itself
+            page = (Path(__file__).resolve().parent / "afm_gui.html").read_bytes()
+            self.send_response(200)
+            self.send_header("Content-Type", "text/html; charset=utf-8")
+            self.send_header("Content-Length", str(len(page)))
+            self.send_header("Cache-Control", "no-store")
+            self.end_headers()
+            return self.wfile.write(page)
         user = self._user()
         if user is None and not ("unauth_ok" in st.f and method == "GET"):
             return self._err(401, "Not authenticated")
@@ -881,12 +908,15 @@ class FakeAfm:
     """HTTPS (self-signed, generated with openssl) so Secure cookies flow exactly as on the real AFM."""
 
     def __init__(self, faults: set[str] | None = None, topology: dict | None = None, bind: tuple[str, int] = ("127.0.0.1", 0),
-                 state: "State | None" = None):
+                 state: "State | None" = None, tls: bool = True):
         self.state = state or State(set(faults or ()), topology)
         handler = type("H", (Handler,), {"st": self.state})
         self.httpd = ThreadingHTTPServer(bind, handler)
         self.httpd.daemon_threads = True
+        self.tls = tls
         self._tmp = tempfile.TemporaryDirectory(prefix="fake-afm-")
+        if not tls:                    # plain HTTP on loopback (vrack's browser view): same state, no certificate
+            return
         crt, key = Path(self._tmp.name) / "c.pem", Path(self._tmp.name) / "k.pem"
         subprocess.run(["openssl", "req", "-x509", "-newkey", "rsa:2048", "-nodes", "-subj", "/CN=127.0.0.1",
                         "-days", "1", "-keyout", str(key), "-out", str(crt)], check=True, capture_output=True)
@@ -896,7 +926,7 @@ class FakeAfm:
 
     @property
     def url(self) -> str:
-        return f"https://{self.httpd.server_address[0]}:{self.httpd.server_address[1]}"
+        return f"{'https' if self.tls else 'http'}://{self.httpd.server_address[0]}:{self.httpd.server_address[1]}"
 
     def start(self) -> "FakeAfm":
         threading.Thread(target=self.httpd.serve_forever, daemon=True).start()

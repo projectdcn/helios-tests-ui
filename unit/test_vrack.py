@@ -103,3 +103,21 @@ def _keygen(path: Path) -> Path:
     import subprocess
     subprocess.run(["ssh-keygen", "-q", "-t", "ed25519", "-N", "", "-f", str(path)], check=True)
     return path
+
+
+def test_state_survives_a_restart_with_the_clock_shifted(tmp_path, monkeypatch):
+    """--state-dir: the rack state is saved and restored; monotonic timestamps move with the clock, so a link down
+    for 40 s before the restart is still down for 40 s after it; another topology / QoS starts fresh."""
+    from fake_afm import State
+
+    st = State(set(), {"switches": 1, "computes": 2})
+    st.sim.links_down[(0, "asic0", "Ethernet0")] = {"since": 1000.0, "known": True}
+    meta = {"topology": "mr3", "qos": None, "time_scale": 1.0, "realistic": False}
+    f = tmp_path / vrack.STATE_FILE
+    monkeypatch.setattr(vrack.time, "monotonic", lambda: 1040.0)
+    vrack.save_state(st, f, meta)
+    assert oct(f.stat().st_mode & 0o777) == "0o600"
+    monkeypatch.setattr(vrack.time, "monotonic", lambda: 50.0)          # machine restarted
+    st2, why = vrack.load_state(f, meta)
+    assert "restored" in why and st2.sim.links_down[(0, "asic0", "Ethernet0")]["since"] == 10.0   # 50 - 40
+    assert vrack.load_state(f, {**meta, "qos": "lossless"})[0] is None
