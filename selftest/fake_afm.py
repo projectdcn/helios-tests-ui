@@ -82,8 +82,12 @@ class State:
         sys.path.insert(0, str(Path(__file__).resolve().parent))
         from fake_rack import Sim
 
-        topo = topology or {}
-        self.sim = Sim(self, int(topo.get("switches", 1)), int(topo.get("computes", 2)), topo.get("mch"))
+        topo = dict(topology or {})
+        layout = None
+        if topo.get("layout"):          # a recorded rack layout: selftest/topologies/<name>.json
+            layout = json.loads((Path(__file__).resolve().parent / "topologies" / f"{topo['layout']}.json").read_text())
+            topo["switches"], topo["computes"] = layout["switches"], layout["computes"]
+        self.sim = Sim(self, int(topo.get("switches", 1)), int(topo.get("computes", 2)), topo.get("mch"), layout)
         self.sim.time_scale = float(topo.get("time_scale", 1))
         n_ct = int(topo.get("computes", 2))
         self.objs = {
@@ -876,10 +880,11 @@ def _close(sock) -> None:
 class FakeAfm:
     """HTTPS (self-signed, generated with openssl) so Secure cookies flow exactly as on the real AFM."""
 
-    def __init__(self, faults: set[str] | None = None, topology: dict | None = None):
-        self.state = State(set(faults or ()), topology)
+    def __init__(self, faults: set[str] | None = None, topology: dict | None = None, bind: tuple[str, int] = ("127.0.0.1", 0),
+                 state: "State | None" = None):
+        self.state = state or State(set(faults or ()), topology)
         handler = type("H", (Handler,), {"st": self.state})
-        self.httpd = ThreadingHTTPServer(("127.0.0.1", 0), handler)
+        self.httpd = ThreadingHTTPServer(bind, handler)
         self.httpd.daemon_threads = True
         self._tmp = tempfile.TemporaryDirectory(prefix="fake-afm-")
         crt, key = Path(self._tmp.name) / "c.pem", Path(self._tmp.name) / "k.pem"
@@ -891,7 +896,7 @@ class FakeAfm:
 
     @property
     def url(self) -> str:
-        return f"https://127.0.0.1:{self.httpd.server_address[1]}"
+        return f"https://{self.httpd.server_address[0]}:{self.httpd.server_address[1]}"
 
     def start(self) -> "FakeAfm":
         threading.Thread(target=self.httpd.serve_forever, daemon=True).start()

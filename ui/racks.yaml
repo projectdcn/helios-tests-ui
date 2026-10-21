@@ -31,6 +31,15 @@ racks:
       ref: HEAD                         # committed code only, like the manual 'git archive HEAD' copy
       remote_html: false                # run-health.sh uses --no-html; the HTML is built here after the copy-back
 
+  vrack:
+    title: Virtual rack (g02-g17 layout, simulated - start tools/vrack.sh first)
+    runner: local
+    # written by tools/vrack.sh at start: every switch / tray on 127.0.0.1 with its own SSH port, the fake AFM URL.
+    # AFM password: the simulator's (selftest/fake_afm.py ADMIN) - not a real credential.
+    inventory: ~/.helios-vrack/inventory.local.yaml
+    results_dir: ~/dev/helios-tests/results/runs/vrack   # the one results store (main checkout)
+    workbook: ~/dev/helios-tests/testplan/full_rack_testplan.xlsx
+
   selftest:
     title: Simulated rack (selftest replay + fake AFM)
     runner: local

@@ -54,12 +54,28 @@ def mch_used(mask: str = MCH_MASK) -> set[int]:
 
 
 class Sim:
-    def __init__(self, st, n_switches: int = 1, n_computes: int = 2, mch: str | None = None):
+    def __init__(self, st, n_switches: int = 1, n_computes: int = 2, mch: str | None = None, layout: dict | None = None):
         self.st, self.f = st, st.f
+        # layout (selftest/topologies/<name>.json, e.g. g02-g17): the recorded cabling - every switch port with its
+        # lanes / alias / speed, the cabled ones with (slot, GPU, GPU port); planes = GPU port ids, 3 per ASIC there
+        self.layout = layout
+        if layout:
+            n_switches, n_computes = int(layout["switches"]), int(layout["computes"])
+            self._lay = {}
+            self._pid_at: dict[int, tuple[int, int]] = {}
+            for key, ports in layout["asics"].items():
+                i, ns = key.split("/")
+                cab = {}
+                for pn, e in ports.items():
+                    if "cab" in e:
+                        s, g, pid = e["cab"]
+                        cab[pn] = (s, g, s * 4 + g, pid)
+                        self._pid_at[pid] = (int(i), int(ns[4:]))
+                self._lay[(int(i), ns)] = cab
         self.n_sw = n_switches
         # MCH (mch: full | mini): 36 IFoE ports per GPU, all cabled, only the lane mask's 18 used; 18 planes
         self.mch = mch
-        self.used = mch_used() if mch else set(range(2 * n_switches))
+        self.used = mch_used() if mch else set(range(PLANES)) if layout else set(range(2 * n_switches))
         self.planes = 18 if mch else PLANES
         self.switch_ips = [f"10.0.0.{83 - n_switches + 1 + i}" for i in range(n_switches)]
         self.quorum = self.switch_ips[:3]
@@ -169,11 +185,13 @@ class Sim:
         return i + 1 if self.mch == "full" and "mch_slot_ids_wrong" not in self.f else i
 
     def gpu_pids(self):
-        """IFoE port ids a GPU reports: all 36 on MCH, else the cabled 2 per switch."""
-        return range(36) if self.mch else range(2 * self.n_sw)
+        """IFoE port ids a GPU reports: all 36 on MCH or a recorded layout, else the cabled 2 per switch."""
+        return range(36) if self.mch or self.layout else range(2 * self.n_sw)
 
     def pid_link(self, pid):
         """(switch index, asic) a GPU port is cabled to, or None."""
+        if self.layout:
+            return self._pid_at.get(pid)
         if self.mch:
             return divmod(pid % (2 * self.n_sw), 2)
         return divmod(pid, 2) if pid < 2 * self.n_sw else None
@@ -210,6 +228,8 @@ class Sim:
     def ports(self, i, ns):
         """{port: (slot, gpu, acc, gpu_port)}: one port per GPU per ASIC; plane/GPU port id = 2*switch + asic.
         MCH: every GPU port id p with p % (2*switches) == 2*switch + asic (unused lanes cabled too)."""
+        if self.layout:
+            return self._lay.get((i, ns), {})
         a = int(ns[4:])
         if not self.mch:
             return {f"Ethernet{a * 256 + (s * 4 + g) * 8}": (s, g, s * 4 + g, 2 * i + a)
@@ -217,6 +237,15 @@ class Sim:
         pids = [p for p in range(36) if self.pid_link(p) == (i, a)]
         return {f"Ethernet{a * 256 + ((s * 4 + g) * len(pids) + j) * 2}": (s, g, s * 4 + g, p)
                 for s in range(self.n_ct) for g in range(4) for j, p in enumerate(pids)}
+
+    def all_ports(self, i, ns) -> list[tuple[str, dict]]:
+        """Every switch port of an ASIC in EthernetN order with its lanes / speed / alias (a recorded layout lists the
+        uncabled ports and 100G uplinks too; the generated layouts only have cabled 400G ports)."""
+        if self.layout:
+            ports = self.layout["asics"].get(f"{i}/{ns}", {})
+            return sorted(ports.items(), key=lambda x: int(x[0][8:]))
+        return [(p, {"lanes": "0,1,2,3,4,5,6,7", "speed": "400G", "alias": f"etp{n}"})
+                for n, p in enumerate(sorted(self.ports(i, ns), key=lambda x: int(x[8:])))]
 
     def port_vlan(self, i, ns, port) -> str:
         """'show interfaces status' Vlan column: 'trunk' while the cabled GPU is in a vPOD, else 'routed' - g02-g17
@@ -637,11 +666,34 @@ class Sim:
         return sum(len(v["spec"].get("GPUs") or []) for v in objs["VPod"].values()) + self.stale_macs
 
 
+def _table(headers: list[str], rows: list[list[str]]) -> str:
+    """A SONiC CLI (tabulate 'simple') table: columns as wide as their longest cell, right-aligned, dashed rule."""
+    w = [max(len(str(h)), *(len(str(r[k])) for r in rows)) if rows else len(str(h)) for k, h in enumerate(headers)]
+    line = lambda cells: "  ".join(f"{str(c):>{w[k]}}" for k, c in enumerate(cells))  # noqa: E731
+    return "\n".join([line(headers), "  ".join("-" * x for x in w)] + [line(r) for r in rows]) + "\n"
+
+
+def _replay_as(fallback, legacy: str):
+    """The replay fallback answering as ``legacy`` (sw<n> / c1 / c2): its recorded rules match those host names, so a
+    recorded layout's st1..st6 / ct01..ct18 (selftest/topologies) reuse them. Log lines keep the real node name."""
+    import copy
+    import dataclasses
+
+    from helios.transport import ReplayTransport
+
+    if not isinstance(fallback, ReplayTransport) or fallback.host.name.startswith(("sw", "c")) and \
+            not fallback.host.name.startswith("ct"):
+        return fallback
+    f = copy.copy(fallback)
+    f.host = dataclasses.replace(fallback.host, name=legacy)
+    return f
+
+
 class FakeSwitchTransport:
     """Switch 'SSH' bound to the simulated rack; anything it does not model goes to the replay fallback."""
 
     def __init__(self, host, st, index: int, fallback):
-        self.host, self.st, self.i, self.fallback = host, st, index, fallback
+        self.host, self.st, self.i, self.fallback = host, st, index, _replay_as(fallback, f"sw{index + 1}")
 
     def _res(self, cmd, out="", rc=0):
         return CmdResult(self.host.name, cmd, rc, out, "")
@@ -798,15 +850,15 @@ class FakeSwitchTransport:
                 rows = "".join(f"  {k + 1}  Vlan100  02:00:00:00:{k:02x}:00  Ethernet{k}  Static\n" for k in range(n))
                 res = self._res(cmd, "  No.  Vlan  MacAddress  Port  Type\n-----  ----  ----  ----  ----\n" + rows)
             elif m := re.fullmatch(r"show interfaces status -n (asic\d+) -d all", cmd):
-                hdr = ("   Interface  Lanes            Speed   MTU  FEC  Alias   Vlan    Oper  Admin  Type  Asym PFC\n"
-                       "------------  ---------------  -----  ----  ---  ------  ------  ----  -----  ----  --------\n")
                 ns_ = m.group(1)
-                rows = "".join("  ".join([f"{p:>12}", f"{'0,1,2,3,4,5,6,7':<15}", f"{'400G':>5}", f"{sim.mtu.get((i, ns_, p), 9100):>4}",
-                                          f"{'rs':>3}", f"{'etp' + str(n):<6}", f"{sim.port_vlan(i, ns_, p):<6}",
-                                          f"{sim.link_state(i, ns_, p):<4}", f"{sim.admin(i, ns_, p):<5}",
-                                          f"{'OSFP':<4}", f"{'N/A':<8}"]) + "\n"
-                               for n, p in enumerate(sorted(sim.ports(i, ns_), key=lambda x: int(x[8:]))))
-                res = self._res(cmd, hdr + rows)
+                cabled = sim.ports(i, ns_)
+                rows = [[p, e["lanes"], e["speed"], str(sim.mtu.get((i, ns_, p), 9100)), "N/A" if sim.layout else "rs",
+                         e["alias"], sim.port_vlan(i, ns_, p) if p in cabled else "routed",
+                         sim.link_state(i, ns_, p) if p in cabled else "down", sim.admin(i, ns_, p),
+                         "N/A" if sim.layout else "OSFP", "N/A"]
+                        for p, e in sim.all_ports(i, ns_)]
+                res = self._res(cmd, _table(["Interface", "Lanes", "Speed", "MTU", "FEC", "Alias", "Vlan", "Oper",
+                                             "Admin", "Type", "Asym PFC"], rows))
             elif m := re.fullmatch(r"config interface -n (asic\d+) mtu (Ethernet\d+) (\d+)", cmd):
                 key, mtu = (i, m.group(1), m.group(2)), int(m.group(3))
                 if key[2] in sim.ports(i, key[1]):
@@ -821,8 +873,9 @@ class FakeSwitchTransport:
             elif "CONFIG_DB keys 'PORT|Ethernet*'" in cmd and cmd.startswith("for k in"):
                 ns = re.search(r"-n (asic\d+)", cmd).group(1)
                 off = 1 if "desc_acc_off_by_one" in st.f else 0
-                res = self._res(cmd, "".join(f"{p}|To ComputeTray Slot{s}/GPU{g}[{acc + off}]/Port{pid}\n"
-                                             for p, (s, g, acc, pid) in sim.ports(i, ns).items()))
+                cabled = sim.ports(i, ns)
+                res = self._res(cmd, "".join(f"{p}|To ComputeTray Slot{c[0]}/GPU{c[1]}[{c[2] + off}]/Port{c[3]}\n"
+                                             if (c := cabled.get(p)) else f"{p}|\n" for p, _e in sim.all_ports(i, ns)))
             elif "CONFIG_DB keys 'FDB|*'" in cmd and cmd.startswith("for k in"):
                 # static FDB: one entry per VLAN-member port of an admitted compute (fault stale_fdb: + one in Vlan2)
                 ns = re.search(r"-n (asic\d+)", cmd).group(1)
@@ -947,7 +1000,7 @@ class FakeComputeTransport:
     stations, update port, reset), clock and journal. Traffic tools fall back to the replay rules."""
 
     def __init__(self, host, st, slot: int, fallback):
-        self.host, self.st, self.slot, self.fallback = host, st, slot, fallback
+        self.host, self.st, self.slot, self.fallback = host, st, slot, _replay_as(fallback, f"c{slot % 2 + 1}")
 
     # ---------------------------------------------------------------- model
     def _gpu(self, g):

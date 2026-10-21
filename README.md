@@ -100,6 +100,33 @@ HELIOS_SELFTEST_DIR_PW=selftest-dir-pw .venv/bin/pytest tests/afm/test_afm_equip
     --inventory selftest/inventory-equip.yaml --allow-disruptive          # 15 pass (fake LDAP/RADIUS/syslog/upgrades/mgmt network)
 ```
 
+### 1b. Virtual rack: a simulated Helios rack over real protocols
+
+`tools/vrack.sh` starts the self-test simulation as a service on 127.0.0.1, so the UI, pytest with an ordinary SSH
+inventory, ssh and curl talk to it as to a rack. The default layout is **g02-g17**, recorded from its 19 Oct link scan
+(`selftest/topologies/g02-g17.json`): 6 switches x 2 ASICs (257 ports each, 216 cabled 400G GPU ports, the real port
+names / lanes / aliases / descriptions), 18 compute trays, 72 GPUs, 36 planes (3 per ASIC).
+
+```bash
+tools/vrack.sh                                   # g02-g17; --topology afm3 (3 sw / 3 trays) | mr3 (1 sw / 2 trays)
+ssh -p 22100 admin@127.0.0.1                     # st1 .. st6 = 22100-22105, ct01 .. ct18 = 22106-22123 (your ~/.ssh keys)
+curl -s http://127.0.0.1:18444/                  # control: state; POST /faults {"add": ["no_alerts"], "remove": [...]}
+export HELIOS_AFM_PASSWORD=...                   # the simulator's admin password: selftest/fake_afm.py ADMIN
+.venv/bin/pytest tests/afm --inventory ~/.helios-vrack/inventory.local.yaml --allow-disruptive
+```
+
+- AFM: the fake controller at https://127.0.0.1:18443 (self-signed); the UI's **vrack** profile uses the written
+  inventory. Faults (`selftest/fake_rack.py` / `fake_afm.py`, ~100) switch one product behaviour to its broken
+  form while it runs.
+- Commands: the ones the simulation models answer from its state (ports, links, FDB, VLANs, afmctl, agents,
+  controllers, counters); others fall back to the recorded outputs in `selftest/replay`; a line no rule fits runs
+  as a small shell (`|`, `;`, `&&`, `||` with grep / head / tail / wc / sort / uniq / cut / awk print / sed s///
+  / tr -d, echo).
+- In-process on the same layout: `.venv/bin/pytest tests/afm --inventory selftest/inventory-g02-g17.yaml
+  --allow-disruptive` (281 pass, 58 skip); through the virtual rack over SSH the same.
+- It is a simulation: counters, bandwidth and timing are modelled values - for developing and checking tests,
+  not for judging the product.
+
 ### 2. On a real rack
 
 **Step 1: make your inventory.** Files named `*.local.yaml` are git-ignored.

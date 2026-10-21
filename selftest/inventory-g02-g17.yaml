@@ -1,0 +1,121 @@
+# Self-test on the recorded g02-g17 layout (selftest/topologies/g02-g17.json): fake controller + simulated rack with
+# 6 switches (2 ASICs, 216 cabled 400G ports each, 3 planes per ASIC = 36) and 18 compute trays / 72 GPUs, the port
+# names / lanes / descriptions as on g02-g17. Switch "SSH" is simulated; other commands fall back to replay.
+#   pytest tests/afm --inventory selftest/inventory-g02-g17.yaml --allow-disruptive
+rack: selftest-g02-g17
+transport:
+  kind: replay
+  dir: replay
+
+switches:
+  - {name: st1, host: 10.0.0.78}
+  - {name: st2, host: 10.0.0.79}
+  - {name: st3, host: 10.0.0.80}
+  - {name: st4, host: 10.0.0.81}
+  - {name: st5, host: 10.0.0.82}
+  - {name: st6, host: 10.0.0.83}
+computes:
+  - {name: ct01, gpus: 4}
+  - {name: ct02, gpus: 4}
+  - {name: ct03, gpus: 4}
+  - {name: ct04, gpus: 4}
+  - {name: ct05, gpus: 4}
+  - {name: ct06, gpus: 4}
+  - {name: ct07, gpus: 4}
+  - {name: ct08, gpus: 4}
+  - {name: ct09, gpus: 4}
+  - {name: ct10, gpus: 4}
+  - {name: ct11, gpus: 4}
+  - {name: ct12, gpus: 4}
+  - {name: ct13, gpus: 4}
+  - {name: ct14, gpus: 4}
+  - {name: ct15, gpus: 4}
+  - {name: ct16, gpus: 4}
+  - {name: ct17, gpus: 4}
+  - {name: ct18, gpus: 4}
+
+afm:
+  url: https://helios-afm.lab.example
+  fake: true
+  rbac_reads_denied: true   # the fake enforces read RBAC; MR3 AICC-797 does not
+  fake_topology: {layout: g02-g17, time_scale: 0.05}
+  fake_faults: []
+  verify_tls: false
+  auth:
+    kind: session
+    username: admin
+    password: selftest-admin-pw   # fake controller only
+    tenant: default
+
+commands:
+  switch:   # simulated by selftest/fake_rack.py; real racks need out-of-band templates
+    mgmt_to_eth1: "helios-mgmt move eth1"
+    mgmt_restore: "helios-mgmt move eth0"
+  ifoe:
+    unload: "modprobe -r ifoe"
+    load: "modprobe ifoe"
+    loaded_check: "lsmod | grep -q '^ifoe '"
+  l2ping:
+    mode: afmctl          # discover acc ids + LINK_UP ports via afmctl; ring pairs
+  transferbench:
+    in_domain: "TransferBench a2a {size}"
+    rank_cmd: "TB_NUM_RANKS={num_ranks} TB_RANK={rank} TB_MASTER_ADDR={master_addr} TB_SINGLE_LOG=1 TransferBench a2a {size}"
+  rccl:
+    in_domain: "{rccl_tests_dir}/build/{collective}_perf -b {min_bytes} -e {max_bytes} -f 2 -g {gpus} -n {iters}"
+    cross_domain: "mpirun -np {np} -H {hostlist} {rccl_tests_dir}/build/{collective}_perf -b {min_bytes} -e {max_bytes} -f 2 -g 1"
+  rccl_smoke:
+    bin: /opt/helios/RcclSmokeTest
+    env: NCCL_LOG_DIR=/tmp/helios-rccl-logs
+    port: 45000
+  perftest:
+    nodes: [ct01, ct02]
+    duration_s: 1
+    server_start_s: 0
+    timeout_margin_s: 10
+    qp_sweep: [8, 64, 256]
+    custom: {verbs: [write, read], qps: [4], pairs: [1, 2], iterations: 2}
+  ras:
+    partial_stations_down: "ras-partial-stations down {name}"
+    partial_stations_up: "ras-partial-stations up {name}"
+    dc_cycle: "ipmitool -I lanplus -H {bmc} chassis power cycle"
+    ac_cycle: "pdu-ctl cycle {pdu_outlet}"
+
+thresholds:
+  health:               # the fake controllers restart and raise critical events in the disruptive tests
+    controller_min_uptime_min: 0
+    event_window_min: 0
+  afm:
+    quorum_members: 3
+    fdb_reconcile_s: 15      # the fake AFM repairs an FDB edit after 2 s (fault no_fdb_reconcile: never)
+    max_not_ready_ports_per_compute: 0
+    poll_s: 0.2
+    time_scale: 0.05
+    soak_s: 20
+    soak_interval_s: 1
+    str011_cycles: 3
+    str013_flaps: 2
+    link_watch_s: 1
+    retry_interval_s: 0.2
+    agent_settle_s: 0
+    absent_hold_s: 0.3
+    plane_settle_interval_s: 0
+    plane_restore_s: 1
+    readmit_timeout_s: 5
+    switch_readmit_s: 5
+    agent_down_detect_s: 5
+    agent_respawn_s: 5
+    agent_recover_s: 5
+    mtu_low_expect: down
+    fru_json_path: /etc/sonic/fru.json
+    vpod_timeout_s: 5
+    membership_timeout_s: 5
+    aggwatch: {event_wait_s: 5, settle_s: 0.5, quiet_s: 2, idle_s: 3, cycles: 5, burst: 10, concurrent: 3, no_options_s: 5}
+  # TC-SWH-060 on the fake: watermarks are live (no telemetry interval), the load is one round
+  datapath:
+    congestion_traffic_s: 0
+    congestion_min_sources: 2      # 3 trays: an incast of 2 sources onto 1 (the g02-g17 default is 3)
+
+  switch:
+    watermark_interval_s: 0
+    watermark_margin_s: 0.5
+    queue_window_s: 1
