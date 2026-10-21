@@ -206,6 +206,7 @@ SIDEBAND_FAULTS = [
     # switch failure injection (tests/afm/test_afm_switch_faults.py)
     ("no_fdb_reconcile", {"TC-SWH-061", "TC-SWH-062"}),
     ("no_congestion_watermark", {"TC-SWH-060"}),
+    ("lossless_incast_drops", {"TC-SWH-060"}),     # UC0 (lossless) drops during the incast: PFC did not hold
     # read-only observability cases (tests/afm/test_afm_observability.py)
     ("agents_unbalanced", {"TC-SBM-139"}),
     ("node_agent_first", {"TC-SBM-138"}),

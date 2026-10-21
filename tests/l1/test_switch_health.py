@@ -404,6 +404,36 @@ def test_pfc_qos_consistent_no_storm(switch, inventory, checks, record_property)
 
 
 @pytest.mark.l2
+@pytest.mark.tc("TC-SWH-063")
+def test_pfc_lossless_config_complete(switch, inventory, checks, record_property):
+    """Lossless (PFC) configuration complete on every ASIC: each pfc_enable priority has a lossless ingress PG
+    (xoff headroom), ECN marking on its queue, a PFC watchdog; every dot1p is mapped (an unmapped one falls back to
+    TC0); lossy classes are not on lossless egress profiles; no static threshold above its pool. Read-only.
+    thresholds.switch.pfcwd_required / ecn_required (default true) switch off a check the design does not want.
+    blantons-mr3-sw 20 Oct 2026: no pfcwd, no WRED / ECN, dot1p 2-6 unmapped, TC7 on q_lossless_profile."""
+    from helios.qos import lossless_findings
+
+    th = {"pfcwd_required": inventory.th("switch.pfcwd_required", True),
+          "ecn_required": inventory.th("switch.ecn_required", True)}
+    summary = {}
+    for ns in switch.namespaces():
+        s, findings = lossless_findings(switch.running_config(ns), switch.is_fabric_port, th)
+        summary[ns or "host"] = {**{k: v for k, v in s.items() if k != "dot1p_maps"}, "findings": findings}
+        if not s["ports_with_pfc"]:
+            continue                                     # no PFC at all: TC-SWH-046 records 'no PFC configured'
+        for f in findings:
+            checks.fail(f"{switch.name}/{ns or 'host'}: {f}")
+    record_property("pfc_lossless", summary)
+    if not any(v["ports_with_pfc"] for v in summary.values()):
+        # no lossless class at all: nothing to judge, unless the inventory says PFC is expected (as TC-SWH-046)
+        checks.check(inventory.th("switch.pfc_enable") is None,
+                     f"{switch.name}: no port has PFC enabled, expected pfc_enable {inventory.th('switch.pfc_enable')}")
+        checks.assert_all()
+        pytest.skip(f"{switch.name}: no port has PFC enabled (no lossless configuration to judge)")
+    checks.assert_all()
+
+
+@pytest.mark.l2
 @pytest.mark.tc("TC-SWH-047")
 def test_running_config_saved(switch, inventory, checks, record_property):
     """The running CONFIG_DB of the host and of every ASIC equals the saved /etc/sonic/config_db*.json (tables in

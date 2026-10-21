@@ -1,6 +1,8 @@
 """pytest plugin: inventory loading, per-node parametrization, test-plan ID tracking, results export."""
 from __future__ import annotations
 
+import re
+
 import csv
 import json
 import logging
@@ -274,6 +276,10 @@ def pytest_runtest_makereport(item, call):
         if rep.when == "setup" and rep.failed:
             # a pre-flight (datapath / RDMA / AFM rack health) refused to start: not a test failure
             outcome = "blocked" if "pre-flight failed" in (rep.longreprtext or "") else "error"
+        elif rep.when == "call" and rep.failed and re.match(r"[\w-]+ pre-flight failed\b", msg):
+            # the case itself found it cannot make a valid measurement (TC-SWH-060: too few source trays, load not
+            # generated) and said so in its first words: BLOCKED, not FAIL - a check message mentioning it stays FAIL
+            outcome = "blocked"
         excluded = dict(item.user_properties).get("excluded_trays")
         if outcome == "passed" and excluded:
             # passed, but only on the trays the pre-flight kept: not a full-rack PASS

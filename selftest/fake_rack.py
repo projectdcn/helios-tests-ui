@@ -79,6 +79,7 @@ class Sim:
         self.fdb_edits: dict[tuple, tuple] = {}
         # congestion case: TransferBench last seen per compute slot, watermark clears per (sw, ns)
         self.tb_at: dict[int, float] = {}
+        self.tb_n: dict[int, int] = {}                # TransferBench runs per slot (PFC / queue counters grow)
         self.wm_cleared: dict[tuple, float] = {}
         # links: (sw, ns, port) -> {"since", "known", "coupled"}; a link fails after the vPOD policy's threshold
         self.links_down: dict[tuple[int, str, str], dict] = {}
@@ -868,6 +869,47 @@ class FakeSwitchTransport:
             elif m := re.fullmatch(r"sonic-clear queue watermark unicast -n (asic\d+)", cmd):
                 sim.wm_cleared[(i, m.group(1))] = time.monotonic()
                 res = self._res(cmd, "Cleared\n")
+            elif re.fullmatch(r"sonic-clear (priority-group watermark shared|buffer_pool watermark) -n asic\d+", cmd):
+                res = self._res(cmd, "Cleared\n")
+            elif re.fullmatch(r"sonic-db-cli -n asic\d+ CONFIG_DB hgetall 'PORT_QOS_MAP\|Ethernet\d+'", cmd):
+                res = self._res(cmd, repr({"dot1p_to_tc_map": "IFOE_TC_MAP", "tc_to_pg_map": "IFOE_PG_MAP",
+                                           "tc_to_queue_map": "IFOE_QUEUE_MAP", "pfc_enable": "0,1"}) + "\n")
+            elif re.fullmatch(r"sonic-db-cli -n asic\d+ CONFIG_DB hgetall '(DOT1P_TO_TC_MAP\|IFOE_TC_MAP|"
+                              r"TC_TO_PRIORITY_GROUP_MAP\|IFOE_PG_MAP|TC_TO_QUEUE_MAP\|IFOE_QUEUE_MAP)'", cmd):
+                res = self._res(cmd, repr({"0": "0", "1": "1", "7": "7"}) + "\n")
+            elif m := re.fullmatch(r"show (pfc counters|queue counters|priority-group drop counters|"
+                                   r"priority-group watermark shared|buffer_pool watermark) -n (asic\d+)", cmd):
+                # TC-SWH-060 incast evidence: each TransferBench run on a slot adds PFC0 pauses towards it and UC0
+                # packets on its ports (fault lossless_incast_drops: UC0 drops too); PG7 has a few lossy drops
+                what, ns = m.groups()
+                ps = sorted(sim.ports(i, ns).items(), key=lambda x: int(x[0][8:]))
+                n = lambda slot: sim.tb_n.get(slot, 0)  # noqa: E731
+                z = "      0" * 6
+                if what == "pfc counters":
+                    hdr = "-----------" + "  ------" * 8
+                    rx = "\n".join(f"{p:>11}       0       0{z}" for p, _ in ps)
+                    tx = "\n".join(f"{p:>11}  {n(s) * 5000:>6}       0{z}" for p, (s, *_r) in ps)
+                    out = f"    Port Rx    PFC0    PFC1    PFC2    PFC3    PFC4    PFC5    PFC6    PFC7\n{hdr}\n{rx}\n\n" \
+                          f"    Port Tx    PFC0    PFC1    PFC2    PFC3    PFC4    PFC5    PFC6    PFC7\n{hdr}\n{tx}\n"
+                elif what == "queue counters":
+                    drop = "lossless_incast_drops" in st.f
+                    rows = []
+                    for p, (s, *_r) in ps:
+                        rows.append(f"{p:>11}    UC0  {n(s) * 1000000:>14}  {n(s) * 4000000:>15}  {n(s) * 3 if drop else 0:>11}  {0:>12}")
+                        rows.append(f"{p:>11}    UC7  {10:>14}  {840:>15}  {0:>11}  {0:>12}")
+                    out = ("       Port    TxQ    Counter/pkts    Counter/bytes    Drop/pkts    Drop/bytes\n"
+                           "-----------  -----  --------------  ---------------  -----------  ------------\n" + "\n".join(rows) + "\n")
+                elif what == "buffer_pool watermark":
+                    out = ("                 Pool    Bytes\n---------------------  -------\n"
+                           "          egress_pool  1243620\ningress_lossless_pool  1990800\n")
+                else:
+                    pgw = what.endswith("shared")
+                    clr = sim.wm_cleared.get((i, ns), 0.0)
+                    rows = [f"{p:>11}  {(3000000 if pgw and sim.tb_at.get(s, -1) > clr else 0):>7}      0{'      0' * 5}  {420 if pgw else 5:>5}"
+                            for p, (s, *_r) in ps]
+                    out = ("       Port      PG0    PG1    PG2    PG3    PG4    PG5    PG6    PG7\n"
+                           "-----------  -------  -----  -----  -----  -----  -----  -----  -----\n" + "\n".join(rows) + "\n")
+                res = self._res(cmd, out)
             elif m := re.fullmatch(r"docker exec afm-agent curl -s -m 5 localhost:(\d+)/api/runtime/requests", cmd):
                 slot = int(m.group(1)) - 13000
                 ok = sim.agent_up[i] and sim.slot_host(slot) == i and "no_agent_requests" not in st.f
@@ -1011,6 +1053,7 @@ class FakeComputeTransport:
             st.sim.refresh(st.objs)
             if "TransferBench" in c:
                 sim.tb_at[self.slot] = time.monotonic()      # the congestion case's watermarks rise on these ports
+                sim.tb_n[self.slot] = sim.tb_n.get(self.slot, 0) + 1
             if c == "amd-smi process --json":
                 out = json.dumps([{"gpu": g, "process_list": [{"process_info": {"name": "gpu-collectives", "pid": 4242 + g}}]
                                    if "gpu_busy" in st.f else []} for g in range(4)])

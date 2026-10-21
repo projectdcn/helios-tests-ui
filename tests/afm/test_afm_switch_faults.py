@@ -49,15 +49,24 @@ def _ready_slots(ops) -> dict[int, str]:
 
 def _slot_ports(rack, slot: int) -> dict[tuple, str]:
     """{(switch, ns, port): oper} for every switch port described as cabled to compute ``slot``."""
-    out = {}
+    return _ports_by_slot(rack, {slot}).get(slot, {})
+
+
+def _ports_by_slot(rack, slots: set[int], speeds: dict | None = None) -> dict[int, dict[tuple, str]]:
+    """{slot: {(switch, ns, port): oper}} for the ports cabled to each of ``slots``, in one pass over the switches;
+    ``speeds`` (if given) is filled with {(switch, ns, port): Gb/s} from the Speed column."""
+    out: dict[int, dict[tuple, str]] = {}
     for sw in rack.switches.values():
         for ns in sw.namespaces():
             desc = sw.port_descriptions(ns)
-            oper = {r.get("Interface"): str(r.get("Oper", "")).lower() for r in sw.interfaces_status(ns)}
+            rows = {r.get("Interface"): r for r in sw.interfaces_status(ns)}
             for p, d in desc.items():
                 cab = parse_port_description(d)
-                if cab and cab[0] == slot:
-                    out[(sw.name, ns, p)] = oper.get(p, "")
+                if cab and cab[0] in slots:
+                    out.setdefault(cab[0], {})[(sw.name, ns, p)] = str(rows.get(p, {}).get("Oper", "")).lower()
+                    if speeds is not None:
+                        sp = str(rows.get(p, {}).get("Speed", "")).upper().rstrip("G")
+                        speeds[(sw.name, ns, p)] = float(sp) if sp.replace(".", "").isdigit() else 0.0
     return out
 
 
@@ -87,6 +96,146 @@ def _drops(rack, keys) -> dict[tuple, float]:
 def _clear_wm(rack, keys) -> None:
     for swn, ns in {(k[0], k[1]) for k in keys}:
         rack.switches[swn].clear_queue_watermarks(ns)
+        rack.switches[swn].clear_buffer_watermarks(ns)
+
+
+def _by_ns(keys) -> dict[tuple, set]:
+    want: dict[tuple, set] = {}
+    for swn, ns, p in keys:
+        want.setdefault((swn, ns), set()).add(p)
+    return want
+
+
+def _lossless(rack, keys) -> dict[tuple, dict]:
+    """{(switch, ns): {'prios', 'pgs', 'queues'}} - the lossless classes (pfc_enable, mapped through the port's
+    dot1p -> TC -> PG / queue maps) of the first of ``keys`` on each ASIC."""
+    out = {}
+    for (swn, ns), ports in _by_ns(keys).items():
+        sw = rack.switches[swn]
+        m = sw.db_hash("CONFIG_DB", f"PORT_QOS_MAP|{sorted(ports)[0]}", ns)
+        prios = [int(x) for x in m.get("pfc_enable", "").split(",") if x.strip().isdigit()]
+        mp = lambda tbl, f: sw.db_hash("CONFIG_DB", f"{tbl}|{m[f].strip('[]').split('|')[-1]}", ns) if m.get(f) else {}  # noqa: E731
+        dot1p, tc_pg, tc_q = mp("DOT1P_TO_TC_MAP", "dot1p_to_tc_map"), mp("TC_TO_PRIORITY_GROUP_MAP", "tc_to_pg_map"), \
+            mp("TC_TO_QUEUE_MAP", "tc_to_queue_map")
+        tcs = [dot1p.get(str(p), str(p)) for p in prios]
+        out[(swn, ns)] = {"prios": prios, "pgs": sorted({f"PG{tc_pg.get(tc, tc)}" for tc in tcs}),
+                          "queues": sorted({f"UC{tc_q.get(tc, tc)}" for tc in tcs})}
+    return out
+
+
+def _counters(rack, dst_keys, src_keys) -> dict:
+    """One read of the incast evidence counters: PFC pause frames per priority (ports towards the destination and the
+    sources), packets / drops per queue (towards the destination), ingress drops per PG (towards the sources)."""
+    snap = {"pfc": {}, "queue": {}, "pg_drop": {}}
+    for (swn, ns), ports in _by_ns(set(dst_keys) | set(src_keys)).items():
+        sw = rack.switches[swn]
+        pfc = sw.pfc_counters_by_prio(ns)
+        for p in ports:
+            snap["pfc"][(swn, ns, p)] = {d: pfc.get(d, {}).get(p, {}) for d in ("Rx", "Tx")}
+        if any((swn, ns, p) in dst_keys for p in ports):
+            for (p, q), v in sw.queue_stats(ns).items():
+                if (swn, ns, p) in dst_keys:
+                    snap["queue"][(swn, ns, p, q)] = v
+        if any((swn, ns, p) in src_keys for p in ports):
+            for p, v in sw.pg_drops(ns).items():
+                if (swn, ns, p) in src_keys:
+                    snap["pg_drop"][(swn, ns, p)] = v
+    return snap
+
+
+def _buffer_peaks(rack, dst_keys, src_keys) -> dict:
+    """Peaks since the last clear: unicast-queue watermarks per queue (towards the destination), PG shared-pool
+    watermarks (towards the sources), buffer-pool watermarks (per ASIC)."""
+    out = {"queue": {}, "pg": {}, "pool": {}}
+    for (swn, ns), ports in _by_ns(set(dst_keys) | set(src_keys)).items():
+        sw = rack.switches[swn]
+        qw = sw.queue_watermarks_by_queue(ns)
+        pw = sw.pg_watermarks(ns)
+        for p in ports:
+            if (swn, ns, p) in dst_keys:
+                out["queue"][(swn, ns, p)] = qw.get(p, {})
+            if (swn, ns, p) in src_keys:
+                out["pg"][(swn, ns, p)] = pw.get(p, {})
+        out["pool"][(swn, ns)] = sw.buffer_pool_watermarks(ns)
+    return out
+
+
+def _best_effort(errors: list, what: str, fn, *a, default=None):
+    """Evidence reads must not decide the case: a switch without the command (older image) is recorded, not fatal."""
+    try:
+        return fn(*a)
+    except Exception as e:  # noqa: BLE001 - CommandError, parse errors
+        errors.append(f"{what}: {str(e).splitlines()[0][:200]}")
+        return default
+
+
+def _key(k) -> str:
+    return "/".join(str(x) for x in k)
+
+
+def _incast_evidence(c0: dict, c1: dict, peaks: dict, lossless: dict) -> dict:
+    """Deltas between two _counters() reads + the loaded peaks, summarised per class (lossless / lossy)."""
+    def cls(swn, ns, name, field):
+        return "lossless" if name in (lossless.get((swn, ns)) or {}).get(field, ()) else "lossy"
+    pfc = {"Tx_towards_sources": {}, "Rx_from_destination": {}, "other": {}}
+    for k, v in c1["pfc"].items():
+        for d in ("Rx", "Tx"):
+            for prio, n in v.get(d, {}).items():
+                delta = n - c0["pfc"].get(k, {}).get(d, {}).get(prio, 0)
+                if delta <= 0:
+                    continue
+                if d == "Tx" and k in c1.get("_src", ()):
+                    where = "Tx_towards_sources"            # the switch pausing the sources: the incast's back-pressure
+                elif d == "Rx" and k in c1.get("_dst", ()):
+                    where = "Rx_from_destination"           # the destination tray pausing the switch
+                else:
+                    where = "other"
+                pfc[where][f"{_key(k)} {d} PFC{prio}"] = delta
+    q_pkts, q_drop = {}, {"lossless": {}, "lossy": {}}
+    for k, (n, d) in c1["queue"].items():
+        n0, d0 = c0["queue"].get(k, (n, d))
+        if n - n0 > 0:
+            q_pkts[k[3]] = q_pkts.get(k[3], 0) + n - n0
+        if d - d0 > 0:
+            q_drop[cls(k[0], k[1], k[3], "queues")][_key(k)] = d - d0
+    pg_drop = {"lossless": {}, "lossy": {}}
+    for k, v in c1["pg_drop"].items():
+        for pg, n in v.items():
+            delta = n - c0["pg_drop"].get(k, {}).get(pg, n)
+            if delta > 0:
+                pg_drop[cls(k[0], k[1], pg, "pgs")][f"{_key(k)} {pg}"] = delta
+    qpeak: dict[str, float] = {}
+    for k, v in peaks["queue"].items():
+        for q, b in v.items():
+            qpeak[q] = max(qpeak.get(q, 0.0), b)
+    pgpeak: dict[str, float] = {}
+    for k, v in peaks["pg"].items():
+        for pg, b in v.items():
+            pgpeak[pg] = max(pgpeak.get(pg, 0.0), b)
+    used = max(q_pkts, key=q_pkts.get) if q_pkts else None
+    return {"pfc_pause_frames": {w: dict(sorted(d.items(), key=lambda kv: -kv[1])[:12]) | {"total": sum(d.values())}
+                                 for w, d in pfc.items()},
+            "queue_packets_towards_destination": dict(sorted(q_pkts.items())),
+            "traffic_queue": used,
+            "traffic_queue_lossless": used is not None and any(used in v.get("queues", ()) for v in lossless.values()),
+            "queue_drops": {c: dict(sorted(d.items(), key=lambda kv: -kv[1])[:12]) | {"total": sum(d.values())}
+                            for c, d in q_drop.items()},
+            "pg_drops_towards_sources": {c: dict(sorted(d.items(), key=lambda kv: -kv[1])[:12]) | {"total": sum(d.values())}
+                                         for c, d in pg_drop.items()},
+            "queue_watermark_peak_bytes": dict(sorted(qpeak.items())),
+            "pg_watermark_peak_bytes": dict(sorted(pgpeak.items())),
+            "buffer_pool_peak_bytes": {_key(k): v for k, v in peaks["pool"].items()},
+            "lossless_classes": {_key(k): v for k, v in lossless.items()}}
+
+
+def _load_summary(load: dict, dst_speeds: dict[tuple, float], up: set) -> dict:
+    """Per-source GB/s of the last round, their total and how much of the destination's line rate they used.
+    TransferBench reports achieved (not offered) bandwidth, so ~1.0 means the destination's ports were saturated."""
+    last = load["bw_gbps"][-1] if load["bw_gbps"] else {}
+    total = sum(v for v in last.values() if v)
+    line = sum(dst_speeds.get(k, 0.0) for k in up)                       # Gb/s
+    return {"per_source_GBps": last, "total_GBps": round(total, 1), "destination_line_rate_Gbps": line,
+            "destination_utilisation": round(total * 8 / line, 2) if line else None}
 
 
 @pytest.mark.datapath(tools=("transferbench",), min_computes=3)
@@ -99,6 +248,13 @@ def test_congestion_detected_on_incast(ops, rack, computes, inventory, datapath_
     congestion_wm_min_bytes (100 000). Afterwards no queue drops grow on them, every port that was up is up, and the
     system vPOD's planes are back. Watermarks refresh every switch.watermark_interval_s (120 s), so each read waits for
     one interval after a clear.
+
+    Evidence recorded (incast_evidence, traffic), read before and after the load: PFC pause frames per priority on the
+    ports towards the sources (Tx: the switch's back-pressure) and the destination; packets and drops per queue towards
+    the destination (which queue the traffic used, lossless or not); ingress drops per PG towards the sources; peak
+    watermarks per queue, per PG and per buffer pool; GB/s per source, total, and the share of the destination's
+    line rate it used (achieved bandwidth: ~1.0 = destination ports saturated). Drops on a lossless class (the port's pfc_enable priorities, through its maps) above
+    switch.congestion_lossless_drops_max (0) fail the case; lossy drops are only recorded.
 
     BLOCKED (not FAILED) when no real incast can be made: fewer than congestion_min_sources (3) Ready trays that passed
     the datapath pre-flight, or a load that did not run - a TransferBench job failed or it ran shorter than the
@@ -136,8 +292,12 @@ def test_congestion_detected_on_incast(ops, rack, computes, inventory, datapath_
         pytest.fail(f"incast pre-flight failed - only {len(srcs)} source tray(s) ({', '.join(t.name for t in srcs) or 'none'}) "
                     f"are Ready and passed the datapath pre-flight, an incast needs {min_src} "
                     f"(thresholds.datapath.congestion_min_sources); Ready trays: {[t.name for _, t in trays]}", pytrace=False)
-    ports = _slot_ports(rack, dst_slot)
+    speeds: dict[tuple, float] = {}
+    src_slot = {t.name: s_ for s_, t in trays}
+    by_slot = _ports_by_slot(rack, {dst_slot} | {src_slot[t.name] for t in srcs}, speeds)
+    ports = by_slot.get(dst_slot, {})
     up = {k for k, v in ports.items() if v == "up"}
+    src_up = {k for t in srcs for k, v in by_slot.get(src_slot[t.name], {}).items() if v == "up"} - up
     checks.check(up, f"no up switch port cabled to {dst.name} (slot {dst_slot})")
     if not up:
         checks.assert_all()
@@ -151,6 +311,9 @@ def test_congestion_detected_on_incast(ops, rack, computes, inventory, datapath_
     time.sleep(interval)
     idle = _watermarks(rack, up)
     drops0 = _drops(rack, up)
+    ev_err: list[str] = []
+    lossless = _best_effort(ev_err, "lossless classes", _lossless, rack, up | src_up, default={})
+    c0 = _best_effort(ev_err, "counters before", _counters, rack, up, src_up, default={"pfc": {}, "queue": {}, "pg_drop": {}})
     # loaded peak: clear, load for at least one interval, wait for the next refresh
     _clear_wm(rack, up)
     want_s = max(float(th("datapath.congestion_traffic_s", 150)), interval)
@@ -162,11 +325,24 @@ def test_congestion_detected_on_incast(ops, rack, computes, inventory, datapath_
                     f"{load['seconds']} s of the {want_s:.0f} s wanted"
                     + (f", TransferBench failed for {', '.join(sorted(set(broken)))}" if broken else "")
                     + " - congestion not judged.\n" + "\n".join(f"  - {f}" for f in checks.failures), pytrace=False)
+    c1 = _best_effort(ev_err, "counters after", _counters, rack, up, src_up, default={"pfc": {}, "queue": {}, "pg_drop": {}})
+    c1["_dst"], c1["_src"] = up, src_up
     time.sleep(interval)
     loaded = _watermarks(rack, up)
+    peaks = _best_effort(ev_err, "buffer peaks", _buffer_peaks, rack, up, src_up,
+                         default={"queue": {}, "pg": {}, "pool": {}})
     drops1 = _drops(rack, up)
-    record_property("traffic", {"rounds": load["rounds"], "seconds": load["seconds"],
-                                "last_round_gbps": load["bw_gbps"][-1] if load["bw_gbps"] else {}})
+    summary = _load_summary(load, speeds, up)
+    record_property("traffic", {"rounds": load["rounds"], "seconds": load["seconds"], **summary})
+    ev = _incast_evidence(c0, c1, peaks, lossless)
+    if ev_err:
+        ev["errors"] = ev_err
+    record_property("incast_evidence", ev)
+    max_ll = float(th("switch.congestion_lossless_drops_max", 0))
+    ll = ev["queue_drops"]["lossless"]["total"] + ev["pg_drops_towards_sources"]["lossless"]["total"]
+    checks.check(ll <= max_ll, f"{ll:.0f} packet(s) dropped on lossless classes during the incast (PFC did not hold "
+                               f"them): queues {ev['queue_drops']['lossless']}, PGs "
+                               f"{ev['pg_drops_towards_sources']['lossless']}")
     top = lambda d: {f"{k[0]}/{k[1]}/{k[2]}": v for k, v in sorted(d.items(), key=lambda kv: -kv[1])[:6]}  # noqa: E731
     record_property("idle_watermark_top_bytes", top(idle))
     record_property("loaded_watermark_top_bytes", top(loaded))
@@ -175,7 +351,10 @@ def test_congestion_detected_on_incast(ops, rack, computes, inventory, datapath_
     idle_max, loaded_max = max(idle.values() or [0]), max(loaded.values() or [0])
     need = max(float(th("switch.congestion_wm_factor", 4)) * idle_max, float(th("switch.congestion_wm_min_bytes", 100000)))
     checks.check(loaded_max >= need, f"no congestion seen on the {len(up)} ports towards {dst.name}: highest queue "
-                                     f"watermark {loaded_max:.0f} B under load, idle {idle_max:.0f} B (needs {need:.0f} B)")
+                                     f"watermark {loaded_max:.0f} B under load, idle {idle_max:.0f} B (needs {need:.0f} B); "
+                                     f"load {summary['total_GBps']} GB/s into {summary['destination_line_rate_Gbps']:.0f} Gb/s "
+                                     f"({summary['destination_utilisation']} of it), traffic on {ev['traffic_queue']}, PFC Tx towards "
+                                     f"the sources {ev['pfc_pause_frames']['Tx_towards_sources']['total']:.0f}")
 
     # recovery: drops stop, links stay up, planes back
     window = float(th("switch.queue_window_s", 30))

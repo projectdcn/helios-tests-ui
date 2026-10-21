@@ -152,6 +152,12 @@ cases:
   category: switch-hw
   scope: AIOPS            # failure detection / AI-ops cases (Scope column of full_rack_testplan.xlsx)
   origin: added 2026-10-18
+- id: TC-SWH-063
+  level: L2
+  title: 'PFC lossless configuration complete: lossless PG headroom, ECN marking and PFC watchdog on every pfc_enable
+    priority, every dot1p mapped, lossy classes not on lossless buffers, no threshold above its pool'
+  category: switch-hw
+  origin: added 2026-10-20
 # full-rack health check (tools/rack_health.py, helios/healthcheck.py) - added 15 Oct 2026
 - id: HC-000
   level: L1

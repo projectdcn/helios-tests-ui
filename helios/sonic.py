@@ -306,16 +306,20 @@ class SonicSwitch:
 
     def pfc_counters(self, ns: str | None) -> dict[str, dict[str, float]]:
         """{'Rx'|'Tx': {port: total pause frames over PFC0..7}} from 'show pfc counters'."""
+        return {d: {p: sum(v.values()) for p, v in ports.items()} for d, ports in self.pfc_counters_by_prio(ns).items()}
+
+    def pfc_counters_by_prio(self, ns: str | None) -> dict[str, dict[str, dict[int, float]]]:
+        """{'Rx'|'Tx': {port: {priority: pause frames}}} from 'show pfc counters'."""
         out = self.sh(f"show pfc counters{_ns_flag(ns)}", timeout=120)
-        res: dict[str, dict[str, float]] = {}
+        res: dict[str, dict[str, dict[int, float]]] = {}
         for block in re.split(r"\n\s*\n", out):
             rows = parse_table(block)
             if not rows:
                 continue
             key = next(iter(rows[0]))                  # 'Port Rx' / 'Port Tx'
             d = "Rx" if "Rx" in key else "Tx"
-            res[d] = {r[key]: sum(float(v.replace(",", "")) for k, v in r.items()
-                                  if k.startswith("PFC") and v.replace(",", "").replace(".", "").isdigit())
+            res[d] = {r[key]: {int(k[3:]): float(v.replace(",", "")) for k, v in r.items()
+                               if re.fullmatch(r"PFC\d", k) and v.replace(",", "").replace(".", "").isdigit()}
                       for r in rows if r.get(key)}
         return res
 
@@ -332,6 +336,12 @@ class SonicSwitch:
     def qos_maps(self, ns: str | None) -> dict[str, dict[str, str]]:
         return {k.split("|", 1)[1]: self.db_hash("CONFIG_DB", k, ns)
                 for k in self.db_keys("CONFIG_DB", "PORT_QOS_MAP|*", ns)}
+
+    def running_config(self, ns: str | None) -> dict:
+        """Running CONFIG_DB of the host (ns None) or one ASIC, in one round trip."""
+        import json
+
+        return json.loads(self.sh(f"sonic-cfggen{_ns_flag(ns)} -d --print-data", sudo=True, timeout=180))
 
     def config_running_vs_saved(self, ns: str | None) -> tuple[dict, dict]:
         """(running CONFIG_DB, saved /etc/sonic/config_db[N].json) of the host (ns None) or one ASIC."""
@@ -414,13 +424,50 @@ class SonicSwitch:
 
     def queue_watermarks(self, ns: str | None) -> dict[str, float]:
         """{port: max unicast-queue shared-pool occupancy (bytes)} from 'show queue watermark unicast'."""
-        out = self.run(f"show queue watermark unicast{_ns_flag(ns)}", sudo=True, timeout=300).stdout
-        body = out.split("\n", 1)[1] if out.lstrip().startswith("Egress") else out
+        return {p: max(q.values()) for p, q in self.queue_watermarks_by_queue(ns).items() if q}
+
+    def queue_watermarks_by_queue(self, ns: str | None) -> dict[str, dict[str, float]]:
+        """{port: {'UC0': bytes, ...}} from 'show queue watermark unicast' (peak since the last clear)."""
+        return self._per_port_columns(f"show queue watermark unicast{_ns_flag(ns)}", r"UC\d+")
+
+    def queue_stats(self, ns: str | None) -> dict[tuple[str, str], tuple[float, float]]:
+        """{(port, queue): (packets, drop packets)} from 'show queue counters'."""
+        out = self.run(f"show queue counters{_ns_flag(ns)}", sudo=True, timeout=300).stdout
         res = {}
-        for r in parse_table(body):
-            vals = [float(v) for k, v in r.items() if k.startswith("UC") and v.replace(".", "").isdigit()]
+        for r in parse_table(out.split(":", 1)[1] if out.lstrip().startswith("For namespace") else out):
+            n, d = (r.get(k, "").replace(",", "") for k in ("Counter/pkts", "Drop/pkts"))
+            if r.get("Port") and n.isdigit() and d.isdigit():
+                res[(r["Port"], r.get("TxQ", ""))] = (float(n), float(d))
+        return res
+
+    def pg_watermarks(self, ns: str | None) -> dict[str, dict[str, float]]:
+        """{port: {'PG0': bytes, ...}} ingress shared-pool occupancy per priority group (peak since the last clear)."""
+        return self._per_port_columns(f"show priority-group watermark shared{_ns_flag(ns)}", r"PG\d+")
+
+    def pg_drops(self, ns: str | None) -> dict[str, dict[str, float]]:
+        """{port: {'PG0': dropped packets, ...}} ingress drops per priority group."""
+        return self._per_port_columns(f"show priority-group drop counters{_ns_flag(ns)}", r"PG\d+")
+
+    def buffer_pool_watermarks(self, ns: str | None) -> dict[str, float]:
+        """{pool: peak shared occupancy (bytes) since the last clear} from 'show buffer_pool watermark'."""
+        out = self.run(f"show buffer_pool watermark{_ns_flag(ns)}", sudo=True, timeout=120).stdout
+        return {r["Pool"]: float(r["Bytes"].replace(",", "")) for r in parse_table(out)
+                if r.get("Pool") and r.get("Bytes", "").replace(",", "").isdigit()}
+
+    def clear_buffer_watermarks(self, ns: str | None) -> None:
+        """Reset the user priority-group and buffer-pool watermarks (counters only, like the queue watermarks)."""
+        self.run(f"sonic-clear priority-group watermark shared{_ns_flag(ns)}", sudo=True, timeout=120)
+        self.run(f"sonic-clear buffer_pool watermark{_ns_flag(ns)}", sudo=True, timeout=120)
+
+    def _per_port_columns(self, cmd: str, col: str) -> dict[str, dict[str, float]]:
+        """A 'Port | <col>0 .. <col>7' table (empty on an older image without the command)."""
+        out = self.run(cmd, sudo=True, timeout=300).stdout
+        res = {}
+        for r in parse_table(out):
+            vals = {k: float(v.replace(",", "")) for k, v in r.items()
+                    if re.fullmatch(col, k) and v.replace(",", "").replace(".", "").isdigit()}
             if r.get("Port") and vals:
-                res[r["Port"]] = max(vals)
+                res[r["Port"]] = vals
         return res
 
     def crm_resources(self) -> dict[str, dict[str, tuple[int, int]]]:

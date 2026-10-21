@@ -94,6 +94,7 @@ thresholds:
   # TC-SWH-060 on the fake: watermarks are live (no telemetry interval), the load is one round
   datapath:
     congestion_traffic_s: 0
+    congestion_min_sources: 2      # 3 trays: an incast of 2 sources onto 1 (the g02-g17 default is 3)
 
   switch:
     watermark_interval_s: 0

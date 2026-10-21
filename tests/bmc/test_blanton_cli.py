@@ -64,7 +64,8 @@ def text(r) -> str:
 @pytest.mark.tc("TC-BLT-7.1.1-1")
 def test_usb_presence(switch_hosts, checks):
     """CDC Data USB device, usb0 with 192.168.200.1/24 on the host, the BMC at 192.168.200.200 answering ping
-    (bmc-manager.sh check itself is not run: it configures the VRF)."""
+    (bmc-manager.sh check itself is not run: it configures the VRF). Only on switches with the BMC tool (a Blanton
+    switch tray); skipped when no switch has it, like the other section 7.1 cases."""
     def f(sw, run, fail):
         if not run("lsusb -t | grep -i 'CDC Data'").stdout.strip():
             fail("no CDC Data USB device (lsusb -t)")
@@ -76,7 +77,7 @@ def test_usb_presence(switch_hosts, checks):
                 "ping -c 3 -W 2 192.168.200.200", timeout=40)
         if " 0% packet loss" not in p.stdout and "0.0% packet loss" not in p.stdout:
             fail("the BMC at 192.168.200.200 does not answer ping over usb0")
-    per_switch(switch_hosts, checks, f, need_tool=False)
+    per_switch(switch_hosts, checks, f)
 
 
 @pytest.mark.l1
