@@ -114,7 +114,7 @@ open http://127.0.0.1:18445/                     # AFM web view (sign in as admi
 curl -s http://127.0.0.1:18444/                  # control: state; POST /faults {"add": ["no_alerts"], "remove": [...]}
 export HELIOS_AFM_PASSWORD=...                   # simulator AFM admin password: selftest/fake_afm.py ADMIN
 export HELIOS_BMC_PASSWORD=...                   # simulator BMC password: selftest/fake_redfish.py BMC_PW
-.venv/bin/pytest tests --inventory ~/.helios-vrack/inventory.local.yaml --allow-disruptive
+.venv/bin/pytest tests --inventory ~/.helios-vrack/vrack.local.yaml --allow-disruptive
 ```
 
 | Part | What it is |

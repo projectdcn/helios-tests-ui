@@ -10,7 +10,8 @@ the UI, pytest with a normal SSH inventory, helios-debug, ssh and curl all talk 
   FakeSwitchTransport / FakeComputeTransport the self-tests use; ones they do not model fall back to the recorded
   outputs in selftest/replay (rc 127 "no rule matches" when none fits). An interactive shell is a line REPL.
 - Control: http://127.0.0.1:<afm-port + 1>/  GET state, GET/POST /faults {"add": [...], "remove": [...]}.
-- Writes <state-dir>/inventory.local.yaml (hosts + ports for pytest / the UI) and keeps its SSH host key there.
+- Writes <state-dir>/vrack.local.yaml (hosts + ports for pytest / the UI; --inventory PATH writes it elsewhere, e.g. an
+  installed UI's data/inventories/) and keeps its SSH host key there.
 
 Bound to 127.0.0.1 only. The fabric behaviour is the simulation's (counters, watermarks, PFC are modelled values),
 not a measurement - use it to develop and check tests, not to judge the product.
@@ -635,6 +636,9 @@ def main(argv=None) -> int:
     ap.add_argument("--bmc-port", type=int, default=None, help="first BMC (Redfish HTTPS) port (default ssh-port + 200)")
     ap.add_argument("--faults", default=os.environ.get("HELIOS_FAKE_AFM_FAULTS", ""))
     ap.add_argument("--state-dir", default=str(Path("~/.helios-vrack").expanduser()))
+    ap.add_argument("--inventory", default=None,
+                    help="where to write the inventory (default <state-dir>/vrack.local.yaml; an installed UI: "
+                         "<prefix>/data/inventories/vrack.local.yaml)")
     ap.add_argument("--time-scale", type=float, default=1.0, help="simulated delays x this (self-tests use 0.05)")
     ap.add_argument("--fresh", action="store_true", help="ignore the saved rack state (<state-dir>/state.pickle)")
     ap.add_argument("--realistic", action="store_true",
@@ -682,7 +686,8 @@ def main(argv=None) -> int:
         reset = (lambda body, node=n: node.reboot()) if n.role == "compute" else None
         n.bmc = fake_redfish.RedfishServer(build, n.role, (a.bind, bmc_base + k), on_reset=reset).start()
     _control(st, a.bind, a.afm_port + 1)
-    inv = state_dir / "inventory.local.yaml"
+    inv = Path(a.inventory).expanduser() if a.inventory else state_dir / "vrack.local.yaml"
+    inv.parent.mkdir(parents=True, exist_ok=True)
     write_inventory(inv, st, nodes, afm.url, a.topology, a.bind, template, a.time_scale)
     print(f"virtual rack '{a.topology}' up ({n_sw} switches, {n_ct} compute trays, switch QoS {st.sim.qos}) - "
           "simulated, loopback only")

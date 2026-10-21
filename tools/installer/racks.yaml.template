@@ -37,6 +37,14 @@ racks:
       ref: HEAD                         # not used by an installed UI: it sends the code it was built from
       remote_html: false
 
+  vrack:
+    title: Virtual rack (g02-g17 layout, simulated - start tools/vrack.sh first)
+    runner: local
+    # start it with: app/tools/vrack.sh --inventory @PREFIX@/data/inventories/vrack.local.yaml
+    inventory: @PREFIX@/data/inventories/vrack.local.yaml
+    results_dir: @PREFIX@/data/results/runs/vrack
+    workbook: @PREFIX@/data/testplan/full_rack_testplan.xlsx
+
   selftest:
     title: Simulated rack (selftest replay + fake AFM)
     runner: local

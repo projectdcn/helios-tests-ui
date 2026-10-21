@@ -36,7 +36,7 @@ racks:
     runner: local
     # written by tools/vrack.sh at start: every switch / tray on 127.0.0.1 with its own SSH port, the fake AFM URL.
     # AFM password: the simulator's (selftest/fake_afm.py ADMIN) - not a real credential.
-    inventory: ~/.helios-vrack/inventory.local.yaml
+    inventory: ~/.helios-vrack/vrack.local.yaml
     results_dir: ~/dev/helios-tests/results/runs/vrack   # the one results store (main checkout)
     workbook: ~/dev/helios-tests/testplan/full_rack_testplan.xlsx
 
