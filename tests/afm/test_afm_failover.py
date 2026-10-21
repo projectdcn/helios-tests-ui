@@ -51,6 +51,41 @@ def _tray_view(ops, slot: int, gpu: int) -> tuple[dict[int, dict], str | None]:
         return {}, f"tray view unavailable: {str(e).splitlines()[0][:200]}"
 
 
+def _full_gpu(ops) -> tuple[int, int, list, dict]:
+    """(slot, gpu, up links, census) of a GPU whose cabled switch ports are ALL up (avoid_ports excepted): the target
+    tray's GPUs first, then the other ready trays'. census = {"slot/gpu": "up/cabled"} of every GPU looked at. One
+    status + description read per switch ASIC. FO-037 cuts a GPU off completely - a GPU already missing links would
+    test a partial cut (g02-g17 21 Oct: ct18 GPU0 had 9 of 36 ports up, the rack 25 of 36 planes)."""
+    from helios.afmctl import parse_port_description
+
+    avoid = set(ops.th("avoid_ports", []) or [])
+    cabled: dict[tuple, int] = {}
+    up: dict[tuple, list] = {}
+    for sw in ops.rack.switches.values():
+        for ns in sw.namespaces():
+            desc = sw.port_descriptions(ns)
+            for r in sw.interfaces_status(ns):
+                port = r.get("Interface")
+                cab = parse_port_description(desc.get(port, ""))
+                if not cab or f"{sw.name}:{port}" in avoid:
+                    continue
+                key = (cab[0], cab[1])
+                cabled[key] = cabled.get(key, 0) + 1
+                if r.get("Vlan") == "trunk" and r.get("Oper") == "up":
+                    up.setdefault(key, []).append((sw, ns, port, cab))
+    target = _target(ops)
+    ready = sorted({c["spec"]["slot-id"] for c in ops.active_computes()
+                    if ops.compute_ready(c["meta"]["name"])} - {target})
+    census = {}
+    for slot in [target] + ready:
+        for gpu in range(4):
+            n, have = cabled.get((slot, gpu), 0), len(up.get((slot, gpu), []))
+            census[f"{slot}/{gpu}"] = f"{have}/{n}"
+            if n and have == n:
+                return slot, gpu, sorted(up[(slot, gpu)], key=lambda x: x[3][3]), census
+    return -1, -1, [], census
+
+
 def _shut(links, sel):
     for sw, ns, port, _ in sel:
         links.shut(sw, ns, port)
@@ -195,13 +230,33 @@ def test_fo037_all_stations_one_gpu(ops, afm_ready, links, checks, record_proper
     operation-failed, and everything recovers after the ports return. With the ports down, all three views of each
     link are recorded (three_views): the switch port (oper), the GPU port read on the tray (afmctl: link / IFCP) and
     AFM (oper-state) - g02-g17 17 Oct: ports 22-27 / 34-35 of ct18 GPU0 not PortFailed with every switch port down;
-    the tray's own view was not recorded then."""
-    slot = _target(ops)
-    sel = ops.gpu_links(slot, 0)
+    the tray's own view was not recorded then.
+
+    Pre-flight: the GPU must have ALL its cabled links up (_full_gpu: the target tray first, then any ready tray), else
+    BLOCKED - a GPU already missing links is a partial cut, not FO-037 (g02-g17 21 Oct: 9 of 36). The three views of
+    every port are recorded before the cut too (before_views), and ports AFM already marks failed while the switch
+    has them up are reported (afm_failed_before_cut)."""
+    slot, gpu, sel, census = _full_gpu(ops)
+    record_property("gpu_ports_up", census)
+    if not sel:
+        best = max(census.items(), key=lambda kv: int(kv[1].split("/")[0]), default=("-", "0/0"))
+        pytest.fail(f"FO-037 pre-flight failed - no GPU with all its links up (best: slot/GPU {best[0]} {best[1]} up; "
+                    f"checked {len(census)} GPUs) - a full cut-off cannot be tested; the rack's down links need fixing "
+                    f"first", pytrace=False)
+    record_property("target", f"slot {slot} GPU{gpu}: {len(sel)} of {len(sel)} links up")
     cap = int(ops.th("fo037_max_ports", 0))
     sel = sel[:cap] if cap else sel
-    if not sel:
-        pytest.skip(f"slot {slot} GPU0 has no up ports")
+    tray0, why0 = _tray_view(ops, slot, gpu)
+    failed0 = ops.failed_gpu_ports()
+    name = _cname(ops, slot)
+    record_property("before_views", {f"GPU port {c[3]}": {
+        "switch": f"{sw.name}/{ns}/{p} up", "tray": (f"{tray0[c[3]].get('link')} ll_up={tray0[c[3]].get('ll_up')}"
+                                                     if c[3] in tray0 else (why0 or "not read")),
+        "afm": "PortFailed" if (name, c[1], c[3]) in failed0 else "not failed"} for sw, ns, p, c in sel})
+    stale = sorted(c[3] for *_x, c in sel if (name, c[1], c[3]) in failed0)
+    record_property("afm_failed_before_cut", stale)
+    checks.check(not stale, f"{name} GPU{gpu}: AFM marks port(s) {stale} PortFailed while their switch ports are up "
+                            f"(before the cut)")
     sysv = ops.system_vpod_name()
     base = _baseline(ops, sysv, record_property)
     want = _expected(ops, sel)
@@ -214,7 +269,7 @@ def test_fo037_all_stations_one_gpu(ops, afm_ready, links, checks, record_proper
     checks.check(not up, f"switch ports still oper up after shutdown: {up}")
     failed = ops.failed_gpu_ports()
     missing = sorted(want - failed)
-    tray, why = _tray_view(ops, slot, 0)
+    tray, why = _tray_view(ops, slot, gpu)
     oper: dict[tuple, str] = {}
     for sw, ns in {(sw, ns) for sw, ns, _p, _c in sel}:       # one status read per switch ASIC
         rows = {r.get("Interface"): r.get("Oper") for r in sw.interfaces_status(ns)}
