@@ -321,7 +321,14 @@ async function loadBmcUsers() {
   const u = d.default_users || {};
   $("#bmc-user-switch").value = u.switch || "";
   $("#bmc-user-compute").value = u.compute || "";
-  bmcUserMsg(d.error ? d.error : (u.switch || u.compute) ? "set" : "no default: each node needs its own", d.error ? "err" : "muted");
+  // which nodes have no BMC user at all (no own one, no default for their role)
+  const none = (d.nodes || []).filter(n => !n.bmc_user).map(n => n.name);
+  const own = (d.nodes || []).filter(n => n.bmc_user_own).length;
+  bmcUserMsg(d.error ? d.error
+    : none.length ? `no BMC user for ${none.join(", ")} - set a default here or the node's own (Setup tab)`
+    : (u.switch || u.compute) ? `set${own ? `; ${own} node(s) use their own` : ""}`
+    : (d.nodes || []).length ? `no default needed: all ${d.nodes.length} nodes have their own` : "no nodes",
+    d.error ? "err" : none.length ? "warn" : (u.switch || u.compute) ? "ok" : "muted");
 }
 $("#bmc-user-box").addEventListener("submit", async ev => {
   ev.preventDefault();
