@@ -497,9 +497,13 @@ def inventory_section(inv: dict) -> str:
     def cpu(n):
         c = n.get("cpu") or {}
         busy, load = n.get("cpu_busy_pct"), n.get("load") or []
-        return (f'{esc(c.get("model", ""))}<br><span class="desc">{c.get("cpus") or "?"} CPUs</span>',
-                (f"{busy:.0f}% busy" if busy is not None else "") + (f"<br>load {' / '.join(f'{x:g}' for x in load)}" if load else "")
-                + _bar(busy))
+        cpus = c.get("cpus")
+        # available, as the memory column's "free": idle share of the CPUs (busy is over a short sample)
+        free = (f" - available {100 - busy:.0f}%" + (f" (~{cpus * (100 - busy) / 100:.0f} of {cpus} CPUs)" if cpus else "")
+                if busy is not None else "")
+        return (f'{esc(c.get("model", ""))}<br><span class="desc">{cpus or "?"} CPUs</span>',
+                (f"{busy:.0f}% busy{free}" if busy is not None else "")
+                + (f"<br>load {' / '.join(f'{x:g}' for x in load)}" if load else "") + _bar(busy))
 
     lk = inv.get("links") or {}
     h = ['<h2 id="inventory">Hardware inventory</h2>',
