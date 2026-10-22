@@ -1009,11 +1009,28 @@ class FakeSwitchTransport:
             elif m := re.fullmatch(r"sonic-clear (?:priority-group watermark shared|buffer_pool watermark) -n (asic\d+)", cmd):
                 sim.fabric.clear_buffer_wm(i, m.group(1))
                 res = self._res(cmd, "Cleared\n")
+            elif (m := re.fullmatch(r"show pfcwd stats(?: -n (asic\d+))?", cmd)) and "pfc_storm" in st.f:
+                # the PFC watchdog of the stormed port (fault pfc_storm, first switch only); else the recorded output
+                rows = []
+                storm = {"switch": 0, "port": 0, "prio": 3, **(getattr(st, "params", {}).get("pfc_storm") or {})}
+                ports = [p for p, _ in sim.all_ports(i, m.group(1))]
+                if i == storm["switch"] and ports and m.group(1) in (None, f"asic{storm.get('asic', 0)}"):
+                    p0 = ports[storm["port"] % len(ports)]
+                    n = getattr(st, "pfcwd_storms", 0)
+                    rows = [[f"{p0}:{storm['prio']}", "stormed", f"{n}/0", "0/0", f"{n * 1000}/{n * 1000}", "0/0", "0/0"]]
+                res = self._res(cmd, _table(["QUEUE", "STATUS", "STORM DETECTED/RESTORED", "TX OK/DROP", "RX OK/DROP",
+                                             "TX LAST OK/DROP", "RX LAST OK/DROP"], rows))
             elif m := re.fullmatch(r"show (pfc counters|queue counters|priority-group drop counters|"
                                    r"priority-group watermark shared|buffer_pool watermark) -n (asic\d+)", cmd):
                 # counters of the data-path model (fake_fabric): TransferBench flows over the cabled planes
                 what, ns = m.groups()
                 fab, ports = sim.fabric, [p for p, _ in sim.all_ports(i, ns)]
+                storm = {"switch": 0, "port": 0, "prio": 3, "frames": 250000, **(getattr(st, "params", {}).get("pfc_storm") or {})}
+                if what == "pfc counters" and "pfc_storm" in st.f and i == storm["switch"] and ports \
+                        and ns == f"asic{storm.get('asic', 0)}":
+                    # a PFC storm (default: the first switch's first port, priority 3) - details from the control API
+                    fab.pfc[(i, ns, ports[storm["port"] % len(ports)], "Rx", storm["prio"])] += float(storm["frames"])
+                    st.pfcwd_storms = getattr(st, "pfcwd_storms", 0) + 1
                 if what == "pfc counters":
                     blk = lambda d: _table([f"Port {d}"] + [f"PFC{q}" for q in range(8)],  # noqa: E731
                                            [[p] + [f"{fab.pfc.get((i, ns, p, d, q), 0.0):,.0f}" for q in range(8)] for p in ports])

@@ -133,6 +133,13 @@ def switch(rack, switch_name):
 
 
 @pytest.fixture
+def evidence(request):
+    """The case's evidence timeline (helios/evidence.py), stored with its results for training data."""
+    from .evidence import Evidence
+    return Evidence(request.node.user_properties)
+
+
+@pytest.fixture
 def computes(rack, pytestconfig):
     names = _subset(list(rack.computes), pytestconfig.getoption("--computes"))
     if not names:

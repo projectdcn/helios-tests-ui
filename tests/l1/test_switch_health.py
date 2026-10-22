@@ -366,7 +366,7 @@ def test_fabric_links_stable(switch, inventory, checks, record_property):
 
 @pytest.mark.l2
 @pytest.mark.tc("TC-SWH-046")
-def test_pfc_qos_consistent_no_storm(switch, inventory, checks, record_property):
+def test_pfc_qos_consistent_no_storm(switch, inventory, checks, record_property, evidence):
     """PFC / QoS: every fabric port has the same PORT_QOS_MAP settings (and pfc_enable = thresholds.switch.pfc_enable
     when set); PFC pause frames do not grow by more than pfc_max_pause_delta over pfc_window_s; the PFC watchdog
     detects no storm. The configuration found (e.g. 'no PFC configured') is recorded."""
@@ -387,18 +387,28 @@ def test_pfc_qos_consistent_no_storm(switch, inventory, checks, record_property)
         if want_pfc is not None:
             wrong = sorted(p for p, m in maps.items() if m.get("pfc_enable", "") != str(want_pfc))
             checks.check(maps and not wrong, f"{switch.name}/{ns}: pfc_enable != {want_pfc} on {wrong[:8] or 'every port (none configured)'}")
+    evidence.fact(case="pfc_qos", switch=switch.name, window_s=window, max_pause_delta=max_delta, qos=summary)
     before = {ns: (switch.pfc_counters(ns), switch.pfcwd_storms(ns)) for ns in nss}
+    evidence.event("sample", what="pfc counters + pfcwd stats (before)")
     time.sleep(window)
     for ns in nss:
         after, storms = switch.pfc_counters(ns), switch.pfcwd_storms(ns)
+        deltas = []
         for d in ("Rx", "Tx"):
             for port, n in after.get(d, {}).items():
                 b = before[ns][0].get(d, {}).get(port)
                 if b is not None and switch.is_fabric_port(port):
+                    if n - b > 0:
+                        deltas.append((n - b, port, d))
                     checks.check(n - b <= max_delta, f"{switch.name}/{ns}: {port} {d} PFC pause frames +{n - b:.0f} in {window:.0f} s")
+        new_storms = {q: n - before[ns][1].get(q, 0) for q, n in storms.items() if n > before[ns][1].get(q, 0)}
         for q, n in storms.items():
             checks.check(n <= before[ns][1].get(q, 0), f"{switch.name}/{ns}: PFC watchdog storm detected on {q}")
         summary[ns]["pfc_watchdog_queues"] = len(storms)
+        evidence.event("sample", what=f"pfc counters + pfcwd stats (after {window:.0f} s)", ns=ns,
+                       ports_with_pause_growth=len(deltas),
+                       top_pause_growth=[{"port": p, "dir": d, "frames": round(x)} for x, p, d in sorted(deltas, reverse=True)[:5]],
+                       new_watchdog_storms=new_storms)
     record_property("pfc_qos", summary)
     checks.assert_all()
 

@@ -9,7 +9,8 @@ the UI, pytest with a normal SSH inventory, helios-debug, ssh and curl all talk 
   only: the public keys in <state-dir>/authorized_keys (default: your ~/.ssh/*.pub). Commands run through the same
   FakeSwitchTransport / FakeComputeTransport the self-tests use; ones they do not model fall back to the recorded
   outputs in selftest/replay (rc 127 "no rule matches" when none fits). An interactive shell is a line REPL.
-- Control: http://127.0.0.1:<afm-port + 1>/  GET state, GET/POST /faults {"add": [...], "remove": [...]}.
+- Control: http://127.0.0.1:<afm-port + 1>/  GET state, GET/POST /faults {"add": [...], "remove": [...], "params":
+  {fault: {...}}} (params: details of a fault, e.g. pfc_storm {switch, asic, port, prio, frames} - tools/vrack_dataset.py).
 - Writes <state-dir>/vrack.local.yaml (hosts + ports for pytest / the UI; --inventory PATH writes it elsewhere, e.g. an
   installed UI's data/inventories/) and keeps its SSH host key there.
 
@@ -478,7 +479,10 @@ def _control(st: State, bind: str, port: int) -> ThreadingHTTPServer:
             with st.lock:
                 st.f |= set(req.get("add") or [])
                 st.f -= set(req.get("remove") or [])
-                self._send(200, {"faults": sorted(st.f)})
+                if isinstance(req.get("params"), dict):      # fault details, e.g. {"pfc_storm": {"switch": 2, "port": 7}}
+                    st.params = dict(req["params"])
+                    st.pfcwd_storms = 0
+                self._send(200, {"faults": sorted(st.f), "params": getattr(st, "params", {})})
 
     srv = ThreadingHTTPServer((bind, port), H)
     srv.daemon_threads = True

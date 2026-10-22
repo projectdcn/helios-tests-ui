@@ -7,6 +7,7 @@ here each fault run is limited to its IDs with --tc to keep the unit suite fast.
 from __future__ import annotations
 
 import csv
+import json
 import os
 import subprocess
 import sys
@@ -356,3 +357,16 @@ def test_a_broken_switch_cli_blocks_with_one_line(tmp_path):
     rows = list(csv.DictReader(open(next((tmp_path / "bad" / "results").glob("*/tc_results.csv")))))
     assert rows and all(r["message"].startswith("switch pre-flight failed - the SONiC CLI on ") and
                         "cni-2cb1c2bc" in r["message"] and "Traceback" not in r["message"] for r in rows)
+
+
+def test_fdb_cases_record_an_evidence_timeline(tmp_path):
+    """TC-SWH-061 / 062 store their evidence (helios/evidence.py) for training data: the injection, the state changes
+    and the repair - or, with no_fdb_reconcile, no repair and the test's own cleanup."""
+    tcs = {"TC-SWH-061", "TC-SWH-062"}
+    for faults, end in (("", "repaired_by_afm"), ("no_fdb_reconcile", "cleanup")):
+        _run(tmp_path / (faults or "ok"), faults, tcs, "inventory-afm3.yaml", "test_afm_switch_faults.py")
+        rows = list(csv.DictReader(open(next((tmp_path / (faults or "ok") / "results").glob("*/tc_results.csv")))))
+        for r in rows:
+            ev = json.loads(r["properties"])["evidence"]
+            kinds = [x["kind"] for x in ev["timeline"]]
+            assert ev["facts"]["switch"] and "inject" in kinds and kinds[-1] == end, (r["tc_id"], kinds)
