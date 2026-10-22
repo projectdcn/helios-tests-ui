@@ -146,6 +146,44 @@ def test_ssh_rerun_failed_uploads_a_missing_base_run(tmp_path):
     assert "--rerun-failed results/g02-g17-20261014-101010" in ex.popens[0][0][-1]
 
 
+class FlakyJumpHost(FakeExecutor):
+    """Drops the first ``drops`` ssh connections in the key exchange (exit 255), as the g02-g17 jump host on 22 Oct."""
+
+    def __init__(self, new_run, drops, err=b"kex_exchange_identification: read: Connection reset by peer\r\n"
+                                            b"Connection reset by 165.204.38.103 port 8059\r\n"):
+        super().__init__(new_run)
+        self.drops, self.err = drops, err
+
+    def run(self, argv, input=None, timeout=None, cwd=None):
+        if argv[0] == "ssh" and self.drops:
+            self.drops -= 1
+            self.calls.append((list(argv), input))
+            return subprocess.CompletedProcess(argv, 255, b"", self.err)
+        return super().run(argv, input, timeout, cwd)
+
+
+def test_ssh_retries_a_connection_dropped_before_the_login(tmp_path, monkeypatch):
+    import ui.runner as runner
+    waits = []
+    monkeypatch.setattr(runner, "_sleep", waits.append)
+    ex = FlakyJumpHost("g02-g17-20261015-120000", drops=2)
+    lines = []
+    rc, new = SshRunner(_profile(tmp_path), ex).execute("rid-flaky", Job.from_request({"kind": "health"}), PW,
+                                                         lines.append)
+    assert rc == 0 and new == ["g02-g17-20261015-120000"] and waits == [5, 15]
+    untars = [a for a, _ in ex.calls if a[0] == "ssh" and "tar -xf -" in a[-1]]
+    assert len(untars) == 3 and sum("retrying in" in ln for ln in lines) == 2
+    # dropped every time: the error after the last retry, unchanged
+    ex = FlakyJumpHost("g02-g17-20261015-120000", drops=99)
+    with pytest.raises(JobError, match="exited 255: kex_exchange_identification"):
+        SshRunner(_profile(tmp_path), ex).execute("rid-down", Job.from_request({"kind": "health"}), PW, print)
+    # a failure after the login (the command itself, or an exit 255 without a handshake message) is not retried
+    ex = FlakyJumpHost("x", drops=1, err=b"client_loop: send disconnect: Broken pipe\r\n")
+    with pytest.raises(JobError, match="Broken pipe"):
+        SshRunner(_profile(tmp_path), ex).execute("rid-mid", Job.from_request({"kind": "health"}), PW, print)
+    assert len([a for a, _ in ex.calls if a[0] == "ssh"]) == 1
+
+
 def test_ssh_stop_kills_the_remote_process(tmp_path):
     ex = FakeExecutor("x")
     SshRunner(_profile(tmp_path), ex).stop("rid3")

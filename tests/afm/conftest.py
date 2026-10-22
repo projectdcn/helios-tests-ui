@@ -71,12 +71,31 @@ def afm_anon(afm_cfg):
 
 
 @pytest.fixture(scope="session")
-def afm(afm_cfg):
-    """Admin session. Skips when the password env var is not exported in this shell."""
+def afm(afm_cfg, inventory):
+    """Admin session. Skips when the password env var is not exported in this shell. An AFM API that cannot be
+    reached (no connection / reset / timeout, retried for thresholds.afm.login_wait_s, 60 s, to ride out a
+    controller restart) BLOCKS every AFM test with one line, not a requests traceback (MR3 22 Oct)."""
+    import requests
+
+    from helios.afm import unreachable_reason, wait_for
     c = AfmClient(afm_cfg)
     if c.kind == "session" and c.password is None:
         pytest.skip(f"AFM password not set: export {c.auth.get('password_env', 'HELIOS_AFM_PASSWORD')}")
-    c.login()
+    err = []
+
+    def login():
+        try:
+            c.login()
+            return True
+        except requests.RequestException as e:
+            err[:] = [e]
+            return False
+    wait_s = float(inventory.th("afm.login_wait_s", 60) or 60) * float(inventory.th("afm.time_scale", 1) or 1)
+    if not wait_for(login, wait_s, 10, f"AFM API at {c.base}"):
+        pytest.fail(f"AFM pre-flight failed - the AFM API at {c.base} cannot be reached for {wait_s:.0f} s: "
+                    f"{unreachable_reason(err[0]) if err else 'no answer'}. Check afm.url in the inventory and that the "
+                    "controller runs there - on the switch: sonic-db-cli CONFIG_DB hgetall 'CONTROLLER|global' "
+                    "(coordinates), sudo ss -ltn | grep :443, docker ps | grep afm-controller.", pytrace=False)
     return c
 
 

@@ -39,6 +39,17 @@ class JobError(ValueError):
 
 FILTER_KEYS = ("level", "scope", "disruptive", "health", "origin", "status", "suite", "cols")   # cols: ui/plan.parse_cols
 SUITES = ("all", "afm", "ssh")
+# an ssh that failed BEFORE the login (exit 255 and one of these): nothing ran on the jump host, so it is retried
+# after these waits. g02-g17 22 Oct: the jump host (223 sshd, a shared account) dropped about every second new
+# connection in the key exchange and a run failed on its first step (code sync).
+HANDSHAKE_RX = re.compile(r"kex_exchange_identification|banner exchange|Connection reset by \S+ port \d+|"
+                          r"Connection closed by \S+ port \d+|Connection timed out|Operation timed out|"
+                          r"ssh_exchange_identification", re.I)
+HANDSHAKE_RETRY_S = (5, 15, 30)
+
+
+def _sleep(s: float) -> None:          # replaced in the tests
+    time.sleep(s)
 _FILTER_VALUE_RX = re.compile(r"^[^\x00-\x1f\x7f]{0,2000}$")
 
 
@@ -361,8 +372,15 @@ class SshRunner(Runner):
             o += ["-i", key, "-o", "IdentitiesOnly=yes"]
         return o + [s.target]
 
-    def _remote(self, cmd: str, input: bytes | None = None, timeout: float = 600, check: bool = True):
-        r = self.ex.run(self.ssh() + [cmd], input=input, timeout=timeout)
+    def _remote(self, cmd: str, input: bytes | None = None, timeout: float = 600, check: bool = True, log=None):
+        for wait in (*HANDSHAKE_RETRY_S, None):
+            r = self.ex.run(self.ssh() + [cmd], input=input, timeout=timeout)
+            err = (r.stderr or b"").decode("utf-8", "replace")
+            if r.returncode != 255 or wait is None or not HANDSHAKE_RX.search(err):
+                break
+            if log:
+                log(f"(ssh {self.profile.ssh.target}: connection dropped before the login - retrying in {wait} s)")
+            _sleep(wait)
         if check and r.returncode != 0:
             err = (r.stderr or b"").decode("utf-8", "replace").strip()[-400:]
             raise JobError(f"ssh {self.profile.ssh.target}: '{cmd[:80]}' exited {r.returncode}: {err}")
@@ -396,7 +414,7 @@ class SshRunner(Runner):
             if r.returncode != 0:
                 raise JobError("git archive failed: " + (r.stderr or b"").decode("utf-8", "replace")[-300:])
             data = r.stdout
-        self._remote(f"mkdir -p {rq(parent)} && tar -xf - -C {rq(parent)}", input=data)
+        self._remote(f"mkdir -p {rq(parent)} && tar -xf - -C {rq(parent)}", input=data, log=log)
 
     def sync_inventory(self, log) -> None:
         s, inv = self.profile.ssh, self.profile.inventory
@@ -410,7 +428,7 @@ class SshRunner(Runner):
         # keep a dated copy of the jump host's inventory when it changes
         self._remote(f"cat > {tmp} && if cmp -s {tmp} {dst}; then rm -f {tmp}; else "
                      f"{{ [ ! -f {dst} ] || cp -p {dst} {dst}.bak-$(date +%Y%m%d-%H%M%S); }} && mv {tmp} {dst}; fi",
-                     input=text)
+                     input=text, log=log)
 
     def _ls(self) -> set[str]:
         r = self._remote(f"mkdir -p {self.results()} && ls -1 {self.results()}")
@@ -450,7 +468,7 @@ class SshRunner(Runner):
             return
         log(f"== copy back: {', '.join(names)}")
         r = self._remote(f"cd {self.results()} && tar -czf - -- " + " ".join(shlex.quote(n) for n in names),
-                         timeout=1800)
+                         timeout=1800, log=log)
         dest = self.profile.results_dir
         dest.mkdir(parents=True, exist_ok=True)
         with tarfile.open(fileobj=io.BytesIO(r.stdout), mode="r:gz") as t:

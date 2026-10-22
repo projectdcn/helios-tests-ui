@@ -373,6 +373,23 @@ def transient(e: BaseException) -> bool:
     return (isinstance(e, AfmError) and e.status >= 500) or isinstance(e, requests.RequestException)
 
 
+def unreachable_reason(e: BaseException) -> str:
+    """One line for "the AFM API cannot be reached" instead of the urllib3 traceback. MR3 22 Oct: the controller
+    was moved off the switch (config controller coordinates), :443 reset every TLS handshake and the AFM tests
+    ERRORed with 60 lines of requests internals."""
+    s = f"{type(e).__name__}: {e}"
+    for pat, why in (("timed out|Timeout", "connection timed out"),
+                     ("Connection refused|Errno 61|Errno 111", "connection refused - nothing listens on that port"),
+                     ("reset by peer|Errno 54|Errno 104|Connection aborted",
+                      "connection reset during the TLS handshake - no AFM API behind that address"),
+                     ("No route to host|Network is unreachable|Errno 65|Errno 113", "no route to the host"),
+                     ("Name or service not known|nodename nor servname|getaddrinfo", "host name does not resolve"),
+                     ("SSLError|SSL:", "TLS error")):
+        if re.search(pat, s):
+            return f"{why} ({s[:160]})"
+    return s[:240]
+
+
 def wait_for(fn: Callable[[], Any], timeout: float, interval: float = 5, what: str = "") -> Any:
     """Poll ``fn`` until truthy; returns its last value (falsy on timeout). A transient API error (``transient``:
     HTTP 5xx, connection refused / reset / timeout) counts as "not yet", so a wait rides out a controller restart -
