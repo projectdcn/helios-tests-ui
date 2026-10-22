@@ -1,8 +1,10 @@
 """Test-plan workbooks uploaded from the UI, and which one each rack uses.
 
 Uploads keep their own file name (no fixed full_rack_testplan.xlsx) in the rack's test-plan folder: the folder of
-the ``workbook:`` in ui/racks.yaml, else ``<results_dir>/../testplan`` (installed UI: <prefix>/data/testplan/,
-kept by upgrades). The rack's choice is ``<results_dir>/ui-workbook.json`` ({"workbook": "<file name>"}); it wins
+the ``workbook:`` in ui/racks.yaml, else the ``testplan`` folder next to the results (``<root>/results/runs/<rack>``
+-> ``<root>/testplan``; installed UI: <prefix>/data/testplan/, kept by upgrades). When racks.yaml's workbook is not
+there (a racks.yaml restored or copied from an installation in another directory, a moved installation), the rack
+uses the same file name in its own folder, else the only workbook there (``configured``). The rack's choice is ``<results_dir>/ui-workbook.json`` ({"workbook": "<file name>"}); it wins
 over racks.yaml's ``workbook:``, which stays the fallback. A file is accepted only when it opens as an .xlsx and the
 test-plan reader (ui/plan.py) finds its layout; the file it replaces is kept as <name>.bak-<time>.xlsx.
 
@@ -31,11 +33,36 @@ MAX_BYTES = 20 * 1024 * 1024
 BACKUP_RX = re.compile(r"\.(bak|backup)-[\w-]+\.xlsx$")       # dated copies (ours and older tools'): not offered
 
 
+def default_dir(profile) -> Path:
+    """The test-plan folder of this installation / checkout: <root>/testplan for results in <root>/results/runs/<rack>."""
+    rd = profile.results_dir
+    if rd.parent.name == "runs" and len(rd.parents) > 2:
+        return rd.parents[2] / "testplan"
+    return rd.parent / "testplan"
+
+
 def plan_dir(profile, configured: Path | None) -> Path:
     """Where this rack's workbooks live (``configured``: racks.yaml's workbook: path, as loaded)."""
-    if configured:
+    if configured and (configured.parent.is_dir() or not default_dir(profile).is_dir()):
         return configured.parent
-    return profile.results_dir.parent / "testplan"
+    return default_dir(profile)                      # racks.yaml names a folder of another installation
+
+
+def _workbooks(d: Path) -> list[Path]:
+    return sorted((f for f in d.glob("*.xlsx") if f.is_file() and NAME_RX.match(f.name) and not BACKUP_RX.search(f.name)),
+                  key=lambda f: f.name.lower()) if d.is_dir() else []
+
+
+def configured(profile, path: Path | None) -> Path | None:
+    """racks.yaml's ``workbook:`` as this installation finds it: the path when the file is there; else the same file
+    name in the rack's own test-plan folder; else the only workbook there; else the path as written (shown missing)."""
+    if path and path.is_file():
+        return path
+    d = default_dir(profile)
+    if path and (d / path.name).is_file():
+        return d / path.name
+    found = _workbooks(d)
+    return found[0] if len(found) == 1 else path
 
 
 def _choice_file(profile) -> Path:
@@ -58,8 +85,7 @@ def chosen(profile, configured: Path | None) -> Path | None:
 def listing(profile, configured: Path | None) -> dict:
     d = plan_dir(profile, configured)
     cur = profile.workbook
-    files = sorted((f for f in d.glob("*.xlsx") if f.is_file() and NAME_RX.match(f.name) and not BACKUP_RX.search(f.name)),
-                   key=lambda f: f.name.lower()) if d.is_dir() else []
+    files = _workbooks(d)
     return {"dir": str(d), "current": cur.name if cur else None, "current_exists": bool(cur and cur.is_file()),
             "configured": configured.name if configured else None,
             "from_ui": bool(cur and configured != cur),

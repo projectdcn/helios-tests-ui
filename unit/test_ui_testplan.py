@@ -49,6 +49,27 @@ def test_upload_any_name_choose_and_keep_the_choice(tmp_path):
     assert p.workbook == configured and testplan.chosen(_profile(tmp_path, configured), configured) == configured
 
 
+def test_a_workbook_path_of_another_installation_falls_back_to_this_ones(tmp_path):
+    """racks.yaml restored / copied from an installation in another directory: its workbook: path is not here; the
+    rack uses the same name in its own <root>/testplan, else the only workbook there; uploads go there too."""
+    root = tmp_path / "opt" / "helios-ui" / "data"
+    p = RackProfile(name="rk", title="rk", runner="local", inventory=tmp_path / "rk.yaml",
+                    results_dir=root / "results" / "runs" / "rk")
+    stale = tmp_path / "home" / "old" / "helios-ui" / "data" / "testplan" / "full_rack_testplan.xlsx"
+    assert testplan.default_dir(p) == root / "testplan"
+    assert testplan.configured(p, stale) == stale                    # nothing here yet: shown as missing
+    (root / "testplan").mkdir(parents=True)
+    assert testplan.plan_dir(p, stale) == root / "testplan"          # uploads land in this installation
+    (root / "testplan" / "Helios plan v4.xlsx").write_bytes(b"x")
+    assert testplan.configured(p, stale) == root / "testplan" / "Helios plan v4.xlsx"   # the only one
+    (root / "testplan" / "other.xlsx").write_bytes(b"x")
+    assert testplan.configured(p, stale) == stale                    # two: the user picks one in the Setup tab
+    (root / "testplan" / "full_rack_testplan.xlsx").write_bytes(b"x")
+    assert testplan.configured(p, stale) == root / "testplan" / "full_rack_testplan.xlsx"   # same name wins
+    here = root / "testplan" / "other.xlsx"
+    assert testplan.configured(p, here) == here and testplan.configured(p, None) is None
+
+
 def test_upload_refuses_what_is_not_a_readable_test_plan(tmp_path):
     p = _profile(tmp_path)
     with pytest.raises(JobError, match="not an Excel .xlsx"):

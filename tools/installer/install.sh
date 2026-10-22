@@ -778,15 +778,37 @@ else
     say "wrote the starter $PREFIX/config/racks.yaml"
 fi
 if [ "$DRY" = 0 ]; then
+    # a racks.yaml restored from a backup / a removed installation, or kept after the installation was moved, can
+    # still point into ANOTHER installation's data/ (its absolute prefix): workbook, inventories, even results_dir.
+    # Those paths are made relative (../data/...) so they follow this one; the file before is kept as .bak-<time>.
+    "$PREFIX/venv/bin/python" - "$PREFIX/config/racks.yaml" "$PREFIX" "$RESTORED" <<'PYEOF' || warn "could not check the paths in $PREFIX/config/racks.yaml"
+import os, re, shutil, sys, time
+f, prefix, restored = sys.argv[1], os.path.normpath(sys.argv[2]), sys.argv[3]
+rx = re.compile(r"^(\s*(?:inventory|results_dir|workbook):\s*)(/[^\s#]*?)/data/((?:inventories|results|testplan)(?:/[^\s#]*)?)(.*)$")
+out, changed = [], []
+for line in open(f).read().splitlines(keepends=True):
+    m = rx.match(line.rstrip("\n"))
+    if m and os.path.normpath(m.group(2)) != prefix and (restored or not os.path.exists(f"{m.group(2)}/data/{m.group(3)}")):
+        changed.append(f"    {m.group(2)}/data/{m.group(3)} -> {prefix}/data/{m.group(3)}")
+        line = f"{m.group(1)}../data/{m.group(3)}{m.group(4)}" + ("\n" if line.endswith("\n") else "")
+    out.append(line)
+if changed:
+    bak = f"{f}.bak-{time.strftime('%Y%m%d-%H%M%S')}"
+    shutil.copy2(f, bak)
+    with open(f, "w") as fh:
+        fh.write("".join(out))
+    print(f"  paths of another installation in {f} now point into this one (before: {bak}):")
+    print("\n".join(changed))
+PYEOF
     (cd "$PREFIX/app" && "$PREFIX/venv/bin/python" - "$PREFIX/config/racks.yaml" <<'PYEOF'
 import sys
 from ui.config import load_config
-from ui.testplan import chosen
+from ui.testplan import chosen, configured
 for n, r in load_config(sys.argv[1]).items():
     state = "OK     " if r.inventory.is_file() else "MISSING"
     print("  %-10s inventory %s %s%s" % (n, state, r.inventory, "" if r.inventory.is_file() else
                                          "   (or in the UI: Inventory tab, Import file...)"))
-    wb = chosen(r, r.workbook)                     # a workbook uploaded / chosen in the UI wins
+    wb = chosen(r, configured(r, r.workbook))      # a workbook uploaded / chosen in the UI wins
     if wb and not wb.is_file():
         print("  %-10s workbook  MISSING %s   (or in the UI: Setup tab, Upload a test plan)" % ("", wb))
 PYEOF

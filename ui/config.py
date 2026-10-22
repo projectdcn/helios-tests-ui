@@ -1,6 +1,7 @@
 """Rack profiles (ui/racks.yaml): which inventory, where results go, local or jump-host execution. No secrets."""
 from __future__ import annotations
 
+import os
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -62,7 +63,7 @@ def _path(v: str | None, root: Path) -> Path | None:
     if v is None:
         return None
     p = Path(str(v)).expanduser()
-    return p if p.is_absolute() else root / p
+    return p if p.is_absolute() else Path(os.path.normpath(root / p))     # ../data/x -> <prefix>/data/x
 
 
 def find_secrets(tree, path: str = "") -> list[str]:

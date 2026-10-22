@@ -217,7 +217,7 @@ def test_starter_racks_yaml_mirrors_ui_racks_and_points_into_data(tmp_path):
     text = (INSTALLER / "racks.yaml.template").read_text().replace("@PREFIX@", str(prefix))
     f = tmp_path / "racks.yaml"
     f.write_text(text)
-    got, dev = load_config(f), load_config(ROOT / "ui" / "racks.yaml")
+    got, dev = load_config(f, root=prefix / "app"), load_config(ROOT / "ui" / "racks.yaml")
     assert set(got) == set(dev)
     for n, p in got.items():
         d = dev[n]
@@ -225,12 +225,46 @@ def test_starter_racks_yaml_mirrors_ui_racks_and_points_into_data(tmp_path):
         assert p.results_dir == prefix / "data" / "results" / "runs" / n
         assert p.workbook == prefix / "data" / "testplan" / "full_rack_testplan.xlsx"
         if n == "selftest":
-            assert p.inventory == ROOT / "selftest" / "inventory.yaml"        # part of the code
+            assert p.inventory == prefix / "app" / "selftest" / "inventory.yaml"   # part of the code
         else:
             assert p.inventory.parent == prefix / "data" / "inventories" and p.inventory.name == d.inventory.name
         if d.ssh:
             assert vars(p.ssh) == vars(d.ssh)
     assert "@PREFIX@" not in text and "password:" not in text.lower().replace("password_env", "")
+    # no absolute path into data/: the profiles follow the installation when it is moved or restored elsewhere
+    assert f"{prefix}/data" not in "".join(ln.split("#")[0] for ln in text.splitlines())
+
+
+def test_restored_racks_yaml_of_another_installation_is_repointed(tmp_path):
+    """install.sh's racks.yaml repair: paths into ANOTHER installation's data/ (restored from a backup, moved prefix)
+    become ../data/...; this installation's own paths, other paths and comments are left alone; .bak-<time> kept."""
+    script = (INSTALLER / "install.sh").read_text()
+    py = script.split('"$PREFIX/venv/bin/python" - "$PREFIX/config/racks.yaml" "$PREFIX" "$RESTORED" <<\'PYEOF\'')[1]
+    py = py.split("\n", 1)[1].split("\nPYEOF\n")[0]
+    (tmp_path / "py.py").write_text(py)
+    new, old = tmp_path / "opt" / "helios-ui", tmp_path / "home" / "helios-ui"
+    (new / "config").mkdir(parents=True)
+    f = new / "config" / "racks.yaml"
+    f.write_text(f"""racks:
+  mr3:
+    inventory: {old}/data/inventories/mr3.local.yaml
+    results_dir: {old}/data/results/runs/mr3   # results
+    workbook: {old}/data/testplan/full_rack_testplan.xlsx
+    known: testplan/health-known.yaml
+  mine:
+    inventory: {new}/data/inventories/x.yaml
+    results_dir: /srv/elsewhere/runs/mine
+""")
+    for restored in ("", "/backup"):
+        f.write_text(f.read_text().replace("../data/", f"{old}/data/"))
+        subprocess.run([sys.executable, str(tmp_path / "py.py"), str(f), str(new), restored], check=True)
+        got = load_config(f, root=new / "app")
+        assert got["mr3"].workbook == new / "data" / "testplan" / "full_rack_testplan.xlsx"
+        assert got["mr3"].results_dir == new / "data" / "results" / "runs" / "mr3"
+        assert got["mr3"].inventory == new / "data" / "inventories" / "mr3.local.yaml"
+        assert got["mine"].inventory == new / "data" / "inventories" / "x.yaml"
+        assert got["mine"].results_dir == Path("/srv/elsewhere/runs/mine") and "# results" in f.read_text()
+    assert len(list((new / "config").glob("racks.yaml.bak-*"))) >= 1
 
 
 # ------------------------------------------------------------------ install.sh / uninstall.sh
@@ -264,7 +298,7 @@ def test_install_dry_run_changes_nothing(tmp_path):
     assert not prefix.exists()
     out = r.stdout
     assert "[dry-run]" in out and f"-m venv {prefix}/venv" in out and f"write {prefix}/config/racks.yaml" in out
-    assert f"results_dir: {prefix}/data/results/runs/mr3" in out           # the starter profile, as it would be
+    assert "results_dir: ../data/results/runs/mr3" in out           # the starter profile, as it would be
     assert "ssh -L 18799:127.0.0.1:18799" in out                        # the alternative
     assert "systemd --user is not available" in out
     # default: every address, said plainly; stored for upgrades

@@ -104,7 +104,8 @@ class App:
         self.runs.store_label = self.store_label
         self.presence = presence.Presence()          # who is using the UI (memory only)
         # racks.yaml's workbook: stays the fallback; a workbook chosen / uploaded in the UI wins (ui/testplan.py)
-        self.configured_workbook = {n: p.workbook for n, p in self.profiles.items()}
+        # (a workbook: path of another installation directory falls back to this one's test-plan folder)
+        self.configured_workbook = {n: testplan.configured(p, p.workbook) for n, p in self.profiles.items()}
         for n, p in self.profiles.items():
             p.workbook = testplan.chosen(p, self.configured_workbook[n])
 
