@@ -214,6 +214,7 @@
 
 <section id="tab-results" class="tab">
   <div class="row"><button id="refresh-results">Refresh</button> <span class="muted">Result folders of this rack (newest first).</span></div>
+  <p id="results-msg" class="small" role="status" aria-live="polite"></p>
   <div id="rerun-box" class="box" hidden>
     Re-run what did not pass in <b id="rerun-name"></b> and judge the merged result.
     <label>AFM admin password <input type="password" id="rerun-pw" autocomplete="new-password">
@@ -226,6 +227,10 @@
   <div class="scroll" id="sessions-scroll"><table id="sessions"><thead><tr><th>Session</th><th>Runs</th><th>Cases</th><th>Written</th><th>Report</th><th>Download</th><th></th></tr></thead><tbody></tbody></table></div>
   <h3>Runs</h3>
   <div class="scroll" id="results-scroll"><table id="results"><thead><tr><th>Folder</th><th>Written</th><th>Cases</th><th>Health</th><th>Reports</th><th>Download</th><th></th></tr></thead><tbody></tbody></table></div>
+  <h3>Trash</h3>
+  <p class="muted small">Cleared runs and sessions, kept in <code>.trash</code> of the rack's results folder - nothing is deleted.
+    Restore puts one back where it was (a cleared run returns to Case history). Empty the folder yourself when you no longer need them.</p>
+  <div class="scroll"><table id="trash"><thead><tr><th>Name</th><th>Kind</th><th>Cleared</th><th>By</th><th>Size</th><th></th></tr></thead><tbody></tbody></table></div>
 </section>
 
 <section id="tab-history" class="tab">

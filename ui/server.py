@@ -29,7 +29,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, quote, unquote, urlparse
 
-from . import defaults, inventory_edit, plan, presence, presets, sessions, share, sshkeys, testplan
+from . import defaults, inventory_edit, plan, presence, presets, sessions, share, sshkeys, testplan, trash
 from helios.compute import bmc_env
 
 from .config import ROOT, afm_username, inventory_rack_name, load_config
@@ -616,6 +616,9 @@ class Handler(BaseHTTPRequestHandler):
             m = re.fullmatch(r"/api/racks/([^/]+)/(password|bmc-password)", path)
             if m:                                  # {saved: bool, ...}: NEVER the password
                 return self.json(self.app.password_status(m.group(1), "bmc" if m.group(2) == "bmc-password" else "afm"))
+            m = re.fullmatch(r"/api/racks/([^/]+)/trash", path)
+            if m:                                  # cleared runs / sessions (Results tab), newest first
+                return self.json(trash.listing(self.app.profile(m.group(1))))
             m = re.fullmatch(r"/api/racks/([^/]+)/testplan/download", path)
             if m:                                  # one workbook of the rack's test-plan folder (?name=), else the current
                 try:
@@ -789,6 +792,31 @@ class Handler(BaseHTTPRequestHandler):
             m = re.fullmatch(r"/api/racks/([^/]+)/sessions", path)
             if m:                                  # a new session becomes the rack's current one
                 return self.json(sessions.new_session(self.app.profile(m.group(1)), body.get("name")), 201)
+            m = re.fullmatch(r"/api/racks/([^/]+)/(results|sessions)/([^/]+)/clear", path)
+            if m:                                  # move a run / session to <results_dir>/.trash (ui/trash.py)
+                rk, kind, name = m.groups()
+                p = self.app.profile(rk)
+                b = self.app.runs.busy(rk)
+                if b["running"] or b["queued"]:
+                    return self.err(409, "a run of this rack is running or queued - clear results when it has finished")
+                if not NAME_RX.match(name):
+                    return self.err(404, "no such folder")
+                try:
+                    out = (trash.clear_run if kind == "results" else trash.clear_session)(p, name, by=self._by() or None)
+                except KeyError as e:
+                    return self.err(404, str(e).strip("'\""))
+                except JobError as e:
+                    return self.err(400, str(e))
+                return self.json(out)
+            m = re.fullmatch(r"/api/racks/([^/]+)/trash/([^/]+)/restore", path)
+            if m:
+                try:
+                    # POST paths are not unquoted: the browser sends the entry's '@' as %40 (ENTRY_RX checks the result)
+                    return self.json(trash.restore(self.app.profile(m.group(1)), unquote(m.group(2))))
+                except KeyError as e:
+                    return self.err(404, str(e).strip("'\""))
+                except JobError as e:
+                    return self.err(409, str(e))
             m = re.fullmatch(r"/api/racks/([^/]+)/sessions/([^/]+)/rebuild", path)
             if m:
                 p = self.app.profile(m.group(1))

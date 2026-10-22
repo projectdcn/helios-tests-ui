@@ -995,8 +995,15 @@ const SHARE_TIP = "for sending outside the team (AMD, a ticket): the same files 
 $("#refresh-results").addEventListener("click", loadResults);
 async function loadResults() {
   if (!rack) return;
-  const [rows, sess] = await Promise.all([api("GET", `/api/racks/${encodeURIComponent(rack.name)}/history`),
-    api("GET", `/api/racks/${enc(rack.name)}/sessions`).catch(e => ({ sessions: [], error: e.message }))]);
+  const [rows, sess, bin] = await Promise.all([api("GET", `/api/racks/${encodeURIComponent(rack.name)}/history`),
+    api("GET", `/api/racks/${enc(rack.name)}/sessions`).catch(e => ({ sessions: [], error: e.message })),
+    api("GET", `/api/racks/${enc(rack.name)}/trash`).catch(() => [])]);
+  const kb = n => n >= 1048576 ? `${(n / 1048576).toFixed(1)} MB` : `${Math.max(1, Math.round(n / 1024))} KB`;
+  $("#trash tbody").replaceChildren(...(bin.length ? [] : [h("tr", {}, h("td", { colspan: 6, class: "muted" }, "empty"))]),
+    ...bin.map(e => h("tr", {}, h("td", {}, e.name), h("td", {}, e.kind), h("td", {}, e.removed || ""), h("td", {}, e.by || ""),
+      h("td", {}, kb(e.size)),
+      h("td", {}, h("button", { onclick: () => restoreEntry(e), disabled: !e.restorable,
+        title: e.restorable ? "put it back where it was" : `${e.name} exists again in the results` }, "Restore")))));
   const base = n => `/results/${encodeURIComponent(rack.name)}/${encodeURIComponent(n)}/`;
   const dl = (n, what) => `/api/racks/${enc(rack.name)}/results/${enc(n)}/${what}`;
   const runLink = n => h("a", { href: base(n) + (rows.some(x => x.name === n && x.reports.includes("report.html")) ? "report.html" : "tc_summary.csv"),
@@ -1015,7 +1022,9 @@ async function loadResults() {
       h("td", {}, s.folder ? [h("a", { class: "btn", href: dl(s.id, "zip"), download: "", title: "the consolidated folder: csv files, logs, report, session.json" }, "Download results (.zip)"),
         h("a", { class: "btn", href: dl(s.id, "share"), download: "", title: SHARE_TIP }, "Share (.zip, secrets removed)")] : ""),
       h("td", {}, s.runs.length ? h("button", { onclick: ev => rebuildSession(s, ev.currentTarget),
-        title: "build the consolidated folder and its report again from the session's runs" }, "Rebuild") : null))));
+        title: "build the consolidated folder and its report again from the session's runs" }, "Rebuild") : null,
+        h("button", { onclick: () => clearItem("sessions", s.id, `session ${s.name}`),
+          title: "move the session (its consolidated folder and report) to the trash; its runs stay" }, "Clear")))));
   $("#results tbody").replaceChildren(...rows.map(r => h("tr", {},
     h("td", {}, r.name, r.merged_from ? h("div", { class: "muted" }, "merged from " + r.merged_from.join(" + ")) : null),
     h("td", {}, r.mtime),
@@ -1030,7 +1039,27 @@ async function loadResults() {
         h("a", { class: "btn", href: dl(r.name, "file/" + f), download: "" }, f === "report.html" ? "Download report" : "Download health report"))),
     h("td", {},
       r.reports.includes("report.html") ? null : h("button", { onclick: () => buildReport(r.name) }, "Build report"),
-      r.health && r.health.verdict !== "GO" ? h("button", { onclick: () => askRerun(r.name) }, "Re-run failed") : null))));
+      r.health && r.health.verdict !== "GO" ? h("button", { onclick: () => askRerun(r.name) }, "Re-run failed") : null,
+      h("button", { onclick: () => clearItem("results", r.name, r.name), title: "move this run folder to the trash (Restore puts it back)" }, "Clear")))));
+}
+async function clearItem(kind, name, label) {
+  const what = kind === "sessions" ? `${label}: its consolidated folder and report (the runs it was built from stay)`
+                                   : `run ${label}: its results, logs and reports (it also leaves Case history)`;
+  if (!confirm(`Clear ${what}?\n\nIt moves to the trash of this rack's results folder - Restore on the Results tab puts it back.`)) return;
+  const msg = $("#results-msg");
+  try {
+    const d = await api("POST", `/api/racks/${enc(rack.name)}/${kind}/${enc(name)}/clear`, {});
+    msg.className = "small ok"; msg.textContent = `${label} moved to the trash (${d.entry}) - Restore is under Trash below`;
+    await loadResults();
+  } catch (e) { msg.className = "small err"; msg.textContent = `Clear of ${label} failed: ${e.message}`; }
+}
+async function restoreEntry(e) {
+  const msg = $("#results-msg");
+  try {
+    await api("POST", `/api/racks/${enc(rack.name)}/trash/${enc(e.entry)}/restore`, {});
+    msg.className = "small ok"; msg.textContent = `${e.name} restored`;
+    await loadResults();
+  } catch (err) { msg.className = "small err"; msg.textContent = `Restore of ${e.name} failed: ${err.message}`; }
 }
 async function rebuildSession(s, btn) {
   // visible feedback: the rebuild can take well under a second and give the same result as before

@@ -95,7 +95,8 @@ def plan(results_root: Path = RESULTS, now: float | None = None) -> list[tuple[s
     day = 86400
     acts = []
     for rack_dir in sorted(p for p in (results_root / "runs").glob("*") if p.is_dir()):
-        runs = sorted((p for p in rack_dir.iterdir() if p.is_dir() and p.name != "ui-runs"),
+        runs = sorted((p for p in rack_dir.iterdir()             # .trash: cleared from the UI, left to the user
+                       if p.is_dir() and p.name != "ui-runs" and not p.name.startswith(".")),
                       key=run_time, reverse=True)
         newest = {p.name for p in runs[:cfg["keep_full_runs"]]}
         for r in runs:
