@@ -792,6 +792,32 @@ class Handler(BaseHTTPRequestHandler):
             m = re.fullmatch(r"/api/racks/([^/]+)/sessions", path)
             if m:                                  # a new session becomes the rack's current one
                 return self.json(sessions.new_session(self.app.profile(m.group(1)), body.get("name")), 201)
+            m = re.fullmatch(r"/api/racks/([^/]+)/results/clear", path)
+            if m:                                  # Clear selected: {names: [run folders]} to the trash, all or none
+                rk = m.group(1)
+                b = self.app.runs.busy(rk)
+                if b["running"] or b["queued"]:
+                    return self.err(409, "a run of this rack is running or queued - clear results when it has finished")
+                names = body.get("names")
+                if not isinstance(names, list) or not all(isinstance(n, str) and NAME_RX.match(n) for n in names):
+                    return self.err(400, "names: a list of run folder names")
+                try:
+                    return self.json(trash.clear_runs(self.app.profile(rk), names, by=self._by() or None))
+                except KeyError as e:
+                    return self.err(404, str(e).strip("'\""))
+                except JobError as e:
+                    return self.err(400, str(e))
+            m = re.fullmatch(r"/api/racks/([^/]+)/trash/empty", path)
+            if m:                                  # delete every trash entry for good (logged in .trash/deleted.log)
+                return self.json(trash.empty(self.app.profile(m.group(1)), by=self._by() or None))
+            m = re.fullmatch(r"/api/racks/([^/]+)/trash/([^/]+)/delete", path)
+            if m:                                  # delete one trash entry for good
+                try:
+                    return self.json(trash.delete(self.app.profile(m.group(1)), unquote(m.group(2)), by=self._by() or None))
+                except KeyError as e:
+                    return self.err(404, str(e).strip("'\""))
+                except JobError as e:
+                    return self.err(400, str(e))
             m = re.fullmatch(r"/api/racks/([^/]+)/(results|sessions)/([^/]+)/clear", path)
             if m:                                  # move a run / session to <results_dir>/.trash (ui/trash.py)
                 rk, kind, name = m.groups()

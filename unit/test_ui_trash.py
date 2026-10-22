@@ -110,3 +110,59 @@ def test_routes_and_a_busy_rack(tmp_path):
         app.shutdown()
         srv.shutdown()
         srv.server_close()
+
+
+def test_clear_selected_delete_and_empty(tmp_path):
+    """Clear selected moves all (index rewritten once) or none (an unknown name); Delete permanently / Empty trash
+    remove entries for good, logged in .trash/deleted.log; only real entries inside .trash are accepted."""
+    p = _profile(tmp_path)
+    for n in ("rk-20261021-140000", "rk-20261021-140100", "rk-20261021-140200"):
+        _run(p, n)
+    with pytest.raises(KeyError):
+        trash.clear_runs(p, ["rk-20261021-140000", "rk-nope-1"])
+    assert len(_indexed(p)) == 3 and not trash.listing(p)                       # all or none
+    out = trash.clear_runs(p, ["rk-20261021-140000", "rk-20261021-140100"], by="bob")
+    assert len(out["cleared"]) == 2 and _indexed(p) == {"rk-20261021-140200"}
+    first, second = sorted(e["entry"] for e in trash.listing(p))
+    d = trash.delete(p, first, by="bob")
+    assert d["deleted"] == [first] and d["bytes"] > 0 and not (p.results_dir / ".trash" / first).exists()
+    outside = tmp_path / "keep"
+    outside.mkdir()
+    (p.results_dir / ".trash" / "evil@20261021-150000").symlink_to(outside)     # a link: never followed / deleted
+    for bad in ("evil@20261021-150000", "../rk-20261021-140200", "rk-20261021-140200"):
+        with pytest.raises((KeyError, Exception)):
+            trash.delete(p, bad)
+    assert outside.is_dir() and (p.results_dir / "rk-20261021-140200").is_dir()
+    assert [x["entry"] for x in trash.listing(p)] == [second]                 # the link is not offered
+    e = trash.empty(p, by="bob")
+    assert outside.is_dir()
+    assert e["deleted"] == [second] and not trash.listing(p)
+    log = (p.results_dir / ".trash" / "deleted.log").read_text().splitlines()
+    assert len(log) == 2 and all("\tdeleted\t" in ln and ln.endswith("\tbob") for ln in log)
+
+
+def test_bulk_and_delete_routes(tmp_path):
+    p = _profile(tmp_path)
+    for n in ("rk-20261021-160000", "rk-20261021-160100"):
+        _run(p, n)
+    app = App(profiles={"rk": p}, executor=HashExecutor())
+    srv = make_server(app, 0)
+    threading.Thread(target=srv.serve_forever, daemon=True).start()
+    c = Client(srv.server_address[1])
+    try:
+        st, d = c.j("POST", "/api/racks/rk/results/clear", {"names": ["rk-20261021-160000", "rk-20261021-160100"]})
+        assert st == 200 and len(d["cleared"]) == 2
+        st, _ = c.j("POST", "/api/racks/rk/results/clear", {"names": "x"})
+        assert st == 400
+        st, lst = c.j("GET", "/api/racks/rk/trash")
+        enc = lst[0]["entry"].replace("@", "%40")
+        st, d = c.j("POST", f"/api/racks/rk/trash/{enc}/delete", {})
+        assert st == 200 and d["deleted"] == [lst[0]["entry"]]
+        st, d = c.j("POST", "/api/racks/rk/trash/empty", {})
+        assert st == 200 and len(d["deleted"]) == 1
+        st, lst = c.j("GET", "/api/racks/rk/trash")
+        assert lst == []
+    finally:
+        app.shutdown()
+        srv.shutdown()
+        srv.server_close()

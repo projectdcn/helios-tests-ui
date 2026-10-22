@@ -25,6 +25,7 @@ textarea { width: 100%; font-family: ui-monospace, Menlo, monospace; font-size: 
 button { cursor: pointer; padding: 5px 12px; }
 button.primary { background: var(--accent); color: #fff; border-color: var(--accent); }
 button:disabled { opacity: .5; cursor: default; }
+button.danger, #empty-trash:not(:disabled) { color: var(--bad); border-color: var(--bad); }
 .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 0 12px; }
 .grid2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 0 12px; }
 .muted { color: var(--muted); font-size: 12.5px; }

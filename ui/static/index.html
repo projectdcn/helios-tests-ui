@@ -226,10 +226,14 @@
   <p id="rebuild-msg" class="small" role="status" aria-live="polite"></p>
   <div class="scroll" id="sessions-scroll"><table id="sessions"><thead><tr><th>Session</th><th>Runs</th><th>Cases</th><th>Written</th><th>Report</th><th>Download</th><th></th></tr></thead><tbody></tbody></table></div>
   <h3>Runs</h3>
-  <div class="scroll" id="results-scroll"><table id="results"><thead><tr><th>Folder</th><th>Written</th><th>Cases</th><th>Health</th><th>Reports</th><th>Download</th><th></th></tr></thead><tbody></tbody></table></div>
+  <div class="row"><button type="button" id="clear-selected" disabled title="move the ticked runs to the trash (Restore puts them back)">Clear selected</button>
+    <span class="muted small">tick runs (or the box in the header for all) to clear several at once</span></div>
+  <div class="scroll" id="results-scroll"><table id="results"><thead><tr><th><input type="checkbox" id="sel-all-runs" title="select all runs" aria-label="select all runs"></th><th>Folder</th><th>Written</th><th>Cases</th><th>Health</th><th>Reports</th><th>Download</th><th></th></tr></thead><tbody></tbody></table></div>
   <h3>Trash</h3>
-  <p class="muted small">Cleared runs and sessions, kept in <code>.trash</code> of the rack's results folder - nothing is deleted.
-    Restore puts one back where it was (a cleared run returns to Case history). Empty the folder yourself when you no longer need them.</p>
+  <p class="muted small">Cleared runs and sessions, kept in <code>.trash</code> of the rack's results folder until you delete them.
+    Restore puts one back where it was (a cleared run returns to Case history).</p>
+  <div class="row"><button type="button" id="empty-trash" disabled title="delete everything in the trash for good">Empty trash</button>
+    <span class="muted small">Delete permanently / Empty trash cannot be undone (each delete is recorded in <code>.trash/deleted.log</code>).</span></div>
   <div class="scroll"><table id="trash"><thead><tr><th>Name</th><th>Kind</th><th>Cleared</th><th>By</th><th>Size</th><th></th></tr></thead><tbody></tbody></table></div>
 </section>
 

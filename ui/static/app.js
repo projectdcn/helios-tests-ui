@@ -1003,7 +1003,12 @@ async function loadResults() {
     ...bin.map(e => h("tr", {}, h("td", {}, e.name), h("td", {}, e.kind), h("td", {}, e.removed || ""), h("td", {}, e.by || ""),
       h("td", {}, kb(e.size)),
       h("td", {}, h("button", { onclick: () => restoreEntry(e), disabled: !e.restorable,
-        title: e.restorable ? "put it back where it was" : `${e.name} exists again in the results` }, "Restore")))));
+        title: e.restorable ? "put it back where it was" : `${e.name} exists again in the results` }, "Restore"),
+        h("button", { class: "danger", onclick: () => deleteEntry(e), title: "delete it for good - cannot be undone" },
+          "Delete permanently")))));
+  $("#empty-trash").disabled = !bin.length;
+  $("#empty-trash").dataset.n = bin.length;
+  $("#empty-trash").dataset.size = kb(bin.reduce((a, e) => a + (e.size || 0), 0));
   const base = n => `/results/${encodeURIComponent(rack.name)}/${encodeURIComponent(n)}/`;
   const dl = (n, what) => `/api/racks/${enc(rack.name)}/results/${enc(n)}/${what}`;
   const runLink = n => h("a", { href: base(n) + (rows.some(x => x.name === n && x.reports.includes("report.html")) ? "report.html" : "tc_summary.csv"),
@@ -1025,7 +1030,9 @@ async function loadResults() {
         title: "build the consolidated folder and its report again from the session's runs" }, "Rebuild") : null,
         h("button", { onclick: () => clearItem("sessions", s.id, `session ${s.name}`),
           title: "move the session (its consolidated folder and report) to the trash; its runs stay" }, "Clear")))));
+  $("#sel-all-runs").checked = false;
   $("#results tbody").replaceChildren(...rows.map(r => h("tr", {},
+    h("td", {}, h("input", { type: "checkbox", class: "run-sel", value: r.name, "aria-label": `select ${r.name}`, onchange: selChanged })),
     h("td", {}, r.name, r.merged_from ? h("div", { class: "muted" }, "merged from " + r.merged_from.join(" + ")) : null),
     h("td", {}, r.mtime),
     h("td", {}, Object.entries(r.counts).map(([v, n]) => `${n} ${v}`).join(", ")),
@@ -1042,6 +1049,50 @@ async function loadResults() {
       r.health && r.health.verdict !== "GO" ? h("button", { onclick: () => askRerun(r.name) }, "Re-run failed") : null,
       h("button", { onclick: () => clearItem("results", r.name, r.name), title: "move this run folder to the trash (Restore puts it back)" }, "Clear")))));
 }
+function selectedRuns() { return [...document.querySelectorAll("#results .run-sel:checked")].map(x => x.value); }
+function selChanged() {
+  const n = selectedRuns().length, all = document.querySelectorAll("#results .run-sel").length;
+  $("#clear-selected").disabled = !n;
+  $("#clear-selected").textContent = n ? `Clear selected (${n})` : "Clear selected";
+  $("#sel-all-runs").checked = n > 0 && n === all;
+  $("#sel-all-runs").indeterminate = n > 0 && n < all;
+}
+$("#sel-all-runs").addEventListener("change", ev => {
+  document.querySelectorAll("#results .run-sel").forEach(x => { x.checked = ev.target.checked; });
+  selChanged();
+});
+$("#clear-selected").addEventListener("click", async () => {
+  const names = selectedRuns();
+  if (!names.length) return;
+  if (!confirm(`Clear ${names.length} run(s)?\n\n${names.slice(0, 8).join("\n")}${names.length > 8 ? `\n... and ${names.length - 8} more` : ""}` +
+               "\n\nThey move to the trash of this rack's results folder - Restore puts them back.")) return;
+  const msg = $("#results-msg");
+  try {
+    const d = await api("POST", `/api/racks/${enc(rack.name)}/results/clear`, { names });
+    msg.className = "small ok"; msg.textContent = `${d.cleared.length} run(s) moved to the trash - Restore is under Trash below`;
+    await loadResults(); selChanged();
+  } catch (e) { msg.className = "small err"; msg.textContent = `Clear selected failed: ${e.message}`; }
+});
+async function deleteEntry(e) {
+  if (!confirm(`Delete ${e.name} (${e.kind}, cleared ${e.removed || ""}) permanently?\n\nThis cannot be undone.`)) return;
+  const msg = $("#results-msg");
+  try {
+    await api("POST", `/api/racks/${enc(rack.name)}/trash/${enc(e.entry)}/delete`, {});
+    msg.className = "small ok"; msg.textContent = `${e.name} deleted permanently`;
+    await loadResults();
+  } catch (err) { msg.className = "small err"; msg.textContent = `Delete of ${e.name} failed: ${err.message}`; }
+}
+$("#empty-trash").addEventListener("click", async () => {
+  const b = $("#empty-trash").dataset;
+  const typed = prompt(`Empty the trash: delete all ${b.n} item(s) (${b.size}) permanently? This cannot be undone.\n\nType DELETE to confirm.`);
+  if (typed !== "DELETE") return;
+  const msg = $("#results-msg");
+  try {
+    const d = await api("POST", `/api/racks/${enc(rack.name)}/trash/empty`, {});
+    msg.className = "small ok"; msg.textContent = `Trash emptied: ${d.deleted.length} item(s) deleted permanently`;
+    await loadResults();
+  } catch (err) { msg.className = "small err"; msg.textContent = `Empty trash failed: ${err.message}`; }
+});
 async function clearItem(kind, name, label) {
   const what = kind === "sessions" ? `${label}: its consolidated folder and report (the runs it was built from stay)`
                                    : `run ${label}: its results, logs and reports (it also leaves Case history)`;

@@ -1,5 +1,6 @@
 """Clearing results from the UI without losing them: a run folder or a session moves to <results_dir>/.trash/, from
-where the Results tab can restore it. Nothing here deletes a file; emptying the trash is left to the user.
+where the Results tab can restore it. Only delete / empty (Delete permanently / Empty trash) remove files, each one
+logged in .trash/deleted.log.
 
 <results_dir>/.trash/<name>@<YYYYmmdd-HHMMSS>/  - the run / session folder as it was, plus .trash.json:
     {"name", "kind": "run" | "session", "removed", "by", "session": {...its ui-sessions.json entry}}
@@ -58,16 +59,40 @@ def _move(profile: RackProfile, src: Path, kind: str, by: str | None, extra: dic
     return {"entry": dst.name, **meta}
 
 
-def clear_run(profile: RackProfile, name: str, by: str | None = None) -> dict:
-    """Move one run folder of this rack to the trash."""
+def _run_folder(profile: RackProfile, name: str) -> Path:
     if sessions.is_session(name) or "/" in name or name.startswith("."):
         raise JobError(f"{name}: not a run folder")
     src = profile.results_dir / name
-    if not src.is_dir() or not (src / "tc_summary.csv").exists():
+    if not src.is_dir() or src.is_symlink() or not (src / "tc_summary.csv").exists():
         raise KeyError(f"no run {name!r}")
-    out = _move(profile, src, "run", by)
+    return src
+
+
+def clear_run(profile: RackProfile, name: str, by: str | None = None) -> dict:
+    """Move one run folder of this rack to the trash."""
+    out = _move(profile, _run_folder(profile, name), "run", by)
     _index(profile, drop=name)
     return out
+
+
+def clear_runs(profile: RackProfile, names: list[str], by: str | None = None) -> dict:
+    """Move several run folders to the trash (Clear selected); every name is checked before any is moved.
+    {cleared: [entries], index: rewritten once}."""
+    names = list(dict.fromkeys(str(n) for n in names))
+    if not names:
+        raise JobError("no runs selected")
+    folders = [_run_folder(profile, n) for n in names]          # all or nothing: an unknown name moves none
+    out = [_move(profile, f, "run", by) for f in folders]
+    try:
+        sys.path.insert(0, str(Path(ROOT, "tools")))
+        import results_index as ri
+        root = profile.results_dir.parent.parent
+        drop = set(names)
+        ri._write(ri.index_path(root), [r for r in ri.read(root)
+                                        if not (r["rack"] == profile.results_dir.name and r["run"] in drop)])
+    except Exception:  # noqa: BLE001
+        pass
+    return {"cleared": out}
 
 
 def clear_session(profile: RackProfile, sid: str, by: str | None = None) -> dict:
@@ -97,7 +122,7 @@ def listing(profile: RackProfile) -> list[dict]:
     d = trash_dir(profile)
     out = []
     for p in d.iterdir() if d.is_dir() else []:
-        if not p.is_dir() or not ENTRY_RX.match(p.name):
+        if not p.is_dir() or p.is_symlink() or not ENTRY_RX.match(p.name):
             continue
         try:
             meta = json.loads((p / ".trash.json").read_text())
@@ -136,3 +161,37 @@ def restore(profile: RackProfile, entry: str) -> dict:
     else:
         _index(profile, run=dst)
     return {"name": meta["name"], "kind": meta.get("kind")}
+
+
+def _entry(profile: RackProfile, entry: str) -> Path:
+    """A trash entry folder - exactly one level inside this rack's .trash, a real folder (not a link)."""
+    if not ENTRY_RX.match(entry):
+        raise JobError(f"{entry}: not a trash entry")
+    d = trash_dir(profile)
+    p = d / entry
+    if not p.is_dir() or p.is_symlink() or p.resolve().parent != d.resolve():
+        raise KeyError(f"no trash entry {entry!r}")
+    return p
+
+
+def _deleted_log(profile: RackProfile, lines: list[str]) -> None:
+    with open(trash_dir(profile) / "deleted.log", "a") as fh:
+        fh.writelines(f"{ln}\n" for ln in lines)
+
+
+def delete(profile: RackProfile, entry: str, by: str | None = None) -> dict:
+    """Delete one trash entry for good."""
+    p = _entry(profile, entry)
+    size = sum(f.stat().st_size for f in p.rglob("*") if f.is_file() and not f.is_symlink())
+    shutil.rmtree(p)
+    _deleted_log(profile, [f"{time.strftime('%Y-%m-%d %H:%M:%S')}\tdeleted\t{entry}\t{size}\t{by or ''}"])
+    return {"deleted": [entry], "bytes": size}
+
+
+def empty(profile: RackProfile, by: str | None = None) -> dict:
+    """Delete every trash entry of this rack for good (deleted.log stays)."""
+    gone, total = [], 0
+    for e in listing(profile):
+        total += delete(profile, e["entry"], by)["bytes"]
+        gone.append(e["entry"])
+    return {"deleted": gone, "bytes": total}
