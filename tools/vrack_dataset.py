@@ -1,4 +1,5 @@
-"""Labelled training data from the virtual rack: run TC-SWH-061, TC-SWH-062 and TC-SWH-046 many times on a private
+"""Labelled training data from the virtual rack: run TC-SWH-061 / 062 (FDB), 046 (PFC / QoS), 060 (incast congestion)
+and 063 (lossless configuration) many times on a private
 virtual rack (selftest/vrack.py, g02-g17 layout) with varied injected faults, FDB targets, switches and QoS profiles,
 then export SLM examples (tools/dataset_export.py) split into train / eval.
 
@@ -34,16 +35,22 @@ sys.path.insert(0, str(ROOT / "selftest"))
 
 import dataset_export as dx  # noqa: E402
 
-TCS = ("TC-SWH-061", "TC-SWH-062", "TC-SWH-046")
+TCS = ("TC-SWH-061", "TC-SWH-062", "TC-SWH-046", "TC-SWH-060", "TC-SWH-063")
 SWITCHES = [f"st{n}" for n in range(1, 7)]
 # (faults, weight): healthy runs and each fault class, alone and combined
 SCENARIOS = [
     ([], 4),
-    (["no_fdb_reconcile"], 3),
-    (["pfc_storm"], 3),
+    (["no_fdb_reconcile"], 2),                 # AFM never notices an FDB mismatch
+    (["fdb_detect_no_repair"], 2),             # notices (event), never repairs
+    (["fdb_wrong_port"], 2),                   # repairs a deleted entry on another port
+    (["pfc_storm"], 3),                        # watchdog storm, or (params watchdog false) pauses only
+    (["qos_odd_port"], 1),                     # one port with another QoS map (QoS profiles mr3 / lossless)
+    (["lossless_incast_drops"], 2),            # PFC does not hold the incast
+    (["no_congestion_watermark"], 1),          # the switch reports no congestion under incast
+    (["tb_slow"], 1),                          # the incast load stays far below line rate (BLOCKED)
     (["cni_netns"], 1),
-    (["no_fdb_reconcile", "pfc_storm"], 2),
-    (["afm_unreachable"], 2),                  # the AFM API resets every connection (MR3 21-22 Oct)
+    (["afm_unreachable"], 1),                  # the AFM API resets every connection (MR3 21-22 Oct)
+    (["no_fdb_reconcile", "pfc_storm"], 1),
 ]
 
 
@@ -148,7 +155,7 @@ def split(recs: list[dict], frac: float, rng: random.Random) -> tuple[list, list
 
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
-    ap.add_argument("--runs", type=int, default=60, help="test runs in total (each runs the 3 cases; ~25 s each)")
+    ap.add_argument("--runs", type=int, default=60, help="test runs in total (each runs the 5 cases; ~40 s each)")
     ap.add_argument("--out", type=Path, required=True)
     ap.add_argument("--qos", default="none,mr3,lossless", help="QoS profiles of the virtual rack, runs split over them")
     ap.add_argument("--seed", type=int, default=1)
@@ -182,15 +189,23 @@ def main(argv=None) -> int:
         try:
             for _ in range(n):
                 faults = rng.choices([s for s, _w in scenarios], weights=[w for _s, w in scenarios])[0]
+                if "qos_odd_port" in faults and qos == "none":      # no QoS map to make odd: a storm instead
+                    faults = ["pfc_storm"]
                 params, scope = {}, {}
                 if "pfc_storm" in faults:      # a different stormed switch / port / priority / rate each run
                     k = rng.randrange(len(SWITCHES))
                     params["pfc_storm"] = {"switch": k, "asic": rng.randrange(2), "port": rng.randrange(216),
                                            "prio": rng.choice([0, 1, 3, 4]),
-                                           "frames": rng.choice([5000, 40000, 250000, 900000])}
+                                           "frames": rng.choice([5000, 40000, 250000, 900000]),
+                                           "watchdog": rng.random() < 0.6}
                     scope["pfc_storm"] = [SWITCHES[k]]
-                # TC-SWH-046 looks at one switch: mostly the stormed one when there is a storm
-                switch = scope["pfc_storm"][0] if scope and rng.random() < 0.75 else rng.choice(SWITCHES)
+                if "qos_odd_port" in faults:
+                    k = rng.randrange(len(SWITCHES))
+                    params["qos_odd_port"] = {"switch": k, "asic": rng.randrange(2), "port": rng.randrange(216)}
+                    scope["qos_odd_port"] = [SWITCHES[k]]
+                # TC-SWH-046 / 063 look at one switch: mostly the affected one when there is a switch fault
+                hit = [v[0] for v in scope.values()]
+                switch = hit[0] if hit and rng.random() < 0.75 else rng.choice(SWITCHES)
                 seed = rng.randrange(1, 10**6)
                 run = run_once(vr, runs, faults, seed, switch, qos, params, scope)
                 done += 1

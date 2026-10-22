@@ -252,6 +252,14 @@ class Sim:
         key = (i, ns, self.qos)
         if key not in self._qos_cache:
             self._qos_cache[key] = fake_qos.tables(self.qos, sorted(self.ports(i, ns), key=lambda x: int(x[8:])))
+        odd = {"switch": 0, "asic": 0, "port": 0, **(getattr(self.st, "params", {}).get("qos_odd_port") or {})}
+        maps = self._qos_cache[key].get("PORT_QOS_MAP") or {}
+        if "qos_odd_port" in self.f and i == odd["switch"] and ns == f"asic{odd['asic']}" and maps:
+            # one fabric port with another pfc_enable (a hand edit / a partial apply): TC-SWH-046 must see it
+            port = sorted(maps, key=lambda x: int(x[8:]))[odd["port"] % len(maps)]
+            t = dict(self._qos_cache[key])
+            t["PORT_QOS_MAP"] = {**maps, port: {**maps[port], "pfc_enable": "3,4"}}
+            return t
         return self._qos_cache[key]
 
     @staticmethod
@@ -749,19 +757,38 @@ class FakeSwitchTransport:
     FDB_RECONCILE_S = 2.0
 
     def _fdb_apply(self, ns, lines):
-        """Static FDB lines with this switch's edits: deleted entries left out, foreign ones added; AFM repairs an
-        edit after FDB_RECONCILE_S (fault no_fdb_reconcile: never)."""
-        sim, now = self.st.sim, time.monotonic()
-        for key, (port, t) in list(sim.fdb_edits.items()):
-            if key[0] == self.i and now - t >= self.FDB_RECONCILE_S * sim.time_scale and "no_fdb_reconcile" not in self.st.f:
+        """Static FDB lines with this switch's edits: deleted entries left out, foreign ones added. AFM notices an
+        edit after FDB_RECONCILE_S (event fdb_mismatch) and repairs it (event fdb_mismatch_repaired). Faults:
+        no_fdb_reconcile - never notices; fdb_detect_no_repair - notices, never repairs; fdb_wrong_port - puts a
+        deleted entry back on another port. An edit's state: (port, t) open, (port, t, "detected"), or
+        (wrong port, t, "wrong", original port)."""
+        sim, f, now = self.st.sim, self.st.f, time.monotonic()
+        for key, val in list(sim.fdb_edits.items()):
+            port, t = val[0], val[1]
+            if key[0] != self.i or len(val) > 2 or now - t < self.FDB_RECONCILE_S * sim.time_scale \
+                    or "no_fdb_reconcile" in f:
+                continue
+            what = "missing (AFM-programmed entry deleted)" if port is None else f"foreign entry on {port}"
+            sim.event("fdb_mismatch", f"FDB mismatch on {self.host.name} {key[1]} {key[2]} {key[3]}: {what}")
+            orig = next((ln.rsplit("|", 1)[1] for ln in lines if ln.split("|")[1:3] == [key[2], key[3]]), None)
+            if "fdb_detect_no_repair" in f:
+                sim.fdb_edits[key] = (port, t, "detected")
+            elif "fdb_wrong_port" in f and port is None and orig:
+                ports = [p for p, _ in sim.all_ports(self.i, ns) if p != orig]
+                wrong = ports[hash(key) % len(ports)] if ports else orig
+                sim.fdb_edits[key] = (wrong, t, "wrong", orig)
+                sim.event("fdb_mismatch_repaired", f"FDB {key[2]} {key[3]} on {self.host.name} {key[1]} programmed on {wrong}")
+            else:
                 sim.fdb_edits.pop(key)
+                sim.event("fdb_mismatch_repaired", f"FDB {key[2]} {key[3]} on {self.host.name} {key[1]} reconciled")
         out = []
         for ln in lines:
             _, vlan, mac, _p = ln.split("|")
-            if sim.fdb_edits.get((self.i, ns, vlan, mac), (0,))[0] is None:
+            val = sim.fdb_edits.get((self.i, ns, vlan, mac), (0,))
+            if val[0] is None or (len(val) > 2 and val[2] == "wrong"):
                 continue
             out.append(ln)
-        for (i, ns_, vlan, mac), (port, _t) in sim.fdb_edits.items():
+        for (i, ns_, vlan, mac), (port, *_rest) in sim.fdb_edits.items():
             if i == self.i and ns_ == ns and port:
                 out.append(f"FDB|{vlan}|{mac}|{port}")
         return out
@@ -984,7 +1011,9 @@ class FakeSwitchTransport:
                 ns, vlan, mac = m.groups()
                 had = any(ln.split("|")[1:3] == [vlan, mac] for ln in self._fdb_lines(ns))
                 key = (i, ns, vlan, mac)
-                if sim.fdb_edits.get(key, (0,))[0] not in (None, 0):      # removing our own foreign entry
+                if len(sim.fdb_edits.get(key, ())) > 2 and sim.fdb_edits[key][2] == "wrong":
+                    sim.fdb_edits[key] = (None, time.monotonic(), "detected")  # the wrongly placed entry removed
+                elif sim.fdb_edits.get(key, (0,))[0] not in (None, 0):      # removing our own foreign entry
                     sim.fdb_edits.pop(key)
                 elif had:
                     sim.fdb_edits[key] = (None, time.monotonic())
@@ -992,8 +1021,9 @@ class FakeSwitchTransport:
             elif m := re.fullmatch(r"sonic-db-cli -n (asic\d+) CONFIG_DB hset 'FDB\|(Vlan\d+)\|([0-9a-f:]+)' port (Ethernet\d+) type static", cmd):
                 ns, vlan, mac, port = m.groups()
                 key = (i, ns, vlan, mac)
-                if sim.fdb_edits.get(key, (0,))[0] is None:                  # putting back a deleted entry
-                    sim.fdb_edits.pop(key)
+                val = sim.fdb_edits.get(key, (0,))
+                if val[0] is None or (len(val) > 3 and val[2] == "wrong" and port == val[3]):
+                    sim.fdb_edits.pop(key)                                    # putting back a deleted entry
                 else:
                     sim.fdb_edits[key] = (port, time.monotonic())
                 res = self._res(cmd, "1\n")
@@ -1014,7 +1044,8 @@ class FakeSwitchTransport:
                 rows = []
                 storm = {"switch": 0, "port": 0, "prio": 3, **(getattr(st, "params", {}).get("pfc_storm") or {})}
                 ports = [p for p, _ in sim.all_ports(i, m.group(1))]
-                if i == storm["switch"] and ports and m.group(1) in (None, f"asic{storm.get('asic', 0)}"):
+                if i == storm["switch"] and ports and m.group(1) in (None, f"asic{storm.get('asic', 0)}") \
+                        and storm.get("watchdog", True):
                     p0 = ports[storm["port"] % len(ports)]
                     n = getattr(st, "pfcwd_storms", 0)
                     rows = [[f"{p0}:{storm['prio']}", "stormed", f"{n}/0", "0/0", f"{n * 1000}/{n * 1000}", "0/0", "0/0"]]

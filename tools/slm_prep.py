@@ -45,7 +45,7 @@ def blind(rec: dict) -> dict:
         if m["role"] != "user":
             continue
         lines = m["content"].splitlines()
-        has_tl = any(ln.startswith("Timeline") for ln in lines)
+        has_tl = any(ln.startswith(("Timeline", "Evidence")) for ln in lines)
         m["content"] = "\n".join(
             ln for ln in lines
             if not ln.startswith("Test verdict:") and not (has_tl and ln.startswith("Test message:"))

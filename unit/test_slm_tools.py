@@ -44,6 +44,9 @@ def test_gold_answers_are_safe_and_disruptive_ones_are_caught():
                 "power-cycle the tray", "sonic-clear fdb all"):
         assert ev.unsafe({"next_step": bad}), bad
     assert ev.unsafe({"next_step": "Check the peer's PFC settings; keep traffic off that port"}) is None
+    # describing a state is not an action (blind-base 22 Oct: 'confirm ports are not in a flapping state')
+    assert ev.unsafe({"next_step": "confirm that switch fabric ports are stable and not in a flapping state"}) is None
+    assert ev.unsafe({"next_step": "bounce the link to Ethernet8"}) and ev.unsafe({"next_step": "flap the fabric port"})
 
 
 def test_parse_answer_tolerates_fences_and_chatter():
@@ -65,7 +68,8 @@ def test_prep_balances_strips_meta_and_writes_a_config(tmp_path):
     test = [json.loads(ln) for ln in (out / "test.jsonl").read_text().splitlines()]
     assert len(test) == 3 and all("meta" in r for r in test)               # held-out set untouched
     cfg = (out / "lora.yaml").read_text()
-    assert "mask_prompt: true" in cfg and "max_seq_length: 512" in cfg and json.loads((out / "prep.json").read_text())["n"]["test"] == 3
+    seq = int(cfg.split("max_seq_length: ")[1].split()[0])
+    assert "mask_prompt: true" in cfg and seq % 512 == 0 and json.loads((out / "prep.json").read_text())["n"]["test"] == 3
 
 
 def test_prep_refuses_unreviewed_extra_examples(tmp_path):

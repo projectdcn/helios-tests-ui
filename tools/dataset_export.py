@@ -30,14 +30,27 @@ csv.field_size_limit(10**9)
 
 CASES = {"TC-SWH-061": "AFM repairs a missing static FDB entry (one AFM-programmed entry deleted on a switch)",
          "TC-SWH-062": "AFM removes a foreign static FDB entry (one entry AFM did not program added on a switch)",
-         "TC-SWH-046": "PFC / QoS consistent on the fabric ports, no PFC pause storm, no PFC watchdog storm"}
+         "TC-SWH-046": "PFC / QoS consistent on the fabric ports, no PFC pause storm, no PFC watchdog storm",
+         "TC-SWH-060": "Congestion on incast: several trays send to one tray at once; the switch ports towards it must "
+                       "show the congestion (queue watermarks), PFC must hold lossless traffic (no drops)",
+         "TC-SWH-063": "Lossless (PFC) configuration complete on the switch: headroom, maps, ECN, PFC watchdog"}
+
+FAULTS = ["none", "fdb_entry_not_restored", "foreign_fdb_not_removed", "fdb_restored_wrong_port", "pfc_pause_storm",
+          "pfc_watchdog_storm", "qos_inconsistent", "congestion_drops_lossy", "congestion_drops_lossless",
+          "no_congestion_seen", "incast_not_generated", "lossless_config_incomplete", "switch_cli_broken",
+          "afm_unreachable", "test_error"]
+ROOT_CAUSES = ["none", "afm_did_not_detect", "afm_detected_not_repaired", "afm_programmed_wrong_port", "unknown",
+               "peer_sends_pauses", "port_qos_map_differs", "traffic_class_not_lossless", "pfc_did_not_hold",
+               "watermark_not_reported", "load_too_low", "no_lossless_headroom", "dot1p_unmapped",
+               "lossy_on_lossless_queue", "no_pfc_watchdog", "no_ecn_marking", "foreign_network_namespace",
+               "afm_api_down"]
 
 SYSTEM = ("You diagnose AMD Helios rack test results (SONiC switch trays, AFM fabric manager, compute trays). Given "
-          "the evidence a test recorded, answer with JSON only: {\"fault\", \"category\", \"component\", \"summary\", "
-          "\"next_step\"}. fault: none | fdb_entry_not_restored | foreign_fdb_not_removed | pfc_pause_storm | "
-          "pfc_watchdog_storm | qos_inconsistent | switch_cli_broken | afm_unreachable | test_error. category: healthy "
-          "| product_bug | rack_setup | test_infra. Never suggest disruptive actions (flapping fabric ports, "
-          "rebooting switches) as a next step; suggest what to check or who should act.")
+          "the evidence a test recorded, answer with JSON only: {\"fault\", \"root_cause\", \"category\", "
+          "\"component\", \"summary\", \"next_step\"}. fault: " + " | ".join(FAULTS) + ". root_cause: "
+          + " | ".join(ROOT_CAUSES) + ". category: healthy | product_bug | rack_setup | test_infra. The summary names "
+          "what the evidence shows (switch, port, peer, counters). Never suggest disruptive actions (flapping fabric "
+          "ports, rebooting switches) as a next step; suggest what to check or who should act.")
 
 # fault -> (category, component, summary template, next step)
 DIAG = {
@@ -76,6 +89,36 @@ DIAG = {
         "The AFM API cannot be reached: {detail}. Not a test result.",
         "Check afm.url in the inventory and that the controller runs at that address (controller coordinates, "
         "afm-controller container, port 443)."),
+    "fdb_restored_wrong_port": (
+        "product_bug", "AFM FDB reconciliation",
+        "AFM noticed the deleted FDB entry {target} but programmed it on the wrong port: {detail}; the test put it back.",
+        "Raise an AFM defect: the entry, the port AFM chose and the right one (from the compute / plane mapping), the "
+        "controller log of the repair."),
+    "congestion_drops_lossy": (
+        "rack_setup", "switch QoS / lossless configuration",
+        "The incast dropped packets: {detail}.",
+        "Make the traffic class lossless (pfc_enable for its priority, dot1p / TC maps, headroom - see TC-SWH-063) "
+        "and re-run the incast."),
+    "congestion_drops_lossless": (
+        "product_bug", "switch data path / PFC",
+        "Packets were dropped on a lossless class during the incast although PFC is configured: {detail}.",
+        "Check the lossless PG headroom (xoff) and buffer pools against the cable lengths and port speed; raise it with "
+        "the switch / ASIC team with the counters."),
+    "no_congestion_seen": (
+        "product_bug", "switch telemetry",
+        "The incast ran at full rate but the switch reported no congestion: {detail}.",
+        "Check that queue watermarks are collected and refreshed (watermark interval, counter polling) on those ASICs; "
+        "compare with show queue counters during a load."),
+    "incast_not_generated": (
+        "test_infra", "traffic generation",
+        "No real incast was made, so congestion was not judged: {detail}.",
+        "Check the TransferBench jobs (ranks, ports, GPUs openable) and the trays' links; re-run when enough trays "
+        "can send at line rate."),
+    "lossless_config_incomplete": (
+        "rack_setup", "switch QoS / lossless configuration",
+        "The lossless configuration of {switch} is incomplete: {detail}.",
+        "Complete it from the rack's QoS design (headroom, dot1p / TC maps, ECN / WRED, PFC watchdog) and re-run "
+        "TC-SWH-063 and the incast case."),
     "test_error": (
         "test_infra", "test / rack access",
         "The test could not run as designed: {detail}.",
@@ -127,6 +170,23 @@ PHRASES = {
         ("AFM could not be reached ({detail}) - a rack setup problem, not a result.",
          "Check where the AFM controller runs now and whether it serves HTTPS on 443; fix the inventory's afm.url or "
          "the controller, then repeat.")],
+    "fdb_restored_wrong_port": [
+        ("AFM repaired the FDB mismatch of {target} on the wrong port ({detail}).",
+         "Report it to the AFM team: entry, expected and chosen port, controller log.")],
+    "congestion_drops_lossy": [
+        ("Incast drops on a class without PFC: {detail}.", "Configure the traffic's priority as lossless end to end, "
+                                                            "then repeat the incast.")],
+    "congestion_drops_lossless": [
+        ("PFC did not hold the incast: {detail}.", "Review lossless headroom and pool sizes; escalate to the switch "
+                                                   "team with these counters.")],
+    "no_congestion_seen": [
+        ("Full-rate incast, but no watermark rise on the destination ports: {detail}.",
+         "Verify watermark telemetry on those ASICs before trusting congestion results.")],
+    "incast_not_generated": [
+        ("Congestion not judged - the load never reached an incast: {detail}.",
+         "Fix the traffic generation (TransferBench ranks / trays) and re-run.")],
+    "lossless_config_incomplete": [
+        ("{switch}: lossless setup has gaps - {detail}.", "Fill the gaps from the QoS design, then re-run TC-SWH-063.")],
     "test_error": [
         ("The case could not run: {detail}.", "Check the case log, then fix rack access (SSH key, sudo) or the "
                                               "inventory and re-run.")],
@@ -135,13 +195,24 @@ PHRASES = {
 # injected virtual-rack fault -> the fault each case must then report (None: the case is not affected)
 INJECTED = {
     "no_fdb_reconcile": {"TC-SWH-061": "fdb_entry_not_restored", "TC-SWH-062": "foreign_fdb_not_removed"},
-    "pfc_storm": {"TC-SWH-046": "pfc_watchdog_storm"},
-    "afm_unreachable": {"TC-SWH-061": "afm_unreachable", "TC-SWH-062": "afm_unreachable"},
-    "cni_netns": {"TC-SWH-061": "switch_cli_broken", "TC-SWH-062": "switch_cli_broken", "TC-SWH-046": "switch_cli_broken"},
+    "fdb_detect_no_repair": {"TC-SWH-061": "fdb_entry_not_restored", "TC-SWH-062": "foreign_fdb_not_removed"},
+    "fdb_wrong_port": {"TC-SWH-061": "fdb_restored_wrong_port"},
+    "pfc_storm": {"TC-SWH-046": "pfc_watchdog_storm"},          # params watchdog false: pfc_pause_storm
+    "qos_odd_port": {"TC-SWH-046": "qos_inconsistent"},
+    "lossless_incast_drops": {"TC-SWH-060": "congestion_drops_lossless"},
+    "no_congestion_watermark": {"TC-SWH-060": "no_congestion_seen"},
+    "tb_slow": {"TC-SWH-060": "incast_not_generated"},
+    "afm_unreachable": {"TC-SWH-061": "afm_unreachable", "TC-SWH-062": "afm_unreachable", "TC-SWH-060": "afm_unreachable"},
+    "cni_netns": {t: "switch_cli_broken" for t in ("TC-SWH-061", "TC-SWH-062", "TC-SWH-046", "TC-SWH-060", "TC-SWH-063")},
+    # the switch QoS profile of the virtual rack (selftest/fake_qos.py), as a pseudo fault "qos:<profile>"
+    "qos:none": {"TC-SWH-060": "congestion_drops_lossy"},
+    "qos:mr3": {"TC-SWH-063": "lossless_config_incomplete"},
 }
 # when several apply, the one a case reports first (a broken CLI hides everything else)
-PRIORITY = ["switch_cli_broken", "afm_unreachable", "test_error", "fdb_entry_not_restored", "foreign_fdb_not_removed",
-            "pfc_watchdog_storm", "pfc_pause_storm", "qos_inconsistent", "none"]
+PRIORITY = ["switch_cli_broken", "afm_unreachable", "test_error", "incast_not_generated", "no_congestion_seen",
+            "congestion_drops_lossy", "congestion_drops_lossless", "fdb_restored_wrong_port", "fdb_entry_not_restored",
+            "foreign_fdb_not_removed", "pfc_watchdog_storm", "pfc_pause_storm", "qos_inconsistent",
+            "lossless_config_incomplete", "none"]
 
 
 def _load_rows(run: Path) -> list[dict]:
@@ -176,6 +247,8 @@ def rule_fault(tc: str, outcome: str, msg: str, ev: dict) -> tuple[str, str]:
         # the AFM login traceback of runs from before the one-line BLOCKED reason (MR3 21 Oct)
         why = "connection reset" if "reset" in m.lower() else "connection refused" if "refused" in m else "timed out"
         return "afm_unreachable", f"the AFM API did not answer the login ({why})"
+    if tc == "TC-SWH-060" and m.startswith("incast pre-flight failed"):
+        return _rule_congestion(outcome, m, ev.get("facts") or {})
     if outcome in ("error", "blocked") and not ev.get("timeline"):
         return "test_error", (m.splitlines()[0] if m else outcome)[:200]
     # runs from before the evidence timeline (19 Oct and earlier): the check message says what happened
@@ -183,6 +256,18 @@ def rule_fault(tc: str, outcome: str, msg: str, ev: dict) -> tuple[str, str]:
         return "fdb_entry_not_restored", f"{fm.group(1)} not restored within {fm.group(2)} s"
     if (fm := re.search(r"AFM did not remove the foreign (\S+ \S+ FDB\|\S+) within (\d+) s", m)):
         return "foreign_fdb_not_removed", f"{fm.group(1)} not removed within {fm.group(2)} s"
+    f = ev.get("facts") or {}
+    if tc == "TC-SWH-060":
+        return _rule_congestion(outcome, m, f)
+    if tc == "TC-SWH-063":
+        fs = [x for q in (f.get("pfc_lossless") or {}).values() for x in q.get("findings") or []]
+        if fs:
+            return "lossless_config_incomplete", "; ".join(dict.fromkeys(fs))[:400]
+        if outcome in ("error", "failed"):
+            return "test_error", (m.splitlines()[0] if m else outcome)[:200]
+        return "none", f"lossless configuration of {f.get('switch', 'the switch')} complete"
+    if (wp := re.search(r"came back on (\S+), was (\S+)", m)):
+        return "fdb_restored_wrong_port", f"on {wp.group(1)} instead of {wp.group(2)}"
     kinds = [x.get("kind") for x in ev.get("timeline", [])]
     if tc in ("TC-SWH-061", "TC-SWH-062"):
         if "not_repaired_in_time" in kinds:
@@ -216,6 +301,77 @@ def rule_fault(tc: str, outcome: str, msg: str, ev: dict) -> tuple[str, str]:
     return ("none" if outcome == "passed" else "test_error"), (m.splitlines()[0] if m else "")[:200]
 
 
+def _rule_congestion(outcome: str, m: str, f: dict) -> tuple[str, str]:
+    """TC-SWH-060 from its recorded evidence: drops (lossless / lossy), watermarks, pauses, load."""
+    if m.startswith("incast pre-flight failed"):
+        return "incast_not_generated", m.split(" - ", 1)[1].split(" - congestion not judged")[0].split(": no incast")[0][:240] \
+            if " - " in m else m[:240]
+    ev = f.get("incast_evidence") or {}
+    if not ev:
+        return ("test_error", (m.splitlines()[0] if m else outcome)[:200]) if outcome != "passed" else ("none", "no evidence")
+    qd, pd = ev.get("queue_drops") or {}, ev.get("pg_drops_towards_sources") or {}
+    tot = lambda d, k: float(((d.get(k) or {}).get("total")) or 0)  # noqa: E731
+    ll, ly = tot(qd, "lossless") + tot(pd, "lossless"), tot(qd, "lossy") + tot(pd, "lossy")
+    tq, lossless = ev.get("traffic_queue", "?"), ev.get("traffic_queue_lossless")
+    prios = sorted({x for c in (ev.get("lossless_classes") or {}).values() for x in c.get("prios") or []})
+    pause = float((((ev.get("pfc_pause_frames") or {}).get("Tx_towards_sources")) or {}).get("total") or 0)
+    tr = f.get("traffic") or {}
+    load = f"{tr.get('total_GBps', '?')} GB/s into {tr.get('destination_line_rate_Gbps', '?')} Gb/s " \
+           f"(utilisation {tr.get('destination_utilisation', '?')})"
+    if ll > 0:
+        return "congestion_drops_lossless", f"{ll:.0f} drops on lossless {tq} (pfc_enable {','.join(map(str, prios)) or '?'}), " \
+                                            f"{pause:.0f} pause frames sent towards the sources, load {load}"
+    if ly > 0:
+        why = "no priority is lossless (no PFC configured)" if not prios else \
+            f"the traffic is on {tq}, not one of the lossless classes (pfc_enable {','.join(map(str, prios))})"
+        return "congestion_drops_lossy", f"{ly:.0f} drops on {tq}: {why}; load {load}"
+    if "no congestion seen" in m:
+        return "no_congestion_seen", m.split("no congestion seen", 1)[1].strip(" :")[:240]
+    if outcome == "passed":
+        wm = max(((ev.get("queue_watermark_peak_bytes") or {}).values()) or [0])
+        return "none", f"PFC held the incast on {tq} ({'lossless' if lossless else 'lossy'}): {pause:.0f} pause frames " \
+                       f"towards the sources, no drops, queue watermark peak {wm:.0f} B; load {load}"
+    return "test_error", (m.splitlines()[0] if m else outcome)[:200]
+
+
+def root_cause(fault: str, ev: dict, msg: str = "") -> str:
+    """The root cause of ``fault`` from the evidence (one of ROOT_CAUSES)."""
+    f = ev.get("facts") or {}
+    if fault in ("fdb_entry_not_restored", "foreign_fdb_not_removed"):
+        evs = f.get("afm_events")
+        if evs is None:
+            return "unknown"                          # an older run: no AFM events recorded
+        return "afm_detected_not_repaired" if any("fdb" in str(e.get("type", "")).lower() for e in evs) \
+            else "afm_did_not_detect"
+    if fault == "lossless_config_incomplete":
+        fs = " ".join(x for q in (f.get("pfc_lossless") or {}).values() for x in q.get("findings") or [])
+        for pat, rc in (("no lossless ingress buffer", "no_lossless_headroom"), ("not mapped", "dot1p_unmapped"),
+                        ("lossless profile", "lossy_on_lossless_queue"), ("no PFC watchdog", "no_pfc_watchdog"),
+                        ("no ECN", "no_ecn_marking")):
+            if pat in fs:
+                return rc
+        return "unknown"
+    return {"none": "none", "fdb_restored_wrong_port": "afm_programmed_wrong_port",
+            "pfc_watchdog_storm": "peer_sends_pauses", "pfc_pause_storm": "peer_sends_pauses",
+            "qos_inconsistent": "port_qos_map_differs", "congestion_drops_lossy": "traffic_class_not_lossless",
+            "congestion_drops_lossless": "pfc_did_not_hold", "no_congestion_seen": "watermark_not_reported",
+            "incast_not_generated": "load_too_low", "switch_cli_broken": "foreign_network_namespace",
+            "afm_unreachable": "afm_api_down"}.get(fault, "unknown")
+
+
+def case_evidence(tc: str, row: dict, props: dict, ev: dict) -> dict:
+    """TC-SWH-060 / 063 record their evidence as properties (incast_evidence, traffic ..., pfc_lossless): the same
+    shape as an evidence timeline's facts."""
+    if tc == "TC-SWH-060" and (props.get("incast_evidence") is not None or props.get("traffic")):
+        keep = ("destination", "sources", "traffic", "incast_evidence", "loaded_watermark_top_bytes",
+                "idle_watermark_top_bytes", "drops_during_load", "events_seen")
+        return {"facts": {"case": "congestion", **{k: props[k] for k in keep if k in props}}}
+    if tc == "TC-SWH-063" and props.get("pfc_lossless") is not None:
+        sw = re.search(r"\[(\w+)\]$", row.get("test") or row.get("nodeid") or "")
+        return {"facts": {"case": "lossless_config", "switch": sw.group(1) if sw else None, "pfc_lossless": props["pfc_lossless"]}}
+    return ev
+
+
 def facts_from_message(m: str) -> dict:
     """Target facts of a run from before the evidence timeline, read from its message (switch, ns, VLAN, MAC, limit)."""
     f: dict = {}
@@ -226,12 +382,23 @@ def facts_from_message(m: str) -> dict:
     return f
 
 
-def injected_fault(tc: str, faults: list[str], switch: str | None = None, scope: dict | None = None) -> str:
-    """The fault ``tc`` must report given the injected ``faults``; ``scope`` {fault: [switches]} limits a fault to
-    some switches (pfc_storm: the first one), checked against the switch the case looked at."""
-    scope = scope or {}
-    hits = [INJECTED[f][tc] for f in faults if f in INJECTED and tc in INJECTED[f]
-            and (f not in scope or switch is None or switch in scope[f])]
+def injected_fault(tc: str, faults: list[str], switch: str | None = None, scope: dict | None = None,
+                   params: dict | None = None) -> str:
+    """The fault ``tc`` must report given the injected ``faults`` (and "qos:<profile>"); ``scope`` {fault:
+    [switches]} limits a fault to some switches, checked against the switch the case looked at (cases that look at
+    the whole rack - TC-SWH-060 - are not limited); ``params`` details a fault (pfc_storm watchdog false: the pauses
+    grow without a watchdog storm)."""
+    scope, params = scope or {}, params or {}
+    hits = []
+    for f in faults:
+        if f not in INJECTED or tc not in INJECTED[f]:
+            continue
+        if f in scope and switch is not None and switch not in scope[f] and tc != "TC-SWH-060":
+            continue
+        hit = INJECTED[f][tc]
+        if f == "pfc_storm" and (params.get("pfc_storm") or {}).get("watchdog") is False:
+            hit = "pfc_pause_storm"
+        hits.append(hit)
     return min(hits, key=PRIORITY.index) if hits else "none"
 
 
@@ -249,6 +416,21 @@ def evidence_text(tc: str, row: dict, ev: dict, rack: str) -> str:
             f"{ns}: {q.get('ports_with_qos_map')} ports with a QoS map, {q.get('variants')} variant(s), "
             f"pfc_enable {','.join(q.get('pfc_enable') or []) or 'none'}, watchdog queues {q.get('pfc_watchdog_queues', '?')}"
             for ns, q in f["qos"].items()))
+    if "entry_before" in f:
+        lines.append(f"Entry before: port {(f.get('entry_before') or {}).get('port', '-')}")
+    if "entry_restored_by_afm" in f:
+        rb = f.get("entry_restored_by_afm") or {}
+        lines.append("Entry after AFM's repair window: " + (f"port {rb.get('port')}" if rb else "absent"))
+    if f.get("case") == "congestion":
+        lines += _congestion_lines(f)
+    if f.get("case") == "lossless_config":
+        lines.append("Evidence (recorded by the case):")
+        for ns, q in (f.get("pfc_lossless") or {}).items():
+            lines.append(f"  {ns}: {q.get('ports_with_pfc')} ports with PFC, pfc_enable "
+                         f"{','.join(q.get('pfc_enable') or []) or 'none'}, PFC watchdog on {q.get('pfc_watchdog_ports')} "
+                         f"port(s), WRED profiles {','.join(q.get('wred_profiles') or []) or 'none'}")
+            for x in q.get("findings") or []:
+                lines.append(f"    finding: {x}")
     tl = ev.get("timeline") or []
     if tl:
         lines.append("Timeline (s from the start of the case):")
@@ -265,6 +447,42 @@ def evidence_text(tc: str, row: dict, ev: dict, rack: str) -> str:
     if msg:
         lines.append("Test message: " + message_excerpt(msg))
     return "\n".join(lines)
+
+
+def _congestion_lines(f: dict) -> list[str]:
+    ev, tr = f.get("incast_evidence") or {}, f.get("traffic") or {}
+    out = ["Evidence (recorded by the case):"]
+    if f.get("destination"):
+        out.append(f"  destination {f['destination']}; sources {', '.join(f.get('sources') or [])}")
+    if tr:
+        out.append(f"  load: {tr.get('rounds', '?')} round(s), {tr.get('seconds', '?')} s, {tr.get('total_GBps', '?')} GB/s "
+                   f"into {tr.get('destination_line_rate_Gbps', '?')} Gb/s line rate (utilisation "
+                   f"{tr.get('destination_utilisation', '?')})" + (f", {tr['load']}" if tr.get("load") else "")
+                   + (f", failed jobs {tr['failed_jobs']}" if tr.get("failed_jobs") else ""))
+    if ev:
+        cls = sorted({(tuple(c.get("prios") or []), tuple(c.get("queues") or [])) for c in (ev.get("lossless_classes") or {}).values()
+                      if c.get("prios")})
+        out.append(f"  traffic queue {ev.get('traffic_queue', '?')} (lossless: {ev.get('traffic_queue_lossless')}); "
+                   f"lossless classes: " + ("; ".join(f"prios {','.join(map(str, p))} -> {','.join(q)}" for p, q in cls)
+                                            or "none"))
+        pf = ev.get("pfc_pause_frames") or {}
+        tot = lambda d: f"{float((d or {}).get('total') or 0):.0f}"  # noqa: E731
+        out.append(f"  PFC pause frames: Tx towards the sources {tot(pf.get('Tx_towards_sources'))}, Rx from the "
+                   f"destination {tot(pf.get('Rx_from_destination'))}, other {tot(pf.get('other'))}")
+        qd, pd = ev.get("queue_drops") or {}, ev.get("pg_drops_towards_sources") or {}
+        out.append(f"  drops: queues towards the destination lossless {tot(qd.get('lossless'))} / lossy {tot(qd.get('lossy'))}; "
+                   f"ingress PGs towards the sources lossless {tot(pd.get('lossless'))} / lossy {tot(pd.get('lossy'))}")
+        wm = {k: v for k, v in (ev.get("queue_watermark_peak_bytes") or {}).items() if v}
+        out.append("  queue watermark peaks: " + (", ".join(f"{k} {v:.0f} B" for k, v in wm.items()) or "all 0"))
+    lw, iw = f.get("loaded_watermark_top_bytes") or {}, f.get("idle_watermark_top_bytes") or {}
+    if lw or iw:
+        out.append(f"  highest port watermark: idle {max(iw.values() or [0]):.0f} B, under load {max(lw.values() or [0]):.0f} B")
+    if "drops_during_load" in f:
+        d = f["drops_during_load"] or {}
+        out.append("  ports with drops during the load: " + (", ".join(f"{k} +{v:.0f}" for k, v in list(d.items())[:4]) or "none"))
+    if "events_seen" in f:
+        out.append("  AFM events: " + (", ".join(f"{k} x{v}" for k, v in (f["events_seen"] or {}).items()) or "none"))
+    return out
 
 
 def message_excerpt(msg: str, limit: int = 700) -> str:
@@ -297,8 +515,9 @@ def diagnosis(fault: str, detail: str, ev: dict, variant_key: str = "") -> dict:
     what = {"fdb_missing_entry": "the deleted FDB entry", "fdb_foreign_entry": "the foreign FDB entry",
             "pfc_qos": "PFC / QoS"}.get(f.get("case"), "the case")
     summary = summ.format(target=target or "?", limit=f.get("fdb_reconcile_s", "?"), detail=detail or "-",
-                          switch=f.get("switch", "the switch"), what=what)
-    return {"fault": fault, "category": cat, "component": comp, "summary": summary, "next_step": step}
+                          switch=f.get("switch") or "the switch", what=what)
+    return {"fault": fault, "root_cause": root_cause(fault, ev), "category": cat, "component": comp,
+            "summary": summary, "next_step": step}
 
 
 def examples(run: Path, source: str | None = None) -> list[dict]:
@@ -308,9 +527,10 @@ def examples(run: Path, source: str | None = None) -> list[dict]:
     out = []
     for row in _load_rows(run):
         tc = row.get("tc_id", "")
-        ev, _props = _ev_of(row)
-        if tc not in CASES or not (ev or row.get("outcome") in ("error", "blocked", "failed")):
-            continue
+        ev, props = _ev_of(row)
+        ev = case_evidence(tc, row, props, ev)
+        if tc not in CASES or row.get("outcome") == "skipped" or not (ev or row.get("outcome") in ("error", "blocked", "failed")):
+            continue                     # a skipped case judged nothing (e.g. TC-SWH-063 on a switch without PFC)
         rack = scen.get("rack") or run.name.rsplit("-", 2)[0]
         rf, detail = rule_fault(tc, row.get("outcome", ""), row.get("message", ""), ev)
         if not (ev.get("facts") or {}):                 # an older run: what the message says about the target
@@ -319,7 +539,8 @@ def examples(run: Path, source: str | None = None) -> list[dict]:
         meta = {"tc_id": tc, "run": run.name, "test": row.get("test") or row.get("nodeid", ""), "source": src,
                 "rule_fault": rf}
         if scen:
-            inj = injected_fault(tc, scen.get("faults") or [], (ev.get("facts") or {}).get("switch"), scen.get("scope"))
+            faults = (scen.get("faults") or []) + ([f"qos:{scen['qos']}"] if scen.get("qos") else [])
+            inj = injected_fault(tc, faults, (ev.get("facts") or {}).get("switch"), scen.get("scope"), scen.get("params"))
             meta.update(injected=scen.get("faults") or [], qos=scen.get("qos"), seed=scen.get("seed"),
                         label_source="injected", needs_review=inj != rf)
             fault = inj

@@ -164,3 +164,66 @@ def test_every_wording_keeps_the_facts_and_is_safe():
             elif fault != "none":
                 assert "the detail" in d["summary"] or fault in ("fdb_entry_not_restored",), d
     assert len({dx.diagnosis("afm_unreachable", "x", ev, f"k{k}")["next_step"] for k in range(40)}) >= 2
+
+
+def _incast(lossless_drops=0, lossy_drops=0, prios=(0, 1), lossless_q=True, util=1.0, pauses=1e6):
+    return {"destination": "ct18 (slot 17)", "sources": ["ct14", "ct15"],
+            "traffic": {"rounds": 9, "seconds": 0.5, "total_GBps": 1800.0, "destination_line_rate_Gbps": 14400.0,
+                        "destination_utilisation": util},
+            "incast_evidence": {"traffic_queue": "UC0", "traffic_queue_lossless": lossless_q,
+                                "lossless_classes": {"st2/asic0": {"prios": list(prios), "queues": ["UC0", "UC1"] if prios else []}},
+                                "pfc_pause_frames": {"Tx_towards_sources": {"total": pauses}},
+                                "queue_drops": {"lossless": {"total": lossless_drops}, "lossy": {"total": lossy_drops}},
+                                "pg_drops_towards_sources": {"lossless": {"total": 0}, "lossy": {"total": 0}},
+                                "queue_watermark_peak_bytes": {"UC0": 645540.0}},
+            "drops_during_load": {}, "events_seen": {}}
+
+
+def _row(tc, outcome, msg, props, test=""):
+    return {"tc_id": tc, "outcome": outcome, "message": msg, "properties": json.dumps(props), "test": test}
+
+
+def test_congestion_and_lossless_config_rules_and_root_causes(tmp_path):
+    root = tmp_path / "runs"
+    d = root / "g02-g17-20261023-010000"
+    d.mkdir(parents=True)
+    rows = [_row("TC-SWH-060", "passed", "", _incast()),
+            _row("TC-SWH-060", "passed", "", _incast(lossy_drops=5e6, prios=(), lossless_q=False, pauses=0)),
+            _row("TC-SWH-060", "failed", "1 check(s) failed: 300 packet(s) dropped on lossless classes", _incast(lossless_drops=300)),
+            _row("TC-SWH-060", "failed", "1 check(s) failed:\n - no congestion seen on the 144 ports towards ct18: highest "
+                 "queue watermark 20420 B", _incast(pauses=0)),
+            _row("TC-SWH-060", "blocked", "incast pre-flight failed - the load used only 0.1 of ct18's line rate: no incast", {}),
+            _row("TC-SWH-063", "failed", "", {"pfc_lossless": {"asic0": {"ports_with_pfc": 216, "pfc_enable": ["0,1"], "findings": [
+                "no PFC watchdog (PFC_WD) on a port with lossless priorities: x"]}}},
+                 "tests/l1/test_switch_health.py::test_pfc_lossless_config_complete[st3]"),
+            _row("TC-SWH-063", "skipped", "Skipped: no port has PFC enabled", {"pfc_lossless": {}})]
+    with open(d / "tc_results.csv", "w", newline="") as fh:
+        w = csv.DictWriter(fh, list(rows[0]))
+        w.writeheader()
+        w.writerows(rows)
+    got = [(e["meta"]["tc_id"], e["output"]["fault"], e["output"]["root_cause"]) for e in dx.examples(d)]
+    assert got == [("TC-SWH-060", "none", "none"),
+                   ("TC-SWH-060", "congestion_drops_lossy", "traffic_class_not_lossless"),
+                   ("TC-SWH-060", "congestion_drops_lossless", "pfc_did_not_hold"),
+                   ("TC-SWH-060", "no_congestion_seen", "watermark_not_reported"),
+                   ("TC-SWH-060", "incast_not_generated", "load_too_low"),
+                   ("TC-SWH-063", "lossless_config_incomplete", "no_pfc_watchdog")]       # the skipped one left out
+    ex = dx.examples(d)
+    assert "Evidence (recorded by the case):" in ex[1]["input"] and "lossy 5000000" in ex[1]["input"]
+    assert "no priority is lossless" in ex[1]["output"]["summary"] and "st3" in ex[5]["output"]["summary"]
+
+
+def test_fdb_root_causes_and_injected_details():
+    ev = lambda evs: {"facts": {"afm_events": evs}}  # noqa: E731
+    assert dx.root_cause("fdb_entry_not_restored", ev([{"type": "fdb_mismatch"}])) == "afm_detected_not_repaired"
+    assert dx.root_cause("fdb_entry_not_restored", ev([{"type": "link_down"}])) == "afm_did_not_detect"
+    assert dx.root_cause("foreign_fdb_not_removed", {"facts": {}}) == "unknown"            # older run: no events kept
+    assert dx.rule_fault("TC-SWH-061", "failed", "1 check(s) failed:\n - FDB|Vlan100|02:00 came back on Ethernet149, "
+                         "was Ethernet256", {}) == ("fdb_restored_wrong_port", "on Ethernet149 instead of Ethernet256")
+    assert dx.injected_fault("TC-SWH-046", ["pfc_storm"], "st2", {"pfc_storm": ["st2"]},
+                             {"pfc_storm": {"watchdog": False}}) == "pfc_pause_storm"
+    assert dx.injected_fault("TC-SWH-046", ["pfc_storm"], "st3", {"pfc_storm": ["st2"]}) == "none"
+    assert dx.injected_fault("TC-SWH-060", ["lossless_incast_drops", "qos:none"], "st3", {}) == "congestion_drops_lossy"
+    assert dx.injected_fault("TC-SWH-063", ["qos:mr3"]) == "lossless_config_incomplete"
+    for f in dx.FAULTS:
+        assert f in dx.DIAG and dx.diagnosis(f, "d", {})["root_cause"] in dx.ROOT_CAUSES, f

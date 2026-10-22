@@ -381,3 +381,17 @@ def test_an_unreachable_afm_blocks_with_one_line(tmp_path):
     rows = list(csv.DictReader(open(next((tmp_path / "results").glob("*/tc_results.csv")))))
     assert all(r["message"].startswith("AFM pre-flight failed - the AFM API at https://") and "connection reset" in r["message"]
                for r in rows)
+
+
+def test_fdb_root_cause_faults_of_the_fake(tmp_path):
+    """fdb_detect_no_repair: AFM raises fdb_mismatch but never repairs; fdb_wrong_port: AFM restores the deleted entry
+    on another port - the case fails on it and puts the original back (the next run is clean)."""
+    v = _run(tmp_path / "d", "fdb_detect_no_repair", {"TC-SWH-061", "TC-SWH-062"}, "inventory-afm3.yaml", "test_afm_switch_faults.py")
+    assert v == {"TC-SWH-061": "FAIL", "TC-SWH-062": "FAIL"}
+    rows = list(csv.DictReader(open(next((tmp_path / "d" / "results").glob("*/tc_results.csv")))))
+    assert all(any(e["type"] == "fdb_mismatch" for e in json.loads(r["properties"])["evidence"]["facts"]["afm_events"])
+               for r in rows)
+    assert _run(tmp_path / "w", "fdb_wrong_port", {"TC-SWH-061"}, "inventory-afm3.yaml", "test_afm_switch_faults.py") == \
+        {"TC-SWH-061": "FAIL"}
+    [r] = list(csv.DictReader(open(next((tmp_path / "w" / "results").glob("*/tc_results.csv")))))
+    assert "came back on" in r["message"] and "it was on" in json.dumps(json.loads(r["properties"])["evidence"]["timeline"])

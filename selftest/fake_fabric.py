@@ -141,7 +141,12 @@ class Fabric:
                    f"Aggregate bandwidth (GPU Timed):  {IN_TRAY_A2A_GBPS:.3f} GB/s\n")
 
     def _flows(self, job: dict) -> list[tuple[int, int, int, int, float]]:
-        """[(src slot, src gpu, dst slot, dst gpu, wanted GB/s)] of a job."""
+        """[(src slot, src gpu, dst slot, dst gpu, wanted GB/s)] of a job (fault tb_slow: a tenth of it - the load is
+        then far below the destination's line rate and TC-SWH-060 is BLOCKED, not judged)."""
+        slow = 0.1 if "tb_slow" in self.sim.f else 1.0
+        return [(s, g, d, h, w * slow) for s, g, d, h, w in self._flows_wanted(job)]
+
+    def _flows_wanted(self, job: dict) -> list[tuple[int, int, int, int, float]]:
         ranks = job["ranks"]
         out = []
         if job["expr"]:

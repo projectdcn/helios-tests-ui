@@ -405,10 +405,18 @@ def test_pfc_qos_consistent_no_storm(switch, inventory, checks, record_property,
         for q, n in storms.items():
             checks.check(n <= before[ns][1].get(q, 0), f"{switch.name}/{ns}: PFC watchdog storm detected on {q}")
         summary[ns]["pfc_watchdog_queues"] = len(storms)
+        peers = {}                               # what is cabled to a pausing / stormed port (its description)
+        if deltas or new_storms:
+            desc = switch.port_descriptions(ns)
+            for p in {p for _x, p, _d in deltas[:5]} | {q.split(":")[0] for q in new_storms}:
+                cab = parse_port_description(desc.get(p, ""))
+                peers[p] = f"compute slot {cab[0]} GPU {cab[1]}" if cab else (desc.get(p) or "no description")
         evidence.event("sample", what=f"pfc counters + pfcwd stats (after {window:.0f} s)", ns=ns,
                        ports_with_pause_growth=len(deltas),
-                       top_pause_growth=[{"port": p, "dir": d, "frames": round(x)} for x, p, d in sorted(deltas, reverse=True)[:5]],
-                       new_watchdog_storms=new_storms)
+                       top_pause_growth=[{"port": p, "dir": d, "frames": round(x), **({"peer": peers[p]} if p in peers else {})}
+                                         for x, p, d in sorted(deltas, reverse=True)[:5]],
+                       new_watchdog_storms=new_storms,
+                       **({"storm_peers": {q: peers.get(q.split(":")[0], "?") for q in new_storms}} if new_storms else {}))
     record_property("pfc_qos", summary)
     checks.assert_all()
 

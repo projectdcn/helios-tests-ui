@@ -535,7 +535,7 @@ def _shift_clock(st, delta: float) -> None:
         for k, v in list(vp.items()):
             vp[k] = v + delta
     for k, v in list((getattr(sim, "fdb_edits", None) or {}).items()):
-        sim.fdb_edits[k] = (v[0], v[1] + delta)
+        sim.fdb_edits[k] = (v[0], v[1] + delta, *v[2:])
     for name in ("last_agent_restart", "last_ctrl_restart"):
         if isinstance(getattr(sim, name, None), (int, float)):
             setattr(sim, name, getattr(sim, name) + delta)

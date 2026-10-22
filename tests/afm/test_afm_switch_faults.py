@@ -447,16 +447,19 @@ def test_fdb_mismatch_missing_entry_restored(ops, rack, afm_ready, checks, recor
         evidence.event("repaired_by_afm" if restored_by_afm else "not_repaired_in_time")
         record_property("restored_by_afm_s", round(time.monotonic() - t0, 1) if restored_by_afm else None)
         now = sw.fdb_entry(vlan, mac, ns)
+        evidence.fact(entry_restored_by_afm=now or None)     # before the cleanup: where AFM put it, if it did
         checks.check(restored_by_afm, f"AFM did not program {sw.name} {ns} FDB|{vlan}|{mac} again within "
                                       f"{ops.th('fdb_reconcile_s', 300)} s (FDB mismatch not repaired)")
         if restored_by_afm:
             checks.check(now.get("port") == orig.get("port"), f"FDB|{vlan}|{mac} came back on {now.get('port')}, "
                                                               f"was {orig.get('port')}")
     finally:
-        if not _present(sw, vlan, mac, ns):
+        cur = sw.fdb_entry(vlan, mac, ns)
+        if not cur or cur.get("port") != orig.get("port", port):
+            # missing, or AFM put it back on another port: the original entry again
             sw.fdb_set(vlan, mac, orig.get("port", port), ns, orig.get("type", "static"))
             record_property("restored_by_test", True)
-            evidence.event("cleanup", action="fdb_set by the test")
+            evidence.event("cleanup", action="fdb_set by the test" + (f" (it was on {cur.get('port')})" if cur else ""))
     checks.check(_present(sw, vlan, mac, ns), f"FDB|{vlan}|{mac} missing at the end")
     evs = ops.events(since=since)
     seen = _event_types(evs)
