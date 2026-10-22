@@ -26,3 +26,4 @@ dist/
 
 # SLM training data (tools/vrack_dataset.py, tools/dataset_export.py): generated, may hold rack addresses
 dataset/
+.venv-mlx/

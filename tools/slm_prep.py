@@ -75,8 +75,10 @@ def lengths(recs: list[dict]) -> dict:
 
 LORA_YAML = """\
 # MLX-LM LoRA fine-tuning (mlx_lm.lora --config {cfg}). Written by tools/slm_prep.py.
-# Set model: to a small instruct model (3-4B, 4-bit MLX conversion, e.g. from mlx-community on Hugging Face);
-# check its licence. Memory: a 4-bit 3-4B model with these settings fits in 24 GB.
+# model: a small instruct model, 4-bit MLX conversion. Default Qwen3-4B-Instruct-2507 (Apache-2.0, ~2.3 GB, no
+# "thinking" mode - answers JSON directly); alternatives: mlx-community/Phi-4-mini-instruct-4bit (MIT),
+# mlx-community/Llama-3.2-3B-Instruct-4bit (Llama 3.2 licence). A 4-bit 3-4B model with these settings fits in 24 GB.
+# Environment: .venv-mlx (pip install mlx-lm).
 model: {model}
 train: true
 fine_tune_type: lora
@@ -111,7 +113,7 @@ def main(argv=None) -> int:
     ap.add_argument("--valid-fraction", type=float, default=0.1)
     ap.add_argument("--epochs", type=float, default=3.0)
     ap.add_argument("--batch-size", type=int, default=2)
-    ap.add_argument("--model", default="SET-ME/small-instruct-model-4bit")
+    ap.add_argument("--model", default="mlx-community/Qwen3-4B-Instruct-2507-4bit")
     ap.add_argument("--seed", type=int, default=1)
     a = ap.parse_args(argv)
     rng = random.Random(a.seed)
