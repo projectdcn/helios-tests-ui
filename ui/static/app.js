@@ -1014,7 +1014,7 @@ async function loadResults() {
         s.folder ? [" ", h("a", { href: base(s.id) + "session.json", target: "_blank", class: "muted" }, "session.json")] : null),
       h("td", {}, s.folder ? [h("a", { class: "btn", href: dl(s.id, "zip"), download: "", title: "the consolidated folder: csv files, logs, report, session.json" }, "Download results (.zip)"),
         h("a", { class: "btn", href: dl(s.id, "share"), download: "", title: SHARE_TIP }, "Share (.zip, secrets removed)")] : ""),
-      h("td", {}, s.runs.length ? h("button", { onclick: () => rebuildSession(s.id),
+      h("td", {}, s.runs.length ? h("button", { onclick: ev => rebuildSession(s, ev.currentTarget),
         title: "build the consolidated folder and its report again from the session's runs" }, "Rebuild") : null))));
   $("#results tbody").replaceChildren(...rows.map(r => h("tr", {},
     h("td", {}, r.name, r.merged_from ? h("div", { class: "muted" }, "merged from " + r.merged_from.join(" + ")) : null),
@@ -1032,9 +1032,21 @@ async function loadResults() {
       r.reports.includes("report.html") ? null : h("button", { onclick: () => buildReport(r.name) }, "Build report"),
       r.health && r.health.verdict !== "GO" ? h("button", { onclick: () => askRerun(r.name) }, "Re-run failed") : null))));
 }
-async function rebuildSession(id) {
-  try { await api("POST", `/api/racks/${enc(rack.name)}/sessions/${enc(id)}/rebuild`, {}); loadResults(); }
-  catch (e) { alert(e.message); }
+async function rebuildSession(s, btn) {
+  // visible feedback: the rebuild can take well under a second and give the same result as before
+  const msg = $("#rebuild-msg");
+  btn.disabled = true; btn.textContent = "Rebuilding…";
+  msg.className = "small muted"; msg.textContent = `rebuilding session ${s.name} from ${s.runs.length} run(s)…`;
+  try {
+    const d = await api("POST", `/api/racks/${enc(rack.name)}/sessions/${enc(s.id)}/rebuild`, {});
+    msg.className = "small ok";
+    msg.textContent = `Session ${s.name} rebuilt at ${new Date().toLocaleTimeString()} from ${s.runs.length} run(s): ${d.summary}` +
+      " - report and download updated (only runs started from this UI are in a session)";
+    await loadResults();
+  } catch (e) {
+    msg.className = "small err"; msg.textContent = `Rebuild of ${s.name} failed: ${e.message}`;
+    btn.disabled = false; btn.textContent = "Rebuild";
+  }
 }
 async function buildReport(name) {
   try { await api("POST", `/api/racks/${encodeURIComponent(rack.name)}/report`, { run: name }); loadResults(); }

@@ -221,7 +221,8 @@
     <button id="rerun-go" class="primary">Re-run failed</button> <button id="rerun-cancel">Cancel</button>
   </div>
   <h3>Sessions</h3>
-  <p class="muted small">One entry per session: the latest result of each test across the session's runs (an executed result beats a later skip). The single runs are listed below.</p>
+  <p class="muted small">One entry per session: the latest result of each test across the session's runs (an executed result beats a later skip). A session holds the runs started from this UI's Run tab - runs from elsewhere (e.g. the jump-host queue) are listed under Runs below and in Case history, not in a session. Rebuild builds the session's folder and report again from its runs.</p>
+  <p id="rebuild-msg" class="small" role="status" aria-live="polite"></p>
   <div class="scroll" id="sessions-scroll"><table id="sessions"><thead><tr><th>Session</th><th>Runs</th><th>Cases</th><th>Written</th><th>Report</th><th>Download</th><th></th></tr></thead><tbody></tbody></table></div>
   <h3>Runs</h3>
   <div class="scroll" id="results-scroll"><table id="results"><thead><tr><th>Folder</th><th>Written</th><th>Cases</th><th>Health</th><th>Reports</th><th>Download</th><th></th></tr></thead><tbody></tbody></table></div>
