@@ -616,6 +616,16 @@ class Handler(BaseHTTPRequestHandler):
             m = re.fullmatch(r"/api/racks/([^/]+)/(password|bmc-password)", path)
             if m:                                  # {saved: bool, ...}: NEVER the password
                 return self.json(self.app.password_status(m.group(1), "bmc" if m.group(2) == "bmc-password" else "afm"))
+            m = re.fullmatch(r"/api/racks/([^/]+)/testplan/download", path)
+            if m:                                  # one workbook of the rack's test-plan folder (?name=), else the current
+                try:
+                    f = testplan.download_path(self.app.profile(m.group(1)), self.app.configured_workbook[m.group(1)],
+                                               (q.get("name") or [None])[0])
+                except KeyError as e:
+                    return self.err(404, str(e).strip("'\""))
+                with f.open("rb") as fh:
+                    return self._attachment(fh, f.stat().st_size,
+                                            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", f.name)
             m = re.fullmatch(r"/api/racks/([^/]+)/testplan", path)
             if m:                                  # the rack's workbooks (uploaded / configured) and the current one
                 return self.json(testplan.listing(self.app.profile(m.group(1)), self.app.configured_workbook[m.group(1)]))

@@ -436,6 +436,7 @@ async function loadTestplan() {
     ...d.files.map(f => h("option", { value: f.name }, `${f.name}  (${Math.max(1, Math.round(f.size / 1024))} KB, ${f.mtime})`)));
   if (d.current && d.files.some(f => f.name === d.current)) $("#tp-select").value = d.current;
   $("#tp-use").disabled = !d.files.length;
+  $("#tp-download").disabled = !d.files.length && !d.current_exists;
   if (!d.current_exists) tpMsg(d.files.length ? "choose a workbook and Use it, or upload one" : "no workbook yet: upload one", "warn");
 }
 $("#tp-use").addEventListener("click", async () => {
@@ -444,6 +445,14 @@ $("#tp-use").addEventListener("click", async () => {
     tpMsg(`${rack.title} uses ${$("#tp-select").value}`, "ok");
     await loadRacks(); loadTestplan();
   } catch (e) { tpMsg(e.message, "err"); }
+});
+$("#tp-download").addEventListener("click", () => {
+  // a plain link: the browser downloads it with the login cookie (no fetch / blob, so large workbooks stream)
+  const name = $("#tp-select").value;
+  const a = h("a", { href: `/api/racks/${enc(rack.name)}/testplan/download` + (name ? `?name=${encodeURIComponent(name)}` : ""),
+                     download: name || "" });
+  document.body.append(a); a.click(); a.remove();
+  tpMsg(`downloading ${name || "the current workbook"}…`);
 });
 $("#tp-upload-btn").addEventListener("click", () => $("#tp-upload").click());
 $("#tp-upload").addEventListener("change", ev => { const f = ev.target.files[0]; ev.target.value = ""; if (f) uploadTestplan(f); });

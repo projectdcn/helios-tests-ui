@@ -89,3 +89,32 @@ def test_upload_route_then_the_plan_reads_it(tmp_path):
         app.shutdown()
         srv.shutdown()
         srv.server_close()
+
+
+@pytest.mark.skipif(not REAL.is_file(), reason="no test-plan workbook in this checkout")
+def test_download_the_current_or_a_named_workbook(tmp_path):
+    """Setup tab Download: the rack's current workbook (no name) or one of its folder by name, byte for byte;
+    a backup, a path or an unknown name is refused."""
+    d = tmp_path / "data" / "testplan"
+    d.mkdir(parents=True)
+    cur = d / "full_rack_testplan.xlsx"
+    cur.write_bytes(REAL.read_bytes())
+    (d / "other plan.xlsx").write_bytes(b"PK-other")
+    (d / "full_rack_testplan.bak-20261021.xlsx").write_bytes(b"PK-bak")
+    p = _profile(tmp_path, cur)
+    app = App(profiles={"rk": p}, executor=HashExecutor())
+    srv = make_server(app, 0)
+    threading.Thread(target=srv.serve_forever, daemon=True).start()
+    c = Client(srv.server_address[1])
+    try:
+        st, raw = c.req("GET", "/api/racks/rk/testplan/download")
+        assert st == 200 and raw == REAL.read_bytes()
+        st, raw = c.req("GET", "/api/racks/rk/testplan/download?name=other%20plan.xlsx")
+        assert st == 200 and raw == b"PK-other"
+        for bad in ("full_rack_testplan.bak-20261021.xlsx", "..%2F..%2Frk.yaml", "nope.xlsx", "x.txt"):
+            st, _ = c.req("GET", f"/api/racks/rk/testplan/download?name={bad}")
+            assert st == 404, bad
+    finally:
+        app.shutdown()
+        srv.shutdown()
+        srv.server_close()

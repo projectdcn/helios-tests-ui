@@ -67,6 +67,20 @@ def listing(profile, configured: Path | None) -> dict:
                        "mtime": dt.datetime.fromtimestamp(f.stat().st_mtime).strftime("%Y-%m-%d %H:%M")} for f in files]}
 
 
+def download_path(profile, configured: Path | None, name: str | None) -> Path:
+    """The workbook to download: ``name`` from this rack's test-plan folder (a valid workbook name, not a dated
+    backup), or the rack's current workbook when no name is given. KeyError when there is no such file."""
+    if name:
+        if not NAME_RX.match(name) or BACKUP_RX.search(name):
+            raise KeyError(f"not a test-plan workbook name: {name!r}")
+        f = plan_dir(profile, configured) / name
+    else:
+        f = profile.workbook
+    if not f or not f.is_file():
+        raise KeyError(f"no such workbook: {name or '(current)'}")
+    return f
+
+
 def choose(profile, configured: Path | None, name: str | None) -> Path | None:
     """Make ``name`` (a workbook in the rack's folder) the rack's test plan; None / "" = back to racks.yaml's."""
     f = _choice_file(profile)
