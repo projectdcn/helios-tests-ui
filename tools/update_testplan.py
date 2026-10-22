@@ -33,7 +33,8 @@ from openpyxl.styles import Alignment
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from html_report import load_runs  # noqa: E402
 
-# test IDs whose workbook row has a different / missing TID: test ID -> (workbook TID, title fragment)
+# test IDs whose workbook row has (or, before 21 Oct 2026, had) a shared / missing TID: test ID -> (TID in the
+# BKC-26.12 plan, title fragment). TC-AFM-005A / 048A now have their own rows; the entries keep older copies working.
 ROW_ALIASES = {
     "TC-AFM-005A": ("TC-AFM-005", "RCCL Cross Domain"),
     "TC-AFM-005": ("TC-AFM-005", "Failover Policy CRUD"),
@@ -101,6 +102,14 @@ def merge_notes(new: str, old, label: str) -> str:
 
 
 def find_row(ws, tc: str) -> int | None:
+    # the case's own TID first (TC-AFM-005A / 048A have their own rows since 21 Oct 2026); else the shared BKC-26.12
+    # TID + title fragment of ROW_ALIASES, for workbook copies made before the rename
+    for r in range(3, ws.max_row + 1):
+        a = ws.cell(r, 1).value
+        if (a.strip() if isinstance(a, str) else a) == tc:
+            frag = ROW_ALIASES.get(tc, (None, None))[1]      # a case on a once-shared TID must match its title too
+            if frag is None or frag.lower() in str(ws.cell(r, 3).value or "").lower():
+                return r
     tid, frag = ROW_ALIASES.get(tc, (tc, None))
     for r in range(3, ws.max_row + 1):
         a = ws.cell(r, 1).value
