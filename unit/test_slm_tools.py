@@ -106,3 +106,16 @@ def test_eval_scores_an_openai_compatible_server_and_fails_on_unsafe(tmp_path):
     assert rep["fault_accuracy"] == 1.0 and rep["json_valid"] == 1.0 and rep["unsafe"] == 1 and rc == 1
     assert seen[0]["temperature"] == 0 and [m["role"] for m in seen[0]["messages"]] == ["system", "user"]
     assert ev.main([str(test), "--backend", "oracle", "--out", str(tmp_path / "o")]) == 0
+
+
+def test_blind_removes_the_tests_conclusions_but_keeps_the_evidence():
+    user = ("Case TC-SWH-061: x\nTarget: st3 asic1 Vlan100 aa -> Ethernet340\nTimeline (s from the start of the case):\n"
+            "  2.5: inject {}\n  2.6: state {\"value\": false}\n  3.1: not_repaired_in_time\n  3.5: cleanup {}\n"
+            "  4.0: repaired_by_afm\nAFM events during the case: none\nTest verdict: FAILED\nTest message: AFM did not program")
+    rec = {"messages": [{"role": "system", "content": "s"}, {"role": "user", "content": user},
+                        {"role": "assistant", "content": "{}"}], "meta": {"run": "r"}}
+    b = prep.blind(rec)["messages"][1]["content"]
+    assert "Test verdict" not in b and "Test message" not in b and "not_repaired_in_time" not in b and "repaired_by_afm" not in b
+    assert "cleanup" in b and "state" in b and "Target: st3" in b and rec["messages"][1]["content"] == user   # copy
+    old = {"messages": [{"role": "user", "content": "Case TC-SWH-046: x\nTest verdict: BLOCKED\nTest message: switch pre-flight failed"}]}
+    assert prep.blind(old)["messages"][0]["content"] == "Case TC-SWH-046: x\nTest message: switch pre-flight failed"
