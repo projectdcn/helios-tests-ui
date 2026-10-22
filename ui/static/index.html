@@ -249,24 +249,19 @@
 <section id="tab-inventory" class="tab">
   <p class="muted" id="invpath"></p>
   <form id="bmc-pw-box" class="box row" autocomplete="off">
-    <b>Default BMC password of <span class="bmc-pw-rack"></span></b>
-    <input type="password" id="bmc-pw" autocomplete="new-password" spellcheck="false" aria-label="default BMC password" placeholder="BMC password">
+    <b>Default BMC login of <span class="bmc-pw-rack"></span></b>
+    <label>switch user <input id="bmc-user-switch" size="12" spellcheck="false" autocapitalize="off" aria-label="default BMC user of the switches" placeholder="e.g. root"></label>
+    <label>compute user <input id="bmc-user-compute" size="12" spellcheck="false" autocapitalize="off" aria-label="default BMC user of the computes" placeholder="e.g. scmadmin"></label>
+    <label>password <input type="password" id="bmc-pw" size="14" autocomplete="new-password" spellcheck="false" aria-label="default BMC password" placeholder="BMC password"></label>
     <button type="submit" class="primary" id="bmc-pw-save">Save</button>
-    <button type="button" id="bmc-pw-forget">Forget</button>
-    <span id="bmc-pw-status" class="muted" role="status" aria-live="polite"></span>
-    <span class="muted small">For every node's BMC without its own (Setup tab, node table: a switch and a tray may differ).
-      Never in the inventory file; runs get it as <code>HELIOS_BMC_PASSWORD</code> for the inventory's BMC commands
+    <button type="button" id="bmc-pw-forget" title="delete the saved default BMC password">Forget password</button>
+    <span class="bmc-status"><span id="bmc-user-status" class="muted" role="status" aria-live="polite"></span>
+      <span id="bmc-pw-status" class="muted" role="status" aria-live="polite"></span></span>
+    <span class="muted small">For every switch / compute BMC without its own user or password (Setup tab, node table: a
+      switch and a tray may differ). Users go into the inventory (<code>defaults.switch.bmc_user</code> /
+      <code>defaults.compute.bmc_user</code>, dated backup; empty = no default). The password never goes there: runs
+      get it as <code>HELIOS_BMC_PASSWORD</code> for the BMC cases and the inventory's BMC commands
       (<code>commands.health.bmc_power</code>, <code>commands.ras.dc_cycle</code>; addresses: the nodes' <code>bmc</code>).</span>
-  </form>
-  <form id="bmc-user-box" class="box row" autocomplete="off">
-    <b>Default BMC user of <span class="bmc-pw-rack"></span></b>
-    <label>switches <input id="bmc-user-switch" size="14" spellcheck="false" autocapitalize="off" aria-label="default BMC user of the switches" placeholder="e.g. root"></label>
-    <label>computes <input id="bmc-user-compute" size="14" spellcheck="false" autocapitalize="off" aria-label="default BMC user of the computes" placeholder="e.g. scmadmin"></label>
-    <button type="submit" class="primary" id="bmc-user-save">Save</button>
-    <span id="bmc-user-status" class="muted" role="status" aria-live="polite"></span>
-    <span class="muted small">For every switch / compute BMC without its own user (Setup tab, node table). Saved in the
-      inventory as <code>defaults.switch.bmc_user</code> / <code>defaults.compute.bmc_user</code> (dated backup);
-      empty = no default.</span>
   </form>
   <form id="afm-pw-box" class="box row" autocomplete="off">
     <b>AFM password of <span id="afm-pw-rack"></span></b>

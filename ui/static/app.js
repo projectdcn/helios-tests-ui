@@ -312,6 +312,7 @@ async function loadBmc() {
     td.replaceChildren(...(n ? cell(n) : [d.error || "-"]));
   }
 }
+// ---- one box (Inventory tab): the rack's default BMC users (inventory) + default BMC password (password store)
 function bmcUserMsg(t, cls) { $("#bmc-user-status").textContent = t; $("#bmc-user-status").className = cls; }
 async function loadBmcUsers() {
   const r = rack.name;
@@ -319,46 +320,54 @@ async function loadBmcUsers() {
   try { d = await api("GET", `/api/racks/${enc(r)}/bmc-passwords`); } catch (e) { d = { error: e.message }; }
   if (!rack || rack.name !== r) return;
   const u = d.default_users || {};
-  $("#bmc-user-switch").value = u.switch || "";
-  $("#bmc-user-compute").value = u.compute || "";
+  for (const role of ["switch", "compute"]) {
+    const x = $(`#bmc-user-${role}`);
+    x.value = x.dataset.saved = u[role] || "";
+  }
   // which nodes have no BMC user at all (no own one, no default for their role)
   const none = (d.nodes || []).filter(n => !n.bmc_user).map(n => n.name);
   const own = (d.nodes || []).filter(n => n.bmc_user_own).length;
   bmcUserMsg(d.error ? d.error
-    : none.length ? `no BMC user for ${none.join(", ")} - set a default here or the node's own (Setup tab)`
-    : (u.switch || u.compute) ? `set${own ? `; ${own} node(s) use their own` : ""}`
-    : (d.nodes || []).length ? `no default needed: all ${d.nodes.length} nodes have their own` : "no nodes",
+    : none.length ? `users: none for ${none.join(", ")} - set a default here or the node's own (Setup tab).`
+    : (u.switch || u.compute) ? `users: default set${own ? `, ${own} node(s) use their own` : ""}.`
+    : (d.nodes || []).length ? `users: no default needed (all ${d.nodes.length} nodes have their own).` : "",
     d.error ? "err" : none.length ? "warn" : (u.switch || u.compute) ? "ok" : "muted");
 }
-$("#bmc-user-box").addEventListener("submit", async ev => {
-  ev.preventDefault();
-  const body = { switch: $("#bmc-user-switch").value.trim(), compute: $("#bmc-user-compute").value.trim() };
-  try {
-    const res = await api("POST", `/api/racks/${enc(rack.name)}/bmc-users`, body);
-    bmcUserMsg(res.saved ? `saved in the inventory${res.backup ? ` (backup ${res.backup.split("/").pop()})` : ""}: nodes without their own use it`
-      : "nothing changed", res.saved ? "ok" : "muted");
-    loadBmc();
-  } catch (e) { bmcUserMsg(e.message, "err"); }
-});
 function bmcMsg(t, cls) { $("#bmc-pw-status").textContent = t; $("#bmc-pw-status").className = cls; }
+let bmcPwAvailable = false;
 async function loadBmcDefault() {
   const r = rack.name;
   $$(".bmc-pw-rack").forEach(x => x.textContent = rack.title);
   let d;
   try { d = await api("GET", `/api/racks/${enc(r)}/bmc-password`); } catch (e) { d = { available: false, error: e.message }; }
   if (!rack || rack.name !== r) return;
-  bmcMsg(!d.available ? (d.note || d.error || "no password store") : d.error ? d.error : d.saved ? `saved (${d.store})` : "not saved",
-    d.error ? "err" : d.saved ? "ok" : "muted");
-  $("#bmc-pw-save").disabled = !d.available;
+  bmcPwAvailable = !!d.available;
+  bmcMsg("password: " + (!d.available ? (d.note || d.error || "no password store") : d.error ? d.error
+    : d.saved ? `saved (${d.store})` : "not saved"), d.error ? "err" : d.saved ? "ok" : "muted");
+  $("#bmc-pw").disabled = !d.available;
   $("#bmc-pw-forget").disabled = !d.saved;
 }
 $("#bmc-pw-box").addEventListener("submit", async ev => {
   ev.preventDefault();
+  const users = { switch: $("#bmc-user-switch").value.trim(), compute: $("#bmc-user-compute").value.trim() };
+  const usersChanged = users.switch !== $("#bmc-user-switch").dataset.saved || users.compute !== $("#bmc-user-compute").dataset.saved;
   const pw = $("#bmc-pw").value;
-  if (!pw) { bmcMsg("type the BMC password first", "err"); return; }
+  if (!usersChanged && !pw) { bmcUserMsg("nothing changed: type a user or the password first.", "muted"); return; }
   $("#bmc-pw").value = "";
-  try { await api("POST", `/api/racks/${enc(rack.name)}/bmc-password`, { password: pw }); await loadBmcDefault(); bmcMsg("saved: nodes without their own use it", "ok"); }
-  catch (e) { bmcMsg(e.message, "err"); }
+  let backup = "";
+  try {
+    if (usersChanged) {
+      const res = await api("POST", `/api/racks/${enc(rack.name)}/bmc-users`, users);
+      backup = res.backup ? ` (inventory backup ${res.backup.split("/").pop()})` : "";
+      await loadBmcUsers();
+    }
+  } catch (e) { bmcUserMsg(e.message, "err"); return; }
+  try {
+    if (pw) await api("POST", `/api/racks/${enc(rack.name)}/bmc-password`, { password: pw });
+    await loadBmcDefault();
+  } catch (e) { bmcMsg(e.message, "err"); return; }
+  bmcUserMsg(`saved${usersChanged ? " users" + backup : ""}${usersChanged && pw ? " and" : ""}${pw ? " the password" : ""}: nodes without their own use them.`, "ok");
+  loadBmc();
 });
 $("#bmc-pw-forget").addEventListener("click", async () => {
   if (!confirm(`Delete the default BMC password of ${rack.title}?`)) return;
