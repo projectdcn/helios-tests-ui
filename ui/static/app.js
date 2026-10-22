@@ -152,7 +152,7 @@ function rackChanged() {
     formRack = rack.name;
     restoreForm();
     loadPresets();
-    loadPwStatus(); loadBmcDefault();
+    loadPwStatus(); loadBmcDefault(); loadBmcUsers();
     loadPlan();
     loadSession();
     loadAccess();
@@ -273,12 +273,16 @@ async function loadBmc() {
   const cell = n => {
     // address + user go into the node's inventory entry (dated backup); the password into the password store
     const addr = h("input", { size: 13, value: n.bmc, placeholder: "BMC IP address", "aria-label": `BMC address of ${n.name}`, spellcheck: "false" });
-    const user = h("input", { size: 9, value: n.bmc_user, placeholder: "BMC user", "aria-label": `BMC user of ${n.name}`, spellcheck: "false" });
+    // the node's own user; empty = the rack's default for its role (Inventory tab), shown as the placeholder
+    const dflt = (d.default_users || {})[n.role] || "";
+    const own = n.bmc_user_own ?? n.bmc_user;
+    const user = h("input", { size: 9, value: own, placeholder: dflt ? `${dflt} (default)` : "BMC user",
+      title: dflt ? `empty: the rack's default BMC user of the ${n.role === "switch" ? "switches" : "computes"}, ${dflt}` : "", "aria-label": `BMC user of ${n.name}`, spellcheck: "false" });
     const inp = h("input", { type: "password", size: 12, autocomplete: "new-password", "aria-label": `BMC password of ${n.name}`,
       placeholder: n.saved ? "saved - type to change" : (d.default && d.default.saved ? "default used" : "BMC password") });
     const save = async () => {
       const pw = inp.value; inp.value = "";
-      const changed = addr.value.trim() !== n.bmc || user.value.trim() !== n.bmc_user;
+      const changed = addr.value.trim() !== n.bmc || user.value.trim() !== own;
       if (!pw && !changed) { st.textContent = "nothing changed"; st.className = "muted small"; return; }
       try {
         if (changed) {
@@ -308,6 +312,27 @@ async function loadBmc() {
     td.replaceChildren(...(n ? cell(n) : [d.error || "-"]));
   }
 }
+function bmcUserMsg(t, cls) { $("#bmc-user-status").textContent = t; $("#bmc-user-status").className = cls; }
+async function loadBmcUsers() {
+  const r = rack.name;
+  let d;
+  try { d = await api("GET", `/api/racks/${enc(r)}/bmc-passwords`); } catch (e) { d = { error: e.message }; }
+  if (!rack || rack.name !== r) return;
+  const u = d.default_users || {};
+  $("#bmc-user-switch").value = u.switch || "";
+  $("#bmc-user-compute").value = u.compute || "";
+  bmcUserMsg(d.error ? d.error : (u.switch || u.compute) ? "set" : "no default: each node needs its own", d.error ? "err" : "muted");
+}
+$("#bmc-user-box").addEventListener("submit", async ev => {
+  ev.preventDefault();
+  const body = { switch: $("#bmc-user-switch").value.trim(), compute: $("#bmc-user-compute").value.trim() };
+  try {
+    const res = await api("POST", `/api/racks/${enc(rack.name)}/bmc-users`, body);
+    bmcUserMsg(res.saved ? `saved in the inventory${res.backup ? ` (backup ${res.backup.split("/").pop()})` : ""}: nodes without their own use it`
+      : "nothing changed", res.saved ? "ok" : "muted");
+    loadBmc();
+  } catch (e) { bmcUserMsg(e.message, "err"); }
+});
 function bmcMsg(t, cls) { $("#bmc-pw-status").textContent = t; $("#bmc-pw-status").className = cls; }
 async function loadBmcDefault() {
   const r = rack.name;

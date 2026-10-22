@@ -12,6 +12,7 @@ import copy
 import datetime as dt
 import difflib
 import hashlib
+import json
 import os
 import re
 import tempfile
@@ -430,6 +431,108 @@ def set_node_keys(text: str, node: str, values: dict) -> tuple[str, bool]:
     return _dump(new_data), False
 
 
+def set_default_keys(text: str, roles: dict) -> tuple[str, bool]:
+    """(new text, comments kept): set / remove (None or "") keys of ``defaults.<role>`` ({role: {key: value}}, role
+    switch / compute), e.g. the rack's default BMC user - every node of that role without its own gets it
+    (helios/inventory.py). Only the defaults section is re-written (merge_text)."""
+    old_data = yaml.safe_load(text) or {}
+    new_data = copy.deepcopy(old_data)
+    d = dict(new_data.get("defaults") or {})
+    for role, values in roles.items():
+        if role not in ("switch", "compute"):
+            raise EditError([f"defaults role must be switch or compute, not {role!r}"])
+        r = dict(d.get(role) or {})
+        for k, v in values.items():
+            if v in (None, ""):
+                r.pop(k, None)
+            else:
+                r[k] = v
+        if r:
+            d[role] = r
+        else:
+            d.pop(role, None)
+    if d:
+        new_data["defaults"] = d
+    else:
+        new_data.pop("defaults", None)
+    patched = _patch_defaults(text, roles)
+    try:
+        if patched is not None and (yaml.safe_load(patched) or {}) == new_data:
+            return patched, True
+    except yaml.YAMLError:
+        pass
+    merged = merge_text(text, old_data, new_data) if text.strip() else None
+    if merged:
+        return merged[0], not merged[1]
+    return _dump(new_data), False
+
+
+def _scalar(v) -> str:
+    """A YAML scalar for one line: plain when it reads back the same, else quoted (e.g. "123", "yes")."""
+    t = str(v)
+    try:
+        if yaml.safe_load(t) == v and "#" not in t and ": " not in t:
+            return t
+    except yaml.YAMLError:
+        pass
+    return json.dumps(t)
+
+
+def _patch_defaults(text: str, roles: dict) -> str | None:
+    """Line edit of ``defaults.<role>.<key>`` in block style (every comment kept); None when the layout is not the
+    plain one (no defaults: section, flow style ...) - the caller checks the result and falls back."""
+    lines = text.splitlines(keepends=True)
+    if lines and not lines[-1].endswith("\n"):
+        lines[-1] += "\n"
+    top = [i for i, ln in enumerate(lines) if _TOP_RX.match(ln)]
+    try:
+        d0 = next(i for i in top if _TOP_RX.match(lines[i]).group(1) == "defaults")
+    except StopIteration:
+        return None
+    if lines[d0].split("#")[0].strip() != "defaults:":
+        return None
+    d1 = next((i for i in top if i > d0), len(lines))
+    while d1 > d0 + 1 and (not lines[d1 - 1].strip() or lines[d1 - 1].startswith("#")):
+        d1 -= 1                                       # comments / blank lines before the next section stay there
+    for role, values in roles.items():
+        body = lines[d0 + 1:d1]
+        rx = re.compile(rf"^(\s+){re.escape(role)}:\s*(#.*)?$")
+        r0 = next((d0 + 1 + i for i, ln in enumerate(body) if rx.match(ln.rstrip("\n"))), None)
+        if r0 is None:
+            ind = next((re.match(r"^(\s+)\S", ln).group(1) for ln in body if re.match(r"^\s+[\w-]+:", ln)), "  ")
+            add = [k for k, v in values.items() if v not in (None, "")]
+            if add:
+                new = [f"{ind}{role}:\n"] + [f"{ind}  {k}: {_scalar(values[k])}\n" for k in add]
+                lines[d1:d1] = new
+                d1 += len(new)
+            continue
+        ind = rx.match(lines[r0].rstrip("\n")).group(1)
+        r1 = r0 + 1
+        while r1 < d1 and (not lines[r1].strip() or lines[r1].lstrip().startswith("#")
+                           or len(lines[r1]) - len(lines[r1].lstrip()) > len(ind)):
+            r1 += 1
+        child = next((ln[:len(ln) - len(ln.lstrip())] for ln in lines[r0 + 1:r1]
+                      if ln.strip() and not ln.lstrip().startswith("#")), ind + "  ")
+        for k, v in values.items():
+            krx = re.compile(rf"^{re.escape(child)}{re.escape(k)}:")
+            at = next((i for i in range(r0 + 1, r1) if krx.match(lines[i])), None)
+            if v in (None, ""):
+                if at is not None:
+                    del lines[at]
+                    r1 -= 1
+                    d1 -= 1
+            elif at is not None:
+                lines[at] = f"{child}{k}: {_scalar(v)}\n"
+            else:
+                lines.insert(r1, f"{child}{k}: {_scalar(v)}\n")
+                r1 += 1
+                d1 += 1
+        if not any(ln.strip() and not ln.lstrip().startswith("#") for ln in lines[r0 + 1:r1]):
+            del lines[r0:r1]                          # the role has no keys left
+            d1 -= r1 - r0
+    return "".join(lines)
+
+
 def _patch_text(text: str, key: str, node: str, q: dict | None) -> str | None:
     """Edit only the node's entry; None when the layout is not one this handles (caller re-writes the YAML)."""
     lines = text.splitlines(keepends=True)
@@ -572,6 +675,14 @@ def prepare(path: Path, req: dict) -> dict:
         if set(vals) - {"bmc", "bmc_user"}:
             raise EditError(["only bmc and bmc_user can be set here"])
         new, kept = set_node_keys(old, str(nk.get("node") or ""), vals)
+    elif "default_keys" in req:                     # {role: {bmc_user: v}}: the rack's default BMC user per role
+        roles = dict(req["default_keys"] or {})
+        for role, vals in roles.items():
+            if not isinstance(vals, dict) or set(vals) - {"bmc_user"}:
+                raise EditError(["only bmc_user can be set as a default here"])
+            if vals.get("bmc_user") not in (None, "") and not BMC_USER_RX.match(str(vals["bmc_user"])):
+                raise EditError([f"default {role} bmc_user {vals['bmc_user']!r} is not valid"])
+        new, kept = set_default_keys(old, roles)
     elif "form" in req:
         old_data = yaml.safe_load(old) or {}
         new_data = from_form(old_data, req["form"])

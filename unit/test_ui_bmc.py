@@ -93,3 +93,32 @@ def test_bmc_address_and_user_go_into_the_inventory_yaml_with_a_backup(served, t
     assert c.j("POST", "/api/racks/mr3/nodes/st1/bmc", {"bmc_password": "x"})[0] == 400
     st, d = c.j("POST", "/api/racks/mr3/nodes/st1/bmc", {"bmc_user": ""})          # empty = removed
     assert st == 200 and "bmc_user" not in yaml.safe_load(inv.read_text())["switches"][0]
+
+
+def test_default_bmc_user_per_role_reaches_every_node_without_its_own(served, tmp_path):
+    """Inventory tab, Default BMC user (22 Oct): defaults.switch / defaults.compute bmc_user in the inventory (one
+    dated backup, comments elsewhere kept); a node's own user wins; empty removes the default."""
+    from helios.bmc import credentials
+    from helios.inventory import load_inventory
+    c = served
+    inv = tmp_path / "mr3.yaml"
+    inv.write_text("# MR3 mini rack\n" + inv.read_text() + "defaults:\n  # key-based SSH\n  switch:\n    user: admin\n")
+    assert c.j("POST", "/api/racks/mr3/nodes/c2/bmc", {"bmc_user": "own-user"})[0] == 200
+    n_bak = len(list(tmp_path.glob("mr3.yaml.bak-*")))
+    st, d = c.j("POST", "/api/racks/mr3/bmc-users", {"switch": "root", "compute": "scmadmin"})
+    assert st == 200 and d["saved"] and d["default_users"] == {"switch": "root", "compute": "scmadmin"}
+    assert len(list(tmp_path.glob("mr3.yaml.bak-*"))) == n_bak + 1 and inv.read_text().startswith("# MR3 mini rack")
+    assert "  # key-based SSH\n  switch:\n    user: admin\n    bmc_user: root\n" in inv.read_text()   # line edit
+    nodes = {n["name"]: n for n in d["nodes"]}
+    assert (nodes["st1"]["bmc_user"], nodes["st1"]["bmc_user_own"]) == ("root", "")
+    assert (nodes["c1"]["bmc_user"], nodes["c1"]["bmc_user_own"]) == ("scmadmin", "")
+    assert (nodes["c2"]["bmc_user"], nodes["c2"]["bmc_user_own"]) == ("own-user", "own-user")
+    i = load_inventory(inv)                                   # what the BMC tests get
+    assert credentials(i.computes[0], {"HELIOS_BMC_PASSWORD": "x"})[1] == "scmadmin"
+    assert credentials(i.switches[0], {"HELIOS_BMC_PASSWORD": "x"})[1] == "root"
+    assert c.j("POST", "/api/racks/mr3/bmc-users", {"switch": "root; reboot"})[0] == 400
+    assert c.j("POST", "/api/racks/mr3/bmc-users", {"password": "x"})[0] == 400
+    st, d = c.j("POST", "/api/racks/mr3/bmc-users", {"switch": "", "compute": ""})   # empty = no default
+    assert st == 200 and d["default_users"] == {"switch": "", "compute": ""}
+    assert yaml.safe_load(inv.read_text())["defaults"] == {"switch": {"user": "admin"}}
+    assert c.j("GET", "/api/racks/mr3/bmc-passwords")[1]["default_users"] == {"switch": "", "compute": ""}

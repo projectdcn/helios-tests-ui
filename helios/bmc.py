@@ -30,7 +30,7 @@ def credentials(host, environ=None) -> tuple[str, str, str, str | None]:
     bmc = str(host.extra.get("bmc") or "").strip()
     user = str(host.extra.get("bmc_user") or "").strip()
     pw = env.get(bmc_env(host.name)) or env.get(BMC_ENV) or ""
-    why = ("no bmc address in the inventory" if not bmc else "no bmc_user in the inventory" if not user
+    why = ("no bmc address in the inventory" if not bmc else "no bmc_user in the inventory (the node's own, or the rack's default: UI Inventory tab, Default BMC user)" if not user
            else f"no BMC password (UI: Inventory tab default or the Setup node table; ${BMC_ENV})" if not pw else None)
     return bmc, user, pw, why
 

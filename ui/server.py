@@ -141,12 +141,28 @@ class App:
             return account(p.name, f"bmc+{node}" if node else "bmc+ipmi")
         return account(p.name, afm_username(p.inventory))
 
+    def bmc_default_users(self, rack: str) -> dict:
+        """{switch, compute}: the rack's default BMC user per role (inventory defaults.<role>.bmc_user, else "")."""
+        import yaml
+        data = yaml.safe_load(self.profile(rack).inventory.read_text()) or {}
+        d = (data.get("defaults") or {}) if isinstance(data, dict) else {}
+        common = d.get("common") or {}
+        return {r: str((d.get(r) or {}).get("bmc_user") or common.get("bmc_user") or "") for r in ("switch", "compute")}
+
     def bmc_nodes(self, rack: str) -> list[dict]:
-        """[{name, role, bmc}] of the rack's switches and computes (from its inventory)."""
+        """[{name, role, bmc, bmc_user (in effect), bmc_user_own (the node's own entry, "" = the default)}] of the
+        rack's switches and computes (from its inventory)."""
+        import yaml
+
         from helios.inventory import load_inventory
-        inv = load_inventory(self.profile(rack).inventory)
+        f = self.profile(rack).inventory
+        inv = load_inventory(f)
+        raw = yaml.safe_load(f.read_text()) or {}
+        own = {str(e.get("name")): str(e.get("bmc_user") or "") for k in ("switches", "computes")
+               for e in (raw.get(k) or []) if isinstance(e, dict)}
         return [{"name": h.name, "role": h.role, "bmc": str(h.extra.get("bmc") or ""),
-                 "bmc_user": str(h.extra.get("bmc_user") or "")} for h in [*inv.switches, *inv.computes]]
+                 "bmc_user": str(h.extra.get("bmc_user") or ""), "bmc_user_own": own.get(h.name, "")}
+                for h in [*inv.switches, *inv.computes]]
 
     def bmc_status(self, rack: str) -> dict:
         """Per node: its BMC address and whether it has its own saved BMC password (never the password)."""
@@ -162,8 +178,12 @@ class App:
                     n["saved"] = self.keychain.has(self.keychain_account(rack, "bmc", n["name"]))
                 except KeychainError as e:
                     n["error"] = str(e)
+        try:
+            users = self.bmc_default_users(rack)
+        except Exception:  # noqa: BLE001
+            users = {"switch": "", "compute": ""}
         return {"available": avail, "store": self.store_label, "default": self.password_status(rack, "bmc"),
-                "nodes": nodes}
+                "default_users": users, "nodes": nodes}
 
     def password_status(self, rack: str, which: str = "afm") -> dict:
         """{saved, available, account[, error]}: never the password itself."""
@@ -748,6 +768,17 @@ class Handler(BaseHTTPRequestHandler):
             if path == "/api/runs":
                 run, kc = self.app.start_run(body, started_by=self._by() or None)
                 return self.json({**self.app.runs.get(run.id), "keychain": kc}, 201)
+            m = re.fullmatch(r"/api/racks/([^/]+)/bmc-users", path)
+            if m:                                  # the rack's default BMC user per role -> inventory defaults
+                p = self.app.profile(m.group(1))
+                if not body or set(body) - {"switch", "compute"}:
+                    return self.err(400, "send switch and / or compute (the default BMC user of each)")
+                roles = {r: {"bmc_user": str(body[r]).strip() if body[r] is not None else None}
+                         for r in ("switch", "compute") if r in body}
+                with self.app.edit_lock:
+                    res = inventory_edit.save(p.inventory, {"default_keys": roles})
+                return self.json({"saved": res["saved"], "backup": res["backup"], "warnings": res["warnings"],
+                                  **self.app.bmc_status(m.group(1))})
             m = re.fullmatch(r"/api/racks/([^/]+)/nodes/([^/]+)/bmc", path)
             if m:                                  # a node's BMC address / user -> its inventory entry (dated backup)
                 p = self.app.profile(m.group(1))
