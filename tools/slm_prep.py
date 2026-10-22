@@ -140,6 +140,8 @@ def main(argv=None) -> int:
     ap.add_argument("--valid-fraction", type=float, default=0.1)
     ap.add_argument("--epochs", type=float, default=3.0)
     ap.add_argument("--batch-size", type=int, default=2)
+    ap.add_argument("--keep-unreviewed", action="store_true",
+                    help="keep training examples marked needs_review (default: left out - their label may be wrong)")
     ap.add_argument("--blind", action="store_true",
                     help="remove the test's verdict / message / repaired markers: the model reads the evidence itself")
     ap.add_argument("--iters", type=int, default=0, help="training iterations (default: --epochs over the data)")
@@ -159,6 +161,9 @@ def main(argv=None) -> int:
             raise SystemExit(f"{f}: {len(bad)} example(s) still marked needs_review - review them (set needs_review "
                              "false in meta, fix the answer if wrong) before training on them")
         train += rs
+    unreviewed = [r for r in train if (r.get("meta") or {}).get("needs_review")]
+    if unreviewed and not a.keep_unreviewed:      # rules and injected fault disagree: the label may be wrong
+        train = [r for r in train if not (r.get("meta") or {}).get("needs_review")]
     if a.blind:
         train, test = [blind(r) for r in train], [blind(r) for r in test]
     tr, val = split_valid(train, a.valid_fraction, rng)
@@ -186,6 +191,7 @@ def main(argv=None) -> int:
             "valid": dict(Counter(fault_of(r) for r in val)), "test": dict(Counter(fault_of(r) for r in test)),
             "n": {"train": len(tr_bal), "valid": len(val), "test": len(test)}, "lengths": ln, "iters": iters,
             "max_seq_length": max_seq, "extra": [str(f) for f in a.extra], "blind": a.blind,
+            "left_out_unreviewed": 0 if a.keep_unreviewed else len(unreviewed),
             "eval_extra": {f.name: {"n": len(load(f)), "needs_review": sum(1 for r in load(f)
                                                                           if (r.get("meta") or {}).get("needs_review"))}
                            for f in a.eval_extra}}

@@ -123,3 +123,15 @@ def test_blind_removes_the_tests_conclusions_but_keeps_the_evidence():
     assert "cleanup" in b and "state" in b and "Target: st3" in b and rec["messages"][1]["content"] == user   # copy
     old = {"messages": [{"role": "user", "content": "Case TC-SWH-046: x\nTest verdict: BLOCKED\nTest message: switch pre-flight failed"}]}
     assert prep.blind(old)["messages"][0]["content"] == "Case TC-SWH-046: x\nTest message: switch pre-flight failed"
+
+
+def test_prep_leaves_out_examples_whose_label_is_in_doubt(tmp_path):
+    d = _dataset(tmp_path)
+    recs = [json.loads(ln) for ln in (d / "train.jsonl").read_text().splitlines()]
+    recs[0]["meta"]["needs_review"] = True
+    (d / "train.jsonl").write_text("".join(json.dumps(r) + "\n" for r in recs))
+    assert prep.main([str(d), "-o", str(tmp_path / "a"), "--max-healthy", "1", "--min-per-class", "0"]) == 0
+    assert json.loads((tmp_path / "a" / "prep.json").read_text())["left_out_unreviewed"] == 1
+    n = lambda o: sum(1 for f in ("train", "valid") for _ in (tmp_path / o / f"{f}.jsonl").read_text().splitlines())  # noqa: E731
+    assert prep.main([str(d), "-o", str(tmp_path / "b"), "--max-healthy", "1", "--min-per-class", "0", "--keep-unreviewed"]) == 0
+    assert n("b") == n("a") + 1

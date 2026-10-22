@@ -44,10 +44,12 @@ SCENARIOS = [
     (["fdb_detect_no_repair"], 2),             # notices (event), never repairs
     (["fdb_wrong_port"], 2),                   # repairs a deleted entry on another port
     (["pfc_storm"], 3),                        # watchdog storm, or (params watchdog false) pauses only
-    (["qos_odd_port"], 1),                     # one port with another QoS map (QoS profiles mr3 / lossless)
+    (["qos_odd_port"], 2),                     # one port with another QoS map (QoS profiles mr3 / lossless)
     (["lossless_incast_drops"], 2),            # PFC does not hold the incast
-    (["no_congestion_watermark"], 1),          # the switch reports no congestion under incast
-    (["tb_slow"], 1),                          # the incast load stays far below line rate (BLOCKED)
+    (["no_congestion_watermark"], 2),          # the switch reports no congestion under incast
+    (["tb_slow"], 2),                          # the incast load stays far below line rate (BLOCKED)
+    (["rack_vpod_configfailed"], 1),           # AFM pre-flight: system vPOD configurationfailed (g02-g17 18 / 20 Oct)
+    (["rack_compute_stale"], 1),               # AFM pre-flight: a compute stopped reporting health (g02-g17 20 Oct)
     (["cni_netns"], 1),
     (["afm_unreachable"], 1),                  # the AFM API resets every connection (MR3 21-22 Oct)
     (["no_fdb_reconcile", "pfc_storm"], 1),
@@ -199,6 +201,8 @@ def main(argv=None) -> int:
                                            "frames": rng.choice([5000, 40000, 250000, 900000]),
                                            "watchdog": rng.random() < 0.6}
                     scope["pfc_storm"] = [SWITCHES[k]]
+                if "rack_compute_stale" in faults:
+                    params["rack_compute_stale"] = {"slot": rng.randrange(17)}
                 if "qos_odd_port" in faults:
                     k = rng.randrange(len(SWITCHES))
                     params["qos_odd_port"] = {"switch": k, "asic": rng.randrange(2), "port": rng.randrange(216)}

@@ -38,12 +38,12 @@ CASES = {"TC-SWH-061": "AFM repairs a missing static FDB entry (one AFM-programm
 FAULTS = ["none", "fdb_entry_not_restored", "foreign_fdb_not_removed", "fdb_restored_wrong_port", "pfc_pause_storm",
           "pfc_watchdog_storm", "qos_inconsistent", "congestion_drops_lossy", "congestion_drops_lossless",
           "no_congestion_seen", "incast_not_generated", "lossless_config_incomplete", "switch_cli_broken",
-          "afm_unreachable", "test_error"]
+          "afm_unreachable", "rack_not_healthy", "test_error"]
 ROOT_CAUSES = ["none", "afm_did_not_detect", "afm_detected_not_repaired", "afm_programmed_wrong_port", "unknown",
                "peer_sends_pauses", "port_qos_map_differs", "traffic_class_not_lossless", "pfc_did_not_hold",
-               "watermark_not_reported", "load_too_low", "no_lossless_headroom", "dot1p_unmapped",
+               "watermark_not_reported", "load_too_low", "traffic_job_failed", "no_lossless_headroom", "dot1p_unmapped",
                "lossy_on_lossless_queue", "no_pfc_watchdog", "no_ecn_marking", "foreign_network_namespace",
-               "afm_api_down"]
+               "afm_api_down", "vpod_configuration_failed", "compute_health_stale", "rack_unhealthy_other"]
 
 SYSTEM = ("You diagnose AMD Helios rack test results (SONiC switch trays, AFM fabric manager, compute trays). Given "
           "the evidence a test recorded, answer with JSON only: {\"fault\", \"root_cause\", \"category\", "
@@ -119,6 +119,11 @@ DIAG = {
         "The lossless configuration of {switch} is incomplete: {detail}.",
         "Complete it from the rack's QoS design (headroom, dot1p / TC maps, ECN / WRED, PFC watchdog) and re-run "
         "TC-SWH-063 and the incast case."),
+    "rack_not_healthy": (
+        "rack_setup", "AFM rack health",
+        "The AFM pre-flight found the rack not healthy, so the case did not start: {detail}.",
+        "Bring the rack back to healthy first (the system vPOD online with no pending operations, every switch and "
+        "compute admitted and reporting health); check the AFM controller and the node agents, then re-run."),
     "test_error": (
         "test_infra", "test / rack access",
         "The test could not run as designed: {detail}.",
@@ -187,6 +192,9 @@ PHRASES = {
          "Fix the traffic generation (TransferBench ranks / trays) and re-run.")],
     "lossless_config_incomplete": [
         ("{switch}: lossless setup has gaps - {detail}.", "Fill the gaps from the QoS design, then re-run TC-SWH-063.")],
+    "rack_not_healthy": [
+        ("Rack not healthy before the case ({detail}); nothing was tested.",
+         "Fix the rack state in AFM first (vPOD configuration, node health reports), then repeat the case.")],
     "test_error": [
         ("The case could not run: {detail}.", "Check the case log, then fix rack access (SSH key, sudo) or the "
                                               "inventory and re-run.")],
@@ -198,7 +206,9 @@ INJECTED = {
     "fdb_detect_no_repair": {"TC-SWH-061": "fdb_entry_not_restored", "TC-SWH-062": "foreign_fdb_not_removed"},
     "fdb_wrong_port": {"TC-SWH-061": "fdb_restored_wrong_port"},
     "pfc_storm": {"TC-SWH-046": "pfc_watchdog_storm"},          # params watchdog false: pfc_pause_storm
-    "qos_odd_port": {"TC-SWH-046": "qos_inconsistent"},
+    "qos_odd_port": {"TC-SWH-046": "qos_inconsistent", "TC-SWH-063": "lossless_config_incomplete"},
+    "rack_vpod_configfailed": {t: "rack_not_healthy" for t in ("TC-SWH-060", "TC-SWH-061", "TC-SWH-062")},
+    "rack_compute_stale": {t: "rack_not_healthy" for t in ("TC-SWH-060", "TC-SWH-061", "TC-SWH-062")},
     "lossless_incast_drops": {"TC-SWH-060": "congestion_drops_lossless"},
     "no_congestion_watermark": {"TC-SWH-060": "no_congestion_seen"},
     "tb_slow": {"TC-SWH-060": "incast_not_generated"},
@@ -209,7 +219,7 @@ INJECTED = {
     "qos:mr3": {"TC-SWH-063": "lossless_config_incomplete"},
 }
 # when several apply, the one a case reports first (a broken CLI hides everything else)
-PRIORITY = ["switch_cli_broken", "afm_unreachable", "test_error", "incast_not_generated", "no_congestion_seen",
+PRIORITY = ["switch_cli_broken", "afm_unreachable", "rack_not_healthy", "test_error", "incast_not_generated", "no_congestion_seen",
             "congestion_drops_lossy", "congestion_drops_lossless", "fdb_restored_wrong_port", "fdb_entry_not_restored",
             "foreign_fdb_not_removed", "pfc_watchdog_storm", "pfc_pause_storm", "qos_inconsistent",
             "lossless_config_incomplete", "none"]
@@ -247,6 +257,9 @@ def rule_fault(tc: str, outcome: str, msg: str, ev: dict) -> tuple[str, str]:
         # the AFM login traceback of runs from before the one-line BLOCKED reason (MR3 21 Oct)
         why = "connection reset" if "reset" in m.lower() else "connection refused" if "refused" in m else "timed out"
         return "afm_unreachable", f"the AFM API did not answer the login ({why})"
+    if m.startswith("AFM pre-flight failed - rack not healthy"):
+        probs = [ln.strip(" -") for ln in m.splitlines()[1:] if ln.strip()]
+        return "rack_not_healthy", "; ".join(p[:120] for p in probs[:3]) or "rack not healthy"
     if tc == "TC-SWH-060" and m.startswith("incast pre-flight failed"):
         return _rule_congestion(outcome, m, ev.get("facts") or {})
     if outcome in ("error", "blocked") and not ev.get("timeline"):
@@ -306,6 +319,10 @@ def _rule_congestion(outcome: str, m: str, f: dict) -> tuple[str, str]:
     if m.startswith("incast pre-flight failed"):
         return "incast_not_generated", m.split(" - ", 1)[1].split(" - congestion not judged")[0].split(": no incast")[0][:240] \
             if " - " in m else m[:240]
+    if re.search(r"TransferBench failed|rank on \S+ failed", m):
+        # g02-g17 19 Oct (before the case reported BLOCKED): a rank died, the incast never ran
+        job = re.search(r"- (\S+->\S+: rank on \S+ failed: [^\n]{0,80})", m)
+        return "incast_not_generated", f"a TransferBench job failed ({job.group(1) if job else 'rank failed'})"
     ev = f.get("incast_evidence") or {}
     if not ev:
         return ("test_error", (m.splitlines()[0] if m else outcome)[:200]) if outcome != "passed" else ("none", "no evidence")
@@ -335,8 +352,16 @@ def _rule_congestion(outcome: str, m: str, f: dict) -> tuple[str, str]:
 
 
 def root_cause(fault: str, ev: dict, msg: str = "") -> str:
-    """The root cause of ``fault`` from the evidence (one of ROOT_CAUSES)."""
+    """The root cause of ``fault`` from the evidence and the message (one of ROOT_CAUSES)."""
     f = ev.get("facts") or {}
+    if fault == "incast_not_generated":
+        failed = (f.get("traffic") or {}).get("failed_jobs") or re.search(r"TransferBench failed|rank on \S+ failed", msg)
+        return "traffic_job_failed" if failed else "load_too_low"
+    if fault == "rack_not_healthy":
+        # a compute that stopped reporting health comes first: the vPOD failing with it is a consequence
+        # (g02-g17 20 Oct: computes health 'unknown' / None, then pod-1.system configurationfailed)
+        return "compute_health_stale" if re.search(r"health update not received|compute \S+: admitted conditions", msg) else \
+            "vpod_configuration_failed" if "configurationfailed" in msg or "pending-ops" in msg else "rack_unhealthy_other"
     if fault in ("fdb_entry_not_restored", "foreign_fdb_not_removed"):
         evs = f.get("afm_events")
         if evs is None:
@@ -355,7 +380,7 @@ def root_cause(fault: str, ev: dict, msg: str = "") -> str:
             "pfc_watchdog_storm": "peer_sends_pauses", "pfc_pause_storm": "peer_sends_pauses",
             "qos_inconsistent": "port_qos_map_differs", "congestion_drops_lossy": "traffic_class_not_lossless",
             "congestion_drops_lossless": "pfc_did_not_hold", "no_congestion_seen": "watermark_not_reported",
-            "incast_not_generated": "load_too_low", "switch_cli_broken": "foreign_network_namespace",
+            "switch_cli_broken": "foreign_network_namespace",
             "afm_unreachable": "afm_api_down"}.get(fault, "unknown")
 
 
@@ -503,7 +528,7 @@ def message_excerpt(msg: str, limit: int = 700) -> str:
     return joined[:limit // 2] + " ... " + joined[-(limit // 2 - 5):]
 
 
-def diagnosis(fault: str, detail: str, ev: dict, variant_key: str = "") -> dict:
+def diagnosis(fault: str, detail: str, ev: dict, variant_key: str = "", msg: str = "") -> dict:
     """The expected answer; ``variant_key`` (the input text) picks one of the wordings (DIAG + PHRASES) stably."""
     cat, comp, summ, step = DIAG[fault]
     forms = [(summ, step)] + PHRASES.get(fault, [])
@@ -516,7 +541,7 @@ def diagnosis(fault: str, detail: str, ev: dict, variant_key: str = "") -> dict:
             "pfc_qos": "PFC / QoS"}.get(f.get("case"), "the case")
     summary = summ.format(target=target or "?", limit=f.get("fdb_reconcile_s", "?"), detail=detail or "-",
                           switch=f.get("switch") or "the switch", what=what)
-    return {"fault": fault, "root_cause": root_cause(fault, ev), "category": cat, "component": comp,
+    return {"fault": fault, "root_cause": root_cause(fault, ev, msg), "category": cat, "component": comp,
             "summary": summary, "next_step": step}
 
 
@@ -548,7 +573,8 @@ def examples(run: Path, source: str | None = None) -> list[dict]:
             fault = rf
             meta.update(label_source="rules", needs_review=True)
         text = evidence_text(tc, row, ev, rack)
-        out.append({"input": text, "output": diagnosis(fault, detail, ev, _strip_ids(text)), "meta": meta,
+        out.append({"input": text, "output": diagnosis(fault, detail, ev, _strip_ids(text), row.get("message") or ""),
+                    "meta": meta,
                     "facts": ev.get("facts") or {}})
     return out
 

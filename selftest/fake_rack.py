@@ -433,6 +433,11 @@ class Sim:
                 (slot not in self.mgmt_down_ct or "mgmt_loss_unnoticed" in self.f) and \
                 not ("last_compute_unhealthy" in self.f and slot == len(self.computes) - 1)   # quarantine tests
             o["status"]["conditions"] = [{"type": "healthy", "status": "true" if ok else "unknown"}]
+            stale = (getattr(self.st, "params", {}).get("rack_compute_stale") or {}).get("slot", 1)
+            if "rack_compute_stale" in self.f and slot == stale:
+                # g02-g17 20 Oct: a compute's node agent stopped reporting - AFM keeps it admitted, health unknown
+                o["status"]["conditions"] = [{"type": "healthy", "status": "unknown", "last-transition-time": now(),
+                                              "reason": "ComputeNode health update not received since 2026-10-20T20:17:45Z"}]
             stuck = "compute_not_initialised" in self.f and slot == 0
             o["status"]["init-phase"] = "in-progress" if stuck else "success"
             o["status"]["is-connected-to-controller"] = host is not None and not stuck
@@ -489,6 +494,12 @@ class Sim:
                                   "state": "ready"} for g in vp["spec"].get("GPUs") or []]
             if name in self.cf_perm:
                 st["vpod-state"] = "configurationfailed"
+                continue
+            if "rack_vpod_configfailed" in self.f and name.endswith(".system"):
+                # g02-g17 18 / 20 Oct: the system vPOD stuck in configurationfailed with a pending reprogram
+                st["vpod-state"] = "configurationfailed"
+                st["pending-ops"] = [{"operation": "reprogram_df", "version": "1755419", "pending-components": {
+                    "gpus": [f"pod-1-{k}-ComputeTray-GPU-3" for k in range(4)]}}]
                 continue
             if name in self.configfailed:
                 if not all_down and "configfailed_sticky" not in self.f:
@@ -802,7 +813,8 @@ class FakeSwitchTransport:
         res = None
         with st.lock:
             sim._due_links()            # realistic timing: a link due back is up for the switch CLI as well
-            if "cni_netns" in st.f and re.match(r"(sudo\s+)?show\s", cmd):
+            if "cni_netns" in st.f and re.search(r"(^|[\s;(|&$])(show|sonic-db-cli|sonic-cfggen)\s", cmd):
+                # the CLI and every swsscommon client (sonic-db-cli, sonic-cfggen) - on a real switch they all fail
                 # g02-g17 22 Oct: k3s pods left cni-<uuid> namespaces; swsscommon refuses every SONiC CLI command
                 return CmdResult(self.host.name, cmd, 1, "", (
                     'Traceback (most recent call last):\n  File "/usr/lib/python3/dist-packages/swsscommon/swsscommon.py", '

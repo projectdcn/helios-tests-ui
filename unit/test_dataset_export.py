@@ -227,3 +227,20 @@ def test_fdb_root_causes_and_injected_details():
     assert dx.injected_fault("TC-SWH-063", ["qos:mr3"]) == "lossless_config_incomplete"
     for f in dx.FAULTS:
         assert f in dx.DIAG and dx.diagnosis(f, "d", {})["root_cause"] in dx.ROOT_CAUSES, f
+
+
+def test_rack_not_healthy_and_a_failed_traffic_job():
+    vpod = ("AFM pre-flight failed - rack not healthy, not starting:\n  - pod-1.system state configurationfailed\n"
+            "  - pod-1.system pending-ops [{'operation': 'reprogram_df'}]")
+    stale = ("AFM pre-flight failed - rack not healthy, not starting:\n  - compute pod-1-10-ComputeTray: admitted conditions="
+             "[{'type': 'healthy', 'status': 'unknown', 'reason': 'ComputeNode health update not received since x'}]\n"
+             "  - pod-1.system state configurationfailed")
+    for msg, rc in ((vpod, "vpod_configuration_failed"), (stale, "compute_health_stale")):
+        f, d = dx.rule_fault("TC-SWH-060", "blocked", msg, {})
+        assert f == "rack_not_healthy" and dx.diagnosis(f, d, {}, msg=msg)["root_cause"] == rc, (rc, d)
+    tb = ("3 check(s) failed:\n  - ct08->ct12: rank on ct12 failed: rc=1 'recv: Invalid argument'\n"
+          "  - ct08->ct12: TransferBench failed: killed\n  - no congestion seen on the 144 ports towards ct12")
+    f, d = dx.rule_fault("TC-SWH-060", "failed", tb, {"facts": {}})
+    assert f == "incast_not_generated" and dx.diagnosis(f, d, {}, msg=tb)["root_cause"] == "traffic_job_failed"
+    assert dx.injected_fault("TC-SWH-061", ["rack_compute_stale"]) == "rack_not_healthy"
+    assert dx.injected_fault("TC-SWH-063", ["qos_odd_port"], "st2", {"qos_odd_port": ["st2"]}) == "lossless_config_incomplete"
