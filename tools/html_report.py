@@ -66,12 +66,25 @@ def supersedes(prev: dict | None, r: dict) -> bool:
     return prev is None or prev["outcome"] in ("skipped", "blocked") or r["outcome"] not in ("skipped", "blocked")
 
 
+def _fill_old_columns(r: dict) -> None:
+    """Runs written before 13 Oct 2026 (MR3 12 Oct) have tc_id,nodeid,outcome,duration_s,properties,message only:
+    suite / test from the nodeid (tests/afm/test_x.py::test_y[p] -> afm/test_x, test_y[p]), the rest empty."""
+    node = r.get("nodeid") or ""
+    path, _, test = node.partition("::")
+    if not r.get("suite"):
+        r["suite"] = path.removeprefix("tests/").removesuffix(".py") or "tests"
+    r.setdefault("test", test)
+    for k in ("description", "started", "log"):
+        r.setdefault(k, "")
+
+
 def load_runs(dirs: list[Path], tz: dict[str, float] | None = None) -> list[dict]:
     items: "OrderedDict[str, dict]" = OrderedDict()
     for d in dirs:
         rows = list(csv.DictReader(open(d / "tc_results.csv", newline="")))
         for r in rows:
             r["_run"] = d.name
+            _fill_old_columns(r)
             r["started"] = to_utc(r.get("started", ""), (tz or {}).get(d.name))
             log = d / r["log"] if r.get("log") else None
             r["_log"] = log.read_text(errors="replace") if log and log.exists() else ""
