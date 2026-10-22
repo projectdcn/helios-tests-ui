@@ -212,8 +212,26 @@ def evidence_text(tc: str, row: dict, ev: dict, rack: str) -> str:
     lines.append(f"Test verdict: {row.get('outcome', '').upper()}")
     msg = (row.get("message") or "").strip()
     if msg:
-        lines.append("Test message: " + " | ".join(ln.strip() for ln in msg.splitlines() if ln.strip())[:600])
+        lines.append("Test message: " + message_excerpt(msg))
     return "\n".join(lines)
+
+
+def message_excerpt(msg: str, limit: int = 700) -> str:
+    """The test message in one line, at most ``limit`` characters. A traceback is cut to what says what went wrong:
+    its error lines (pytest's 'E ...', 'XxxError: ...') and the failing call, not its first frames - the first 600
+    characters of the 22 Oct switch traceback held none of 'validateNamespace: Namespace cni-...'."""
+    ls = [ln.strip() for ln in msg.splitlines() if ln.strip()]
+    if len(" | ".join(ls)) <= limit:
+        return " | ".join(ls)
+    err = [ln for ln in ls if ln.startswith("E ") or re.match(r"^[\w.]*(Error|Exception|Timeout)\b[:(]", ln)]
+    if err:
+        err = list(dict.fromkeys(e.lstrip("E ").strip() for e in err))      # each distinct error once
+        where = next((ln for ln in ls if re.match(r"^[\w/.-]+\.py:\d+: in ", ln)), "")
+        head = [where] if where else []
+        out = " | ".join(head + err[-4:])                                   # the last errors are the cause
+        return out if len(out) <= limit else out[:limit // 3] + " ... " + out[-(limit - limit // 3 - 5):]
+    joined = " | ".join(ls)
+    return joined[:limit // 2] + " ... " + joined[-(limit // 2 - 5):]
 
 
 def diagnosis(fault: str, detail: str, ev: dict) -> dict:

@@ -149,7 +149,7 @@ def main(argv=None) -> int:
     ap.add_argument("--model", default="")
     ap.add_argument("--adapter", default=None, help="mlx: LoRA adapter folder (mlx_lm.lora adapter_path)")
     ap.add_argument("--url", default="http://127.0.0.1:11434/v1", help="openai: the server's /v1 base URL")
-    ap.add_argument("--max-tokens", type=int, default=300)
+    ap.add_argument("--max-tokens", type=int, default=512)
     ap.add_argument("--limit", type=int, default=0, help="score only the first N examples")
     ap.add_argument("--name", default=None, help="name of this evaluation (output folder eval-<name>)")
     ap.add_argument("--out", type=Path, default=None)

@@ -122,3 +122,15 @@ def test_runs_from_before_the_evidence_timeline_are_labelled_from_their_message(
     cli = got[("g02-g17-20261019-000533", "TC-SWH-046")]
     assert cli["fault"] == "switch_cli_broken" and "st6" in cli["summary"] and "cni-7cf2" in cli["summary"]
     assert got[("mr3-20261021-205810", "TC-SWH-062")]["fault"] == "afm_unreachable"
+
+
+def test_a_long_traceback_keeps_its_cause():
+    """22 Oct: the first 600 characters of the switch traceback held only stack frames; the excerpt keeps the failing
+    call and the error lines, so 'validateNamespace: Namespace cni-...' reaches the model."""
+    frames = "\n".join(f".venv/lib/python3.14/site-packages/x/mod{k}.py:{k}: in f{k}\n    call_{k}(arg)" for k in range(40))
+    msg = (f"tests/l1/test_switch_health.py:390: in test_pfc\n{frames}\n"
+           "E   helios.transport.CommandError: [st6] rc=1: show pfc counters -n asic0\n"
+           "E   RuntimeError: :- validateNamespace: Namespace cni-7cf2 is not a valid namespace name in config file")
+    ex = dx.message_excerpt(msg)
+    assert len(ex) <= 700 and "validateNamespace: Namespace cni-7cf2" in ex and ex.startswith("tests/l1/test_switch_health.py:390")
+    assert dx.message_excerpt("1 check(s) failed:\n  - short") == "1 check(s) failed: | - short"
