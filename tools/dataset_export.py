@@ -22,6 +22,7 @@ import argparse
 import csv
 import hashlib
 import json
+import re
 import sys
 from pathlib import Path
 
@@ -114,10 +115,23 @@ def rule_fault(tc: str, outcome: str, msg: str, ev: dict) -> tuple[str, str]:
     if "SONiC CLI on" in m and "refuses every command" in m:
         ns = m.split("network namespace", 1)[1].split()[0] if "network namespace" in m else "?"
         return "switch_cli_broken", f"network namespace {ns} is not an ASIC namespace"
+    if (raw := re.search(r"validateNamespace: Namespace (\S+) is not a valid namespace", m)):
+        # runs from before the one-line BLOCKED reason (22 Oct): the raw swsscommon traceback
+        return "switch_cli_broken", f"network namespace {raw.group(1)} is not an ASIC namespace"
     if "AFM API" in m and "cannot be reached" in m:
         return "afm_unreachable", m.split(": ", 1)[1].split(". Check")[0][:200] if ": " in m else m[:200]
+    if re.search(r"helios/afm\.py|requests/adapters\.py|urllib3/", m) and \
+            re.search(r"ConnectionResetError|Connection reset by peer|ConnectTimeout|Connection refused|Max retries", m):
+        # the AFM login traceback of runs from before the one-line BLOCKED reason (MR3 21 Oct)
+        why = "connection reset" if "reset" in m.lower() else "connection refused" if "refused" in m else "timed out"
+        return "afm_unreachable", f"the AFM API did not answer the login ({why})"
     if outcome in ("error", "blocked") and not ev.get("timeline"):
         return "test_error", (m.splitlines()[0] if m else outcome)[:200]
+    # runs from before the evidence timeline (19 Oct and earlier): the check message says what happened
+    if (fm := re.search(r"AFM did not program (\S+ \S+ FDB\|\S+) again within (\d+) s", m)):
+        return "fdb_entry_not_restored", f"{fm.group(1)} not restored within {fm.group(2)} s"
+    if (fm := re.search(r"AFM did not remove the foreign (\S+ \S+ FDB\|\S+) within (\d+) s", m)):
+        return "foreign_fdb_not_removed", f"{fm.group(1)} not removed within {fm.group(2)} s"
     kinds = [x.get("kind") for x in ev.get("timeline", [])]
     if tc in ("TC-SWH-061", "TC-SWH-062"):
         if "not_repaired_in_time" in kinds:
@@ -149,6 +163,16 @@ def rule_fault(tc: str, outcome: str, msg: str, ev: dict) -> tuple[str, str]:
         return "none", f"No PFC pause growth and no watchdog storm on {(ev.get('facts') or {}).get('switch', 'the switch')} " \
                        f"({cfg or 'no QoS map'})"
     return ("none" if outcome == "passed" else "test_error"), (m.splitlines()[0] if m else "")[:200]
+
+
+def facts_from_message(m: str) -> dict:
+    """Target facts of a run from before the evidence timeline, read from its message (switch, ns, VLAN, MAC, limit)."""
+    f: dict = {}
+    if (x := re.search(r"(?:program|foreign) (\S+) (asic\d+) FDB\|(\S+?)\|(\S+) (?:again )?within (\d+) s", m or "")):
+        f.update(switch=x.group(1), ns=x.group(2), vlan=x.group(3), mac=x.group(4), fdb_reconcile_s=float(x.group(5)))
+    elif (x := re.search(r"\[(st\d+|sw\d+)\] rc=|SONiC CLI on (\S+) refuses", m or "")):
+        f["switch"] = x.group(1) or x.group(2)
+    return f
 
 
 def injected_fault(tc: str, faults: list[str], switch: str | None = None, scope: dict | None = None) -> str:
@@ -212,10 +236,12 @@ def examples(run: Path, source: str | None = None) -> list[dict]:
     for row in _load_rows(run):
         tc = row.get("tc_id", "")
         ev, _props = _ev_of(row)
-        if tc not in CASES or not (ev or row.get("outcome") in ("error", "blocked")):
+        if tc not in CASES or not (ev or row.get("outcome") in ("error", "blocked", "failed")):
             continue
         rack = scen.get("rack") or run.name.rsplit("-", 2)[0]
         rf, detail = rule_fault(tc, row.get("outcome", ""), row.get("message", ""), ev)
+        if not (ev.get("facts") or {}):                 # an older run: what the message says about the target
+            ev = {**ev, "facts": facts_from_message(row.get("message", ""))}
         src = source or ("vrack" if scen else "real")
         meta = {"tc_id": tc, "run": run.name, "test": row.get("test") or row.get("nodeid", ""), "source": src,
                 "rule_fault": rf}
@@ -244,8 +270,9 @@ def run_dirs(paths: list[Path]) -> list[Path]:
     for p in paths:
         if (p / "tc_results.csv").is_file():
             out.append(p)
-        elif p.is_dir():
-            out += sorted(d for d in p.iterdir() if d.is_dir() and (d / "tc_results.csv").is_file())
+        elif p.is_dir():                     # a UI session folder only repeats its runs' results: left out
+            out += sorted(d for d in p.iterdir() if d.is_dir() and (d / "tc_results.csv").is_file()
+                          and "-session-" not in d.name)
     return out
 
 
@@ -281,7 +308,6 @@ def main(argv=None) -> int:
 
 def _strip_ids(text: str) -> str:
     """The input without run-specific timings, for de-duplication (same target and story = same example)."""
-    import re
     return re.sub(r"^\s+[\d.]+: ", "  ", text, flags=re.M)
 
 

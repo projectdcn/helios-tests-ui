@@ -99,3 +99,26 @@ def test_cli_writes_chat_jsonl_and_drops_repeats(tmp_path):
     assert dx.main([str(tmp_path / "runs"), "-o", str(out), "--format", "prompt", "--no-dedupe"]) == 0
     recs = [json.loads(ln) for ln in out.read_text().splitlines()]
     assert len(recs) == 2 and recs[0]["prompt"].endswith("Diagnosis:") and recs[0]["completion"].startswith(" {")
+
+
+def test_runs_from_before_the_evidence_timeline_are_labelled_from_their_message(tmp_path):
+    """Older real runs: no evidence, only the message (raw tracebacks, check messages) - still labelled, with the
+    target read from the message; UI session folders (copies of runs) left out."""
+    tb_ns = ("helios/sonic.py:33: in sh\nE   helios.transport.CommandError: [st6] rc=1: show interfaces status -n asic0\n"
+             "E   RuntimeError: :- validateNamespace: Namespace cni-7cf2 is not a valid namespace name in config file")
+    tb_afm = (".venv/lib/python3.14/site-packages/urllib3/connectionpool.py:793: in urlopen\n"
+              "E   ConnectionResetError: [Errno 54] Connection reset by peer")
+    chk = "1 check(s) failed:\n  - AFM did not program st6 asic0 FDB|Vlan200|02:00:00:11:00:14 again within 300 s (FDB mismatch not repaired)"
+    root = tmp_path / "runs"
+    _run(root, "g02-g17-20261019-000533", [("TC-SWH-061", "failed", chk, None), ("TC-SWH-046", "failed", tb_ns, None)])
+    _run(root, "mr3-20261021-205810", [("TC-SWH-062", "error", tb_afm, None)])
+    _run(root, "mr3-session-20261021-205636", [("TC-SWH-062", "error", tb_afm, None)])
+    exs = [e for run in dx.run_dirs([root]) for e in dx.examples(run)]
+    got = {(e["meta"]["run"], e["meta"]["tc_id"]): e["output"] for e in exs}
+    assert set(got) == {("g02-g17-20261019-000533", "TC-SWH-061"), ("g02-g17-20261019-000533", "TC-SWH-046"),
+                        ("mr3-20261021-205810", "TC-SWH-062")}
+    fdb = got[("g02-g17-20261019-000533", "TC-SWH-061")]
+    assert fdb["fault"] == "fdb_entry_not_restored" and "st6 asic0 Vlan200 02:00:00:11:00:14" in fdb["summary"] and "300" in fdb["summary"]
+    cli = got[("g02-g17-20261019-000533", "TC-SWH-046")]
+    assert cli["fault"] == "switch_cli_broken" and "st6" in cli["summary"] and "cni-7cf2" in cli["summary"]
+    assert got[("mr3-20261021-205810", "TC-SWH-062")]["fault"] == "afm_unreachable"
