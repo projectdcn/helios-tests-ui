@@ -188,6 +188,18 @@ class Handler(BaseHTTPRequestHandler):
     def log_message(self, *a):  # quiet
         pass
 
+    def handle(self):
+        if "afm_unreachable" in self.st.f and self.tls:
+            # the AFM API is gone (MR3 22 Oct: controller decommissioned, :443 reset every connection): reset each one
+            self.close_connection = True
+            try:
+                self.request.setsockopt(socket.SOL_SOCKET, socket.SO_LINGER, struct.pack("ii", 1, 0))
+                self.request.close()
+            except OSError:
+                pass
+            return
+        super().handle()
+
     # ---------------------------------------------------------------- plumbing
     def _send(self, code: int, body, headers=None):
         data = body if isinstance(body, bytes) else json.dumps(body).encode()

@@ -370,3 +370,14 @@ def test_fdb_cases_record_an_evidence_timeline(tmp_path):
             ev = json.loads(r["properties"])["evidence"]
             kinds = [x["kind"] for x in ev["timeline"]]
             assert ev["facts"]["switch"] and "inject" in kinds and kinds[-1] == end, (r["tc_id"], kinds)
+
+
+def test_an_unreachable_afm_blocks_with_one_line(tmp_path):
+    """Fault afm_unreachable (the fake AFM resets every connection, as MR3's :443 on 21-22 Oct): BLOCKED, the reason
+    in one line (tests/afm/conftest.py afm fixture), not a traceback."""
+    tcs = {"TC-SWH-061", "TC-SWH-062"}
+    assert _run(tmp_path, "afm_unreachable", tcs, "inventory-afm3.yaml", "test_afm_switch_faults.py") == \
+        {t: "BLOCKED" for t in tcs}
+    rows = list(csv.DictReader(open(next((tmp_path / "results").glob("*/tc_results.csv")))))
+    assert all(r["message"].startswith("AFM pre-flight failed - the AFM API at https://") and "connection reset" in r["message"]
+               for r in rows)

@@ -82,10 +82,61 @@ DIAG = {
         "Read the case log; fix access (SSH key, sudo) or the inventory, then re-run."),
 }
 
+# more ways to say the same diagnosis (summary, next step): an example uses one, chosen by a hash of its input, so
+# the model learns the facts rather than one fixed sentence (one wording everywhere made it repeat phrases and
+# invent "AFM repaired the FDB mismatch in 0.1 s" on real inputs it had not seen, 22 Oct)
+PHRASES = {
+    "none": [("{detail}.", "No action needed."), ("Healthy: {detail}.", "Nothing to do; keep the run as a reference.")],
+    "fdb_entry_not_restored": [
+        ("The static FDB entry {target} was deleted and AFM never re-programmed it within {limit} s; the test put it "
+         "back itself.", "Raise an AFM defect with this entry and timeline, plus the controller log from the moment of "
+                         "the delete; first check whether AFM noticed the FDB mismatch at all."),
+        ("FDB reconciliation failed: {target} stayed missing for the whole {limit} s window after the delete (restored "
+         "by the test, not by AFM).", "Report it to the AFM team with the controller logs; see if any FDB-mismatch "
+                                      "event or log line was produced.")],
+    "foreign_fdb_not_removed": [
+        ("A static FDB entry AFM never programmed ({target}) stayed on the switch for {limit} s; AFM did not remove it "
+         "and the test cleaned it up.", "Raise an AFM defect: include the entry, the timeline and the controller log; "
+                                        "check whether AFM watches FDB entries it did not create."),
+        ("FDB reconciliation failed: the foreign entry {target} was still present after {limit} s (removed by the "
+         "test, not by AFM).", "Report it to the AFM team with the controller logs and this timeline.")],
+    "pfc_pause_storm": [
+        ("Pause frames keep arriving while no traffic test runs: {detail}.",
+         "Identify the sender of the pauses (the peer of those ports), check its lossless / PFC settings and queues; "
+         "keep traffic away from the port meanwhile.")],
+    "pfc_watchdog_storm": [
+        ("PFC watchdog storm detected: {detail}.", "Look at the stormed queue's port and the device behind it (show "
+                                                    "pfcwd stats, show pfc counters); a peer that never stops pausing "
+                                                    "needs its NIC / switch driver or firmware investigated."),
+        ("The switch saw a PFC storm - {detail}.", "Find which peer keeps pausing that port and why (its PFC config, "
+                                                   "driver, firmware); do not run traffic through it until explained.")],
+    "qos_inconsistent": [
+        ("The fabric ports carry different QoS maps: {detail}.", "Bring every fabric port to the one PORT_QOS_MAP of "
+                                                                  "the rack's QoS design, then re-run.")],
+    "switch_cli_broken": [
+        ("{switch}'s SONiC CLI fails on every command ({detail}); the case did not test anything.",
+         "Whoever runs containers / Kubernetes on the switch must stop them and delete the extra network namespaces "
+         "(only asic0, asic1 ... may be listed by ip netns list); re-run afterwards."),
+        ("Rack setup problem on {switch}: {detail}, so SONiC's database connector rejects every show command.",
+         "Remove the foreign network namespaces (e.g. cni-* from k3s / CNI) on the switch and stop what creates them; "
+         "then repeat the case.")],
+    "afm_unreachable": [
+        ("No AFM API to talk to: {detail}. The case never ran.", "Verify afm.url and that the AFM controller is up at "
+                                                                 "that address (controller coordinates, afm-controller "
+                                                                 "container, port 443); then re-run."),
+        ("AFM could not be reached ({detail}) - a rack setup problem, not a result.",
+         "Check where the AFM controller runs now and whether it serves HTTPS on 443; fix the inventory's afm.url or "
+         "the controller, then repeat.")],
+    "test_error": [
+        ("The case could not run: {detail}.", "Check the case log, then fix rack access (SSH key, sudo) or the "
+                                              "inventory and re-run.")],
+}
+
 # injected virtual-rack fault -> the fault each case must then report (None: the case is not affected)
 INJECTED = {
     "no_fdb_reconcile": {"TC-SWH-061": "fdb_entry_not_restored", "TC-SWH-062": "foreign_fdb_not_removed"},
     "pfc_storm": {"TC-SWH-046": "pfc_watchdog_storm"},
+    "afm_unreachable": {"TC-SWH-061": "afm_unreachable", "TC-SWH-062": "afm_unreachable"},
     "cni_netns": {"TC-SWH-061": "switch_cli_broken", "TC-SWH-062": "switch_cli_broken", "TC-SWH-046": "switch_cli_broken"},
 }
 # when several apply, the one a case reports first (a broken CLI hides everything else)
@@ -234,8 +285,12 @@ def message_excerpt(msg: str, limit: int = 700) -> str:
     return joined[:limit // 2] + " ... " + joined[-(limit // 2 - 5):]
 
 
-def diagnosis(fault: str, detail: str, ev: dict) -> dict:
+def diagnosis(fault: str, detail: str, ev: dict, variant_key: str = "") -> dict:
+    """The expected answer; ``variant_key`` (the input text) picks one of the wordings (DIAG + PHRASES) stably."""
     cat, comp, summ, step = DIAG[fault]
+    forms = [(summ, step)] + PHRASES.get(fault, [])
+    if variant_key:
+        summ, step = forms[int(hashlib.sha256(variant_key.encode()).hexdigest(), 16) % len(forms)]
     f = ev.get("facts") or {}
     target = " ".join(str(f[k]) for k in ("switch", "ns", "vlan", "mac") if f.get(k)) + \
         (f" -> {f['port']}" if f.get("port") else "")
@@ -271,8 +326,67 @@ def examples(run: Path, source: str | None = None) -> list[dict]:
         else:
             fault = rf
             meta.update(label_source="rules", needs_review=True)
-        out.append({"input": evidence_text(tc, row, ev, rack), "output": diagnosis(fault, detail, ev), "meta": meta})
+        text = evidence_text(tc, row, ev, rack)
+        out.append({"input": text, "output": diagnosis(fault, detail, ev, _strip_ids(text)), "meta": meta,
+                    "facts": ev.get("facts") or {}})
     return out
+
+
+# ------------------------------------------------------------------ older-style variants (training augmentation)
+
+LEGACY_FAULTS = ("switch_cli_broken", "afm_unreachable", "fdb_entry_not_restored", "foreign_fdb_not_removed")
+_FIRST_FRAME = {"TC-SWH-046": "tests/l1/test_switch_health.py:390: in test_pfc_qos_consistent_no_storm",
+                "TC-SWH-061": "tests/afm/test_afm_switch_faults.py:421: in test_fdb_mismatch_missing_entry_restored",
+                "TC-SWH-062": "tests/afm/test_afm_switch_faults.py:462: in test_fdb_mismatch_foreign_entry_removed"}
+
+
+def legacy_message(fault: str, tc: str, facts: dict, rng) -> tuple[str, str]:
+    """(outcome, message) of a run from before the one-line BLOCKED reasons and the evidence timeline, as the real
+    19-22 Oct runs reported the same fault: a raw traceback or a check message."""
+    sw = facts.get("switch") or rng.choice([f"st{n}" for n in range(1, 7)])
+    ns = facts.get("ns") or rng.choice(["asic0", "asic1"])
+    if fault == "switch_cli_broken":
+        cmd = f"show pfc counters -n {ns}" if tc == "TC-SWH-046" else f"show interfaces status -n {ns} -d all"
+        cni = "cni-%08x-%04x-%04x-%04x-%012x" % tuple(rng.getrandbits(b) for b in (32, 16, 16, 16, 48))
+        return "failed", (f"{_FIRST_FRAME[tc]}\n    ...\nhelios/sonic.py:33: in sh\n    return self.run(cmd, **kw).check().stdout\n"
+                          f"helios/transport.py:124: in check\n    raise CommandError(self)\n"
+                          f"E   helios.transport.CommandError: [{sw}] rc=1: {cmd}\n"
+                          f"E     File \"/usr/lib/python3/dist-packages/swsscommon/swsscommon.py\", line 2065, in get_db_list\n"
+                          f"E       return _swsscommon.SonicV2Connector_Native_get_db_list(self)\n"
+                          f"E   RuntimeError: :- validateNamespace: Namespace {cni} is not a valid namespace name in config file")
+    if fault == "afm_unreachable":
+        errno, err = rng.choice([(54, "ConnectionResetError: [Errno 54] Connection reset by peer"),
+                                 (104, "ConnectionResetError: [Errno 104] Connection reset by peer"),
+                                 (61, "ConnectionRefusedError: [Errno 61] Connection refused")])
+        return "error", ("tests/afm/conftest.py:79: in afm\n    c.login()\nhelios/afm.py:122: in login\n    r = self.login_raw()\n"
+                         ".venv/lib/python3.14/site-packages/urllib3/connectionpool.py:793: in urlopen\n"
+                         f"E   {err}\nE   requests.exceptions.ConnectionError: ('Connection aborted.', "
+                         f"{err.split(':')[0]}({errno}, '{err.split('] ')[1]}'))")
+    vlan, mac = facts.get("vlan") or "Vlan100", facts.get("mac") or "02:00:00:%02x:%02x:%02x" % (
+        rng.randrange(1, 18), rng.randrange(4), rng.randrange(1, 40))
+    limit = rng.choice([300, 300, 120, 600])
+    if fault == "fdb_entry_not_restored":
+        return "failed", (f"1 check(s) failed:\n  - AFM did not program {sw} {ns} FDB|{vlan}|{mac} again within {limit} s "
+                          "(FDB mismatch not repaired)")
+    return "failed", (f"1 check(s) failed:\n  - AFM did not remove the foreign {sw} {ns} FDB|{vlan}|{mac} within {limit} s "
+                      "(FDB mismatch not repaired)")
+
+
+def legacy_variant(ex: dict, rng) -> dict | None:
+    """The same fault of ``ex`` as an older run reported it (no timeline, a raw traceback or check message), or
+    None for a fault no older run reported differently. Labelled like ``ex``; needs_review when the rules disagree."""
+    fault, tc = ex["output"]["fault"], ex["meta"]["tc_id"]
+    if fault not in LEGACY_FAULTS or tc not in _FIRST_FRAME:
+        return None
+    facts = {k: v for k, v in (ex.get("facts") or {}).items() if k in ("switch", "ns", "vlan", "mac")}
+    outcome, msg = legacy_message(fault, tc, facts, rng)
+    row = {"outcome": outcome, "message": msg}
+    rf, detail = rule_fault(tc, outcome, msg, {})
+    ev = {"facts": facts_from_message(msg)}
+    rack = ex["input"].split("Rack: ", 1)[1].split("\n", 1)[0] if "Rack: " in ex["input"] else "?"
+    text = evidence_text(tc, row, {}, rack)
+    meta = {**ex["meta"], "variant": "legacy", "rule_fault": rf, "needs_review": rf != fault}
+    return {"input": text, "output": diagnosis(fault, detail, ev, _strip_ids(text)), "meta": meta}
 
 
 def as_record(ex: dict, fmt: str) -> dict:

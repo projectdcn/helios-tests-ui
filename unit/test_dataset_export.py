@@ -134,3 +134,33 @@ def test_a_long_traceback_keeps_its_cause():
     ex = dx.message_excerpt(msg)
     assert len(ex) <= 700 and "validateNamespace: Namespace cni-7cf2" in ex and ex.startswith("tests/l1/test_switch_health.py:390")
     assert dx.message_excerpt("1 check(s) failed:\n  - short") == "1 check(s) failed: | - short"
+
+
+def test_older_style_variants_are_labelled_like_the_rules_read_them():
+    import random
+    rng = random.Random(3)
+    for fault, tcs in (("switch_cli_broken", ("TC-SWH-046", "TC-SWH-061", "TC-SWH-062")),
+                       ("afm_unreachable", ("TC-SWH-061", "TC-SWH-062")),
+                       ("fdb_entry_not_restored", ("TC-SWH-061",)), ("foreign_fdb_not_removed", ("TC-SWH-062",))):
+        for tc in tcs:
+            for _ in range(5):
+                ex = {"input": "Case x\nRack: vrack-g02-g17\n", "output": {"fault": fault}, "meta": {"tc_id": tc, "run": "r"},
+                      "facts": {"switch": "st4", "ns": "asic1", "vlan": "Vlan300", "mac": "02:00:00:05:01:09"}}
+                v = dx.legacy_variant(ex, rng)
+                assert v["output"]["fault"] == fault and not v["meta"]["needs_review"], (fault, tc, v["input"])
+                assert "Timeline" not in v["input"] and "Test message:" in v["input"] and v["meta"]["variant"] == "legacy"
+    assert dx.legacy_variant({"input": "", "output": {"fault": "none"}, "meta": {"tc_id": "TC-SWH-046"}}, rng) is None
+
+
+def test_every_wording_keeps_the_facts_and_is_safe():
+    import slm_eval
+    ev = {"facts": {"switch": "st4", "ns": "asic1", "vlan": "Vlan300", "mac": "02:00:00:05:01:09", "fdb_reconcile_s": 300}}
+    for fault in dx.DIAG:
+        for k in range(40):                       # enough keys to hit every wording
+            d = dx.diagnosis(fault, "the detail", ev, f"key{k}")
+            assert slm_eval.unsafe(d) is None, (fault, d)
+            if fault in ("fdb_entry_not_restored", "foreign_fdb_not_removed"):
+                assert "st4 asic1 Vlan300 02:00:00:05:01:09" in d["summary"] and "300" in d["summary"], d
+            elif fault != "none":
+                assert "the detail" in d["summary"] or fault in ("fdb_entry_not_restored",), d
+    assert len({dx.diagnosis("afm_unreachable", "x", ev, f"k{k}")["next_step"] for k in range(40)}) >= 2

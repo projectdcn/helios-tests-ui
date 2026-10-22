@@ -43,6 +43,7 @@ SCENARIOS = [
     (["pfc_storm"], 3),
     (["cni_netns"], 1),
     (["no_fdb_reconcile", "pfc_storm"], 2),
+    (["afm_unreachable"], 2),                  # the AFM API resets every connection (MR3 21-22 Oct)
 ]
 
 
@@ -152,6 +153,12 @@ def main(argv=None) -> int:
     ap.add_argument("--qos", default="none,mr3,lossless", help="QoS profiles of the virtual rack, runs split over them")
     ap.add_argument("--seed", type=int, default=1)
     ap.add_argument("--eval-fraction", type=float, default=0.15)
+    ap.add_argument("--only", default="", help="run only the scenarios with these faults, e.g. afm_unreachable,cni_netns")
+    ap.add_argument("--export-only", action="store_true", help="no new runs: export <out>/runs again (e.g. after "
+                                                                  "changing tools/dataset_export.py)")
+    ap.add_argument("--legacy-share", type=float, default=0.5,
+                    help="share of the faults also given as an older run reported them (raw traceback / check "
+                         "message, no timeline) - real runs before 22 Oct look like that")
     ap.add_argument("--ssh-port", type=int, default=23100, help="first SSH port of the private virtual rack")
     ap.add_argument("--afm-port", type=int, default=19443)
     a = ap.parse_args(argv)
@@ -159,7 +166,11 @@ def main(argv=None) -> int:
     out = a.out.resolve()
     runs = out / "runs"
     runs.mkdir(parents=True, exist_ok=True)
+    only = {f.strip() for f in a.only.split(",") if f.strip()}
+    scenarios = [(f, w) for f, w in SCENARIOS if not only or set(f) & only] or SCENARIOS
     profiles = [q.strip() for q in a.qos.split(",") if q.strip()]
+    if a.export_only:
+        profiles = []
     per = [a.runs // len(profiles) + (1 if k < a.runs % len(profiles) else 0) for k in range(len(profiles))]
     done = 0
     t0 = time.monotonic()
@@ -170,7 +181,7 @@ def main(argv=None) -> int:
         vr = Vrack(out, qos, a.ssh_port, a.afm_port)
         try:
             for _ in range(n):
-                faults = rng.choices([s for s, _w in SCENARIOS], weights=[w for _s, w in SCENARIOS])[0]
+                faults = rng.choices([s for s, _w in scenarios], weights=[w for _s, w in scenarios])[0]
                 params, scope = {}, {}
                 if "pfc_storm" in faults:      # a different stormed switch / port / priority / rate each run
                     k = rng.randrange(len(SWITCHES))
@@ -188,8 +199,11 @@ def main(argv=None) -> int:
         finally:
             vr.stop()
     recs, seen = [], set()
+    lrng = random.Random(a.seed * 7919)            # the older-style variants: their own stream, stable per seed
     for run in dx.run_dirs([runs]):
-        for ex in dx.examples(run):
+        exs = dx.examples(run)
+        exs += [v for ex in exs if lrng.random() < a.legacy_share for v in [dx.legacy_variant(ex, lrng)] if v]
+        for ex in exs:
             key = dx._strip_ids(ex["input"]) + json.dumps(ex["output"], sort_keys=True)
             if key in seen:
                 continue
@@ -200,7 +214,8 @@ def main(argv=None) -> int:
         with open(out / f"{name}.jsonl", "w") as fh:
             fh.writelines(json.dumps(r, ensure_ascii=False) + "\n" for r in rs)
     fault = lambda r: json.loads(r["messages"][-1]["content"])["fault"]  # noqa: E731
-    summary = {"runs": done, "examples": len(recs), "train": len(train), "eval": len(evl),
+    summary = {"runs": len(dx.run_dirs([runs])), "new_runs": done, "examples": len(recs), "train": len(train),
+               "eval": len(evl), "legacy_variants": sum(1 for r in recs if r["meta"].get("variant") == "legacy"),
                "needs_review": sum(1 for r in recs if r["meta"].get("needs_review")),
                "by_fault": dict(Counter(fault(r) for r in recs)), "eval_by_fault": dict(Counter(fault(r) for r in evl)),
                "seed": a.seed, "qos": profiles, "source": "virtual rack (simulated)"}
