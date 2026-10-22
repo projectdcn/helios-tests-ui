@@ -1,0 +1,51 @@
+# Offline installer bundles of the web UI (tools/build_ui_installer.py): Linux x86_64 and macOS (arm64 + x86_64).
+# A pushed tag v* also publishes them as a GitHub release (notes: docs/releases/<tag>.md, else generated).
+# Run it by hand (Actions tab, Run workflow) for bundles as a workflow artifact only.
+name: installer
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write          # the release; nothing else
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0     # git describe --tags names the bundle
+      - uses: actions/checkout@v4
+        with:
+          repository: projectdcn/helios-debug     # link check (HC-012), bundled next to app/
+          path: helios-debug-src
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: dependencies
+        run: python -m pip install --disable-pip-version-check -q -e ".[tools,dev]" packaging
+      - name: UI tests
+        run: python -m pytest -q -p no:cacheprovider unit/test_ui_*.py
+      - name: build the bundles
+        run: |
+          python tools/build_ui_installer.py --target all --out dist --debug-repo helios-debug-src
+          cd dist && sha256sum *.tar.gz | tee SHA256SUMS
+      - uses: actions/upload-artifact@v4
+        with:
+          name: helios-ui-bundles
+          path: dist/
+          if-no-files-found: error
+      - name: release
+        if: startsWith(github.ref, 'refs/tags/v')
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          notes=(--generate-notes)
+          [ -f "docs/releases/$TAG.md" ] && notes=(--notes-file "docs/releases/$TAG.md")
+          gh release create "$TAG" dist/*.tar.gz dist/SHA256SUMS --title "helios-tests UI $TAG" "${notes[@]}"
