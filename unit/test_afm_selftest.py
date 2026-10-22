@@ -343,3 +343,16 @@ def test_lifecycle_fault_detected(tmp_path, fault, tcs):
 def test_fault_detected(tmp_path, fault):
     verdicts = _run(tmp_path, fault, FAULTS[fault])
     assert {k for k, v in verdicts.items() if v == "FAIL"} == FAULTS[fault], verdicts
+
+
+def test_a_broken_switch_cli_blocks_with_one_line(tmp_path):
+    """g02-g17 22 Oct: k3s pods left cni-<uuid> network namespaces on the switches and SONiC's CLI refused every
+    command - the cases are BLOCKED with the reason (helios/sonic.py cli_broken_reason), not FAILed per switch."""
+    tcs = {"TC-SWH-061", "TC-SWH-062"}
+    assert _run(tmp_path / "ok", "", tcs, "inventory-afm3.yaml", "test_afm_switch_faults.py") == \
+        {t: "PASS" for t in tcs}
+    assert _run(tmp_path / "bad", "cni_netns", tcs, "inventory-afm3.yaml", "test_afm_switch_faults.py") == \
+        {t: "BLOCKED" for t in tcs}
+    rows = list(csv.DictReader(open(next((tmp_path / "bad" / "results").glob("*/tc_results.csv")))))
+    assert rows and all(r["message"].startswith("switch pre-flight failed - the SONiC CLI on ") and
+                        "cni-2cb1c2bc" in r["message"] and "Traceback" not in r["message"] for r in rows)

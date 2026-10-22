@@ -134,6 +134,15 @@ class CommandError(RuntimeError):
         super().__init__(f"[{result.host}] rc={result.rc}: {result.cmd}\n{result.tail()}")
 
 
+class SwitchCliBroken(CommandError):
+    """The switch's own SONiC CLI fails before doing anything (not what the test checks): the case is BLOCKED with
+    this one-line reason (helios/pytest_plugin.py), not FAILed with a traceback per switch."""
+
+    def __init__(self, result: CmdResult, reason: str):
+        self.result, self.reason = result, reason
+        RuntimeError.__init__(self, reason)
+
+
 class CommandTimeout(RuntimeError):
     pass
 

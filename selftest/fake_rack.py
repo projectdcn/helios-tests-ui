@@ -775,6 +775,12 @@ class FakeSwitchTransport:
         res = None
         with st.lock:
             sim._due_links()            # realistic timing: a link due back is up for the switch CLI as well
+            if "cni_netns" in st.f and re.match(r"(sudo\s+)?show\s", cmd):
+                # g02-g17 22 Oct: k3s pods left cni-<uuid> namespaces; swsscommon refuses every SONiC CLI command
+                return CmdResult(self.host.name, cmd, 1, "", (
+                    'Traceback (most recent call last):\n  File "/usr/lib/python3/dist-packages/swsscommon/swsscommon.py", '
+                    "line 2065, in get_db_list\nRuntimeError: :- validateNamespace: Namespace "
+                    "cni-2cb1c2bc-73fd-a2dc-69e0-87f073c9668e is not a valid namespace name in config file\n"))
             if cmd == "docker exec afm-agent ps -eo pid,etimes,args":
                 body = self.run("docker exec afm-agent ps -eo pid,args").stdout
                 sa, na = (600, 900) if "node_agent_first" in st.f else (900, 600)

@@ -6,9 +6,25 @@ import shlex
 
 from .inventory import Host
 from .parsers import parse_db_hash, parse_kv, parse_table
-from .transport import CmdResult, Transport
+from .transport import CmdResult, CommandError, SwitchCliBroken, Transport
 
 DEFAULT_FABRIC_PORT_RE = r"^Ethernet\d+$"  # excludes Ethernet-BP*/-IB*/-Rec* internal ports
+# SONiC's swsscommon refuses EVERY CLI command when /var/run/netns holds a namespace that is not an ASIC one
+# (g02-g17 22 Oct: a k3s / Cilium "AIOps" deployment on the switches left cni-<uuid> namespaces; even show version
+# failed and TC-SWH-046 / 061 / 062 FAILed with 8 tracebacks)
+_FOREIGN_NS_RX = re.compile(r"validateNamespace: Namespace (\S+) is not a valid namespace name")
+
+
+def cli_broken_reason(name: str, r: CmdResult) -> str | None:
+    """The one-line BLOCKED reason when the switch's SONiC CLI itself is broken, else None."""
+    m = _FOREIGN_NS_RX.search(f"{r.stdout}\n{r.stderr}")
+    if not m:
+        return None
+    kind = " (container networking: k3s / Kubernetes CNI pods on the switch)" if m.group(1).startswith("cni-") else ""
+    return (f"switch pre-flight failed - the SONiC CLI on {name} refuses every command: network namespace "
+            f"{m.group(1)} is not an ASIC namespace{kind}. Not a test result: whoever runs the containers there must "
+            f"stop them and remove the extra namespaces (ip netns list on {name} shows them; only asic0, asic1 ... "
+            f"belong there). Failed: {r.cmd}")
 
 
 def _ns_flag(ns: str | None) -> str:
@@ -30,7 +46,13 @@ class SonicSwitch:
         return self.t.run(cmd, **kw)
 
     def sh(self, cmd: str, **kw) -> str:
-        return self.run(cmd, **kw).check().stdout
+        r = self.run(cmd, **kw)
+        if r.rc != 0:
+            why = cli_broken_reason(self.name, r)
+            if why:
+                raise SwitchCliBroken(r, why)
+            raise CommandError(r)
+        return r.stdout
 
     # -- namespaces ---------------------------------------------------------
     def netns(self) -> list[str]:

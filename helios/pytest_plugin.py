@@ -260,6 +260,11 @@ def pytest_runtest_setup(item):
 RACK_FIXTURES = {"rack", "computes", "switch", "switch_name", "ops", "afm_ready", "datapath_ready", "links"}
 
 
+def _is_cli_broken(e) -> bool:
+    from .transport import SwitchCliBroken
+    return isinstance(e, SwitchCliBroken)
+
+
 @pytest.hookimpl(hookwrapper=True)
 def pytest_runtest_makereport(item, call):
     outcome = yield
@@ -280,6 +285,11 @@ def pytest_runtest_makereport(item, call):
             # the case itself found it cannot make a valid measurement (TC-SWH-060: too few source trays, load not
             # generated) and said so in its first words: BLOCKED, not FAIL - a check message mentioning it stays FAIL
             outcome = "blocked"
+        exc = getattr(call, "excinfo", None)
+        if rep.failed and exc is not None and _is_cli_broken(exc.value):
+            # the switch's own CLI is broken (helios/sonic.py cli_broken_reason): BLOCKED, one line, no traceback
+            outcome, msg = "blocked", str(exc.value)
+            rep.longrepr = msg
         excluded = dict(item.user_properties).get("excluded_trays")
         if outcome == "passed" and excluded:
             # passed, but only on the trays the pre-flight kept: not a full-rack PASS
