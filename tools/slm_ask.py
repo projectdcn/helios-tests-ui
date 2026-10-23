@@ -34,6 +34,7 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "tools"))
 
 import dataset_export as dx  # noqa: E402
+import slm_ground as ground  # noqa: E402
 import slm_eval as ev  # noqa: E402
 import slm_prep as prep  # noqa: E402
 
@@ -42,7 +43,10 @@ QA_SYSTEM = ("You answer questions about AMD Helios rack test results (SONiC swi
              "trays) using ONLY the evidence given. If the evidence does not show the answer, say so plainly - do not "
              "guess or invent names, files or settings. Copy switch, tray, port and pod names exactly as written. Be "
              "brief. Never suggest disruptive actions (flapping or shutting ports, rebooting or power-cycling, config "
-             "reload); say what to check and who should act.")
+             "reload); say what to check and who should act. Give commands ONLY from the command reference you are "
+             "given (exactly as written, asicN = asic0 / asic1); if none fits, say it is not in your reference. "
+             "'Port 22' in an SSH error is the SSH port of the tray, not a switch port. A tray's cabling, when given, "
+             "is from a dated link scan: say it may have changed since.")
 
 
 def inventory_names(path: Path | None) -> dict[str, str]:
@@ -96,7 +100,9 @@ def evidence_context(run: Path, exs: list[dict], limit: int = 9000, inventory: P
             parts.append(f"Case {r.get('tc_id')} ({r.get('test', '')}): verdict {str(r.get('outcome', '')).upper()}"
                          + (f"; message: {dx.message_excerpt(r['message'], 400)}" if r.get("message") else ""))
     text = annotate("\n\n".join(parts), inventory_names(inventory))
-    return text[:limit] + "\n[evidence cut]" if len(text) > limit else text
+    text = text[:limit] + "\n[evidence cut]" if len(text) > limit else text
+    cab = ground.tray_cabling(run.parent, ground.trays_in(text))        # trays named in the evidence
+    return text + ("\n\n" + cab if cab else "") + "\n\n" + ground.command_reference()
 
 
 def _clean(answer: str) -> str:
@@ -112,11 +118,12 @@ def _warn_unsafe(answer: str) -> None:
 CHAT_HELP = "q quit · r start over · e show the evidence the model sees · h help"
 
 
-def chat(gen, context: str, run_name: str, read=input, keep_turns: int = 6) -> None:
+def chat(gen, context: str, run_name: str, read=input, keep_turns: int = 6, rack_results: Path | None = None) -> None:
     """Questions one after the other about one run: the evidence stays the first message, the last ``keep_turns``
     question / answer pairs are kept (follow-ups work), older ones are dropped to keep the prompt short."""
     print(f"Questions about {run_name} - answers come from its evidence only.  {CHAT_HELP}")
     turns: list[tuple[str, str]] = []
+    told: set[str] = set()
     while True:
         try:
             q = read("› ").strip()
@@ -128,7 +135,7 @@ def chat(gen, context: str, run_name: str, read=input, keep_turns: int = 6) -> N
         if q.lower() in ("q", "quit", "exit"):
             return
         if q.lower() in ("r", "reset"):
-            turns = []
+            turns, told = [], set()
             print("(started over)")
             continue
         if q.lower() in ("e", "evidence"):
@@ -137,6 +144,12 @@ def chat(gen, context: str, run_name: str, read=input, keep_turns: int = 6) -> N
         if q.lower() in ("h", "help", "?"):
             print(CHAT_HELP)
             continue
+        new = [t for t in ground.trays_in(q) if f"Cabling of {t} " not in context and t not in told]
+        if new and rack_results is not None:              # a tray first named in this question: its cabling too
+            cab = ground.tray_cabling(rack_results, new)
+            if cab:
+                q = f"{q}\n\n{cab}"
+            told.update(new)
         msgs = [{"role": "system", "content": QA_SYSTEM}]
         for k, (pq, pa) in enumerate(turns[-keep_turns:] + [(q, None)]):
             first = k == 0
@@ -175,7 +188,7 @@ def main(argv=None) -> int:
         raise SystemExit(f"{a.run}: no case with evidence the model knows ({', '.join(dx.CASES)})")
     gen = ev.Mlx(a.model, a.adapter, a.max_tokens) if a.backend == "mlx" else ev.OpenAI(a.url, a.model, a.max_tokens)
     if a.chat:
-        chat(gen, evidence_context(a.run, exs, inventory=a.inventory), a.run.name)
+        chat(gen, evidence_context(a.run, exs, inventory=a.inventory), a.run.name, rack_results=a.run.parent)
         return 0
     if a.question:
         msgs = [{"role": "system", "content": QA_SYSTEM},
