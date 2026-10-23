@@ -106,6 +106,9 @@ def key_path(key_file: str | None, who: str, host: str | None = None) -> str | l
     files, _ = resolve_keys(key_file, who, host)
     return files[0] if files and len(files) == 1 else files
 
+_WARNED_KNOWN_HOSTS: set = set()
+
+
 def load_known_hosts(client, path: str | None = None) -> None:
     """client.load_system_host_keys(), but one malformed line does not stop every connection: paramiko raises on a
     key that does not decode (InvalidHostKey) where OpenSSH skips the line. g02-g17 22 Oct 18:53: a truncated line in
@@ -136,8 +139,10 @@ def load_known_hosts(client, path: str | None = None) -> None:
         client.load_system_host_keys(tmp.name)
     finally:
         os.unlink(tmp.name)
-    logging.getLogger("helios").warning("%s: skipped malformed line(s) %s (as OpenSSH does); the rest of the host keys "
-                                        "are used", kh, ", ".join(map(str, bad)))
+    if (kh, tuple(bad)) not in _WARNED_KNOWN_HOSTS:     # once per run, not once per connection
+        _WARNED_KNOWN_HOSTS.add((kh, tuple(bad)))
+        logging.getLogger("helios").warning("%s: skipped malformed line(s) %s (as OpenSSH does); the rest of the host "
+                                            "keys are used", kh, ", ".join(map(str, bad)))
 
 
 @dataclass
