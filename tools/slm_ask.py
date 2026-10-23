@@ -10,6 +10,9 @@ is shown next to what the rules say. Read-only: it only reads the run folder.
     python tools/slm_ask.py RUN_DIR --question "why was TC-SWH-060 blocked, which trays should I look at?" \
         --model mlx-community/Qwen3-4B-Instruct-2507-4bit --inventory inventory/fullrack-jump-afm.local.yaml
 
+    python tools/slm_ask.py RUN_DIR --chat --model mlx-community/Qwen3-4B-Instruct-2507-4bit \
+        --inventory inventory/fullrack-jump-afm.local.yaml          # several questions, follow-ups work
+
 --question: a free-text answer to your question about this run, from its evidence only (all cases, or --tc ones,
 with everything they recorded); the model is told to say when the evidence does not show something. Without
 --adapter (the untrained model) answers questions in prose; the trained adapter leans to its JSON diagnosis format.
@@ -64,8 +67,13 @@ def annotate(text: str, names: dict[str, str]) -> str:
 
 
 def question_input(run: Path, exs: list[dict], question: str, limit: int = 9000, inventory: Path | None = None) -> str:
-    """The evidence of the run's cases (with the verdict and message), what else each recorded, the inventory's AFM
-    names (--inventory), then the question."""
+    """The evidence of the run (evidence_context) followed by the question."""
+    return evidence_context(run, exs, limit, inventory) + f"\n\nQuestion: {question}"
+
+
+def evidence_context(run: Path, exs: list[dict], limit: int = 9000, inventory: Path | None = None) -> str:
+    """The evidence of the run's cases (with the verdict and message), what else each recorded, AFM names annotated
+    with their tray (--inventory)."""
     import csv
     csv.field_size_limit(10**9)
     with open(run / "tc_results.csv", newline="") as fh:
@@ -88,7 +96,57 @@ def question_input(run: Path, exs: list[dict], question: str, limit: int = 9000,
             parts.append(f"Case {r.get('tc_id')} ({r.get('test', '')}): verdict {str(r.get('outcome', '')).upper()}"
                          + (f"; message: {dx.message_excerpt(r['message'], 400)}" if r.get("message") else ""))
     text = annotate("\n\n".join(parts), inventory_names(inventory))
-    return (text[:limit] + "\n[evidence cut]" if len(text) > limit else text) + f"\n\nQuestion: {question}"
+    return text[:limit] + "\n[evidence cut]" if len(text) > limit else text
+
+
+def _clean(answer: str) -> str:
+    return answer.replace("<think>", "").replace("</think>", "").strip()
+
+
+def _warn_unsafe(answer: str) -> None:
+    bad = ev.UNSAFE.search(answer)
+    if bad:
+        print(f"\n!! the answer mentions a disruptive action ({bad.group(0)}) - do not follow it without review")
+
+
+CHAT_HELP = "q quit · r start over · e show the evidence the model sees · h help"
+
+
+def chat(gen, context: str, run_name: str, read=input, keep_turns: int = 6) -> None:
+    """Questions one after the other about one run: the evidence stays the first message, the last ``keep_turns``
+    question / answer pairs are kept (follow-ups work), older ones are dropped to keep the prompt short."""
+    print(f"Questions about {run_name} - answers come from its evidence only.  {CHAT_HELP}")
+    turns: list[tuple[str, str]] = []
+    while True:
+        try:
+            q = read("› ").strip()
+        except (EOFError, KeyboardInterrupt):
+            print()
+            return
+        if not q:
+            continue
+        if q.lower() in ("q", "quit", "exit"):
+            return
+        if q.lower() in ("r", "reset"):
+            turns = []
+            print("(started over)")
+            continue
+        if q.lower() in ("e", "evidence"):
+            print(textwrap.indent(context, "  | "))
+            continue
+        if q.lower() in ("h", "help", "?"):
+            print(CHAT_HELP)
+            continue
+        msgs = [{"role": "system", "content": QA_SYSTEM}]
+        for k, (pq, pa) in enumerate(turns[-keep_turns:] + [(q, None)]):
+            first = k == 0
+            msgs.append({"role": "user", "content": (context + "\n\nQuestion: " + pq) if first else pq})
+            if pa is not None:
+                msgs.append({"role": "assistant", "content": pa})
+        answer = _clean(gen(msgs, None))
+        print(answer)
+        _warn_unsafe(answer)
+        turns.append((q, answer))
 
 
 def main(argv=None) -> int:
@@ -104,6 +162,8 @@ def main(argv=None) -> int:
     ap.add_argument("--show-input", action="store_true", help="print what the model was given")
     ap.add_argument("--json", action="store_true", help="one JSON line per case instead of the text view")
     ap.add_argument("--question", default="", help="a free-text question about this run, answered from its evidence")
+    ap.add_argument("--chat", action="store_true",
+                    help="ask questions one after the other about this run (the model and evidence loaded once)")
     ap.add_argument("--inventory", type=Path, default=None,
                     help="--question: the rack inventory, so AFM names (pod-1-12-ComputeTray) map to trays (ct13)")
     a = ap.parse_args(argv)
@@ -111,19 +171,20 @@ def main(argv=None) -> int:
         raise SystemExit(f"{a.run}: no tc_results.csv")
     want = {t.strip() for t in a.tc.split(",") if t.strip()}
     exs = [e for e in dx.examples(a.run) if not want or e["meta"]["tc_id"] in want]
-    if not exs and not a.question:
+    if not exs and not (a.question or a.chat):
         raise SystemExit(f"{a.run}: no case with evidence the model knows ({', '.join(dx.CASES)})")
     gen = ev.Mlx(a.model, a.adapter, a.max_tokens) if a.backend == "mlx" else ev.OpenAI(a.url, a.model, a.max_tokens)
+    if a.chat:
+        chat(gen, evidence_context(a.run, exs, inventory=a.inventory), a.run.name)
+        return 0
     if a.question:
         msgs = [{"role": "system", "content": QA_SYSTEM},
                 {"role": "user", "content": question_input(a.run, exs, a.question, inventory=a.inventory)}]
         if a.show_input:
             print(textwrap.indent(msgs[1]["content"], "  | "))
-        answer = gen(msgs, None).replace("<think>", "").replace("</think>", "").strip()
+        answer = _clean(gen(msgs, None))
         print(answer)
-        bad = ev.UNSAFE.search(answer)
-        if bad:
-            print(f"\n!! the answer mentions a disruptive action ({bad.group(0)}) - do not follow it without review")
+        _warn_unsafe(answer)
         return 0
     for ex in exs:
         rec = dx.as_record(ex, "chat")

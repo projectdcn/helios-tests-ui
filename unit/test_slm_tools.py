@@ -198,3 +198,24 @@ def test_question_mode_gives_the_evidence_and_annotates_afm_names(tmp_path):
     q = slm_ask.question_input(run, exs, "which tray?", inventory=inv)
     assert "pod-1-12-ComputeTray [= ct13, 10.255.4.59]" in q and '"excluded_trays"' in q
     assert "Case TC-XYZ-001 (u): verdict PASSED" in q and q.endswith("Question: which tray?")
+
+
+def test_chat_keeps_the_evidence_first_and_follow_ups_in_context(capsys):
+    import slm_ask
+    asked = []
+
+    def gen(msgs, _rec):
+        asked.append(msgs)
+        return "<think>\n</think>\nanswer %d" % len(asked)
+
+    script = iter(["which trays?", "", "e", "and their addresses?", "r", "fresh question", "q"])
+    slm_ask.chat(gen, "EVIDENCE", "run-1", read=lambda _p: next(script))
+    out = capsys.readouterr().out
+    assert [len(m) for m in asked] == [2, 4, 2]                       # follow-up has the first turn; r starts over
+    assert asked[1][1]["content"] == "EVIDENCE\n\nQuestion: which trays?" and asked[1][2]["content"] == "answer 1"
+    assert asked[1][3]["content"] == "and their addresses?" and asked[2][1]["content"].startswith("EVIDENCE")
+    assert "  | EVIDENCE" in out and "(started over)" in out and "<think>" not in out
+    many = iter([f"q{k}" for k in range(9)] + ["q"])
+    asked.clear()
+    slm_ask.chat(gen, "EV", "run-2", read=lambda _p: next(many), keep_turns=2)
+    assert len(asked[-1]) == 2 + 2 * 2 and asked[-1][1]["content"].startswith("EV\n\nQuestion: q6")   # oldest dropped
