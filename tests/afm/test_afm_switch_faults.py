@@ -398,7 +398,7 @@ def _fdb_target(ops, rack):
     thresholds.afm.avoid_ports; deterministic (last switch, last matching entry) so reruns hit the same kind of entry."""
     slots = set(_ready_slots(ops))
     avoid = set(ops.th("avoid_ports", []) or [])
-    seed = os.environ.get("HELIOS_FDB_TARGET_SEED")     # tools/vrack_dataset.py: a random eligible entry per run
+    seed = os.environ.get("HELIOS_FDB_TARGET_SEED")     # helios-slm: helios_slm/vrack_dataset.py: a random eligible entry per run
     found = []
     for sw in reversed(list(rack.switches.values())):
         for ns in sw.namespaces():

@@ -1,4 +1,4 @@
-"""What a case saw, as a timeline, for training data (tools/dataset_export.py): the target, the state before, the
+"""What a case saw, as a timeline, for training data (helios-slm: helios_slm/export.py): the target, the state before, the
 fault it injected, every change of the watched state, the repair (or its absence), AFM events, counter deltas.
 
 Stored with the case's results (tc_results.csv properties, key "evidence"); it never decides a verdict. A watched

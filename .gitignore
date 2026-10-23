@@ -24,6 +24,5 @@ testplan/~$*
 # installer bundles (tools/build_ui_installer.py)
 dist/
 
-# SLM training data (tools/vrack_dataset.py, tools/dataset_export.py): generated, may hold rack addresses
-dataset/
+# the old MLX environment (moved to helios-slm): delete it once nothing runs from it
 .venv-mlx/

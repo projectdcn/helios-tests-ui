@@ -118,10 +118,3 @@ fieldset { min-width: 0; }
 #inst-targets td { overflow-wrap: anywhere; vertical-align: top; }
 .inst-cmd { display: block; margin-top: 3px; font-size: 11.5px; user-select: all; }
 
-/* Results: Ask / Diagnose panel (ui/assist.py) */
-.ask-log { max-height: 420px; overflow-y: auto; margin: 6px 0; }
-.ask-log .q { font-weight: 600; margin-top: 10px; }
-.ask-log .a { white-space: pre-wrap; margin: 4px 0 6px 0; padding: 6px 8px; border-left: 3px solid var(--line, #ccc); }
-.ask-log .warn-unsafe { color: var(--bad); font-weight: 600; }
-.ask-log table { margin: 4px 0; }
-#ask-q { flex: 1; min-width: 280px; }

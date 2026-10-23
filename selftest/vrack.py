@@ -10,7 +10,7 @@ the UI, pytest with a normal SSH inventory, helios-debug, ssh and curl all talk 
   FakeSwitchTransport / FakeComputeTransport the self-tests use; ones they do not model fall back to the recorded
   outputs in selftest/replay (rc 127 "no rule matches" when none fits). An interactive shell is a line REPL.
 - Control: http://127.0.0.1:<afm-port + 1>/  GET state, GET/POST /faults {"add": [...], "remove": [...], "params":
-  {fault: {...}}} (params: details of a fault, e.g. pfc_storm {switch, asic, port, prio, frames} - tools/vrack_dataset.py).
+  {fault: {...}}} (params: details of a fault, e.g. pfc_storm {switch, asic, port, prio, frames} - helios-slm: helios_slm/vrack_dataset.py).
 - Writes <state-dir>/vrack.local.yaml (hosts + ports for pytest / the UI; --inventory PATH writes it elsewhere, e.g. an
   installed UI's data/inventories/) and keeps its SSH host key there.
 

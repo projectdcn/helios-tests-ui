@@ -1088,65 +1088,8 @@ async function loadResults() {
     h("td", {},
       r.reports.includes("report.html") ? null : h("button", { onclick: () => buildReport(r.name) }, "Build report"),
       r.health && r.health.verdict !== "GO" ? h("button", { onclick: () => askRerun(r.name) }, "Re-run failed") : null,
-      h("button", { onclick: () => openAsk(r.name), title: "ask the model about this run (answers from its evidence)" }, "Ask"),
       h("button", { onclick: () => clearItem("results", r.name, r.name), title: "move this run folder to the trash (Restore puts it back)" }, "Clear")))));
 }
-// ---------------------------------------------------------------- Ask / Diagnose (ui/assist.py)
-let askRun = null, askHist = [];
-function askAdd(cls, ...kids) { const d = h("div", { class: cls }, ...kids); $("#ask-log").append(d); d.scrollIntoView({ block: "nearest" }); return d; }
-async function openAsk(run) {
-  askRun = run; askHist = [];
-  $("#ask-run").textContent = run;
-  $("#ask-log").replaceChildren();
-  $("#ask-box").hidden = false;
-  $("#ask-box").scrollIntoView({ block: "start" });
-  $("#ask-status").textContent = "checking the model ...";
-  let st;
-  try { st = await api("GET", "/api/ai/status"); } catch (e) { st = { configured: false, error: e.message }; }
-  if (askRun !== run) return;
-  const ok = st.configured && st.reachable;
-  $("#ask-status").textContent = ok ? `model ${st.model} at ${st.url}` : (st.error || "model not available");
-  $("#ask-status").className = ok ? "muted small" : "err small";
-  for (const b of ["#ask-go", "#ask-diagnose"]) $(b).disabled = !ok;
-  if (ok) $("#ask-q").focus();
-}
-$("#ask-close").addEventListener("click", () => { $("#ask-box").hidden = true; askRun = null; });
-$("#ask-reset").addEventListener("click", () => { askHist = []; $("#ask-log").replaceChildren(); $("#ask-q").focus(); });
-$("#ask-form").addEventListener("submit", async ev => {
-  ev.preventDefault();
-  const q = $("#ask-q").value.trim(), run = askRun;
-  if (!q || !run) return;
-  $("#ask-q").value = "";
-  askAdd("q", q);
-  const a = askAdd("a muted", "thinking ...");
-  $("#ask-go").disabled = true;
-  try {
-    const r = await api("POST", `/api/racks/${enc(rack.name)}/results/${enc(run)}/ask`, { question: q, history: askHist });
-    if (askRun !== run) return;
-    a.className = "a"; a.textContent = r.answer;
-    if (r.unsafe) askAdd("warn-unsafe", `The answer mentions a disruptive action (${r.unsafe}) - do not follow it without review.`);
-    askHist.push({ q, a: r.answer });
-  } catch (e) { a.className = "a err"; a.textContent = e.message; }
-  finally { $("#ask-go").disabled = false; $("#ask-q").focus(); }
-});
-$("#ask-diagnose").addEventListener("click", async () => {
-  const run = askRun;
-  if (!run) return;
-  const a = askAdd("a muted", "diagnosing every case with evidence ...");
-  $("#ask-diagnose").disabled = true;
-  try {
-    const r = await api("POST", `/api/racks/${enc(rack.name)}/results/${enc(run)}/diagnose`, {});
-    if (askRun !== run) return;
-    a.replaceWith(h("table", {}, h("thead", {}, h("tr", {}, ...["Case", "Model: fault / root cause", "Summary", "Next step", "Rules"].map(t => h("th", {}, t)))),
-      h("tbody", {}, ...r.cases.map(c => h("tr", {},
-        h("td", {}, c.tc_id),
-        h("td", { class: c.agrees ? "ok" : "warn" }, c.model ? `${c.model.fault} / ${c.model.root_cause}` : "no answer"),
-        h("td", {}, c.model ? c.model.summary : (c.raw || "")),
-        h("td", { class: c.unsafe ? "err" : "" }, c.model ? (c.unsafe ? `[disruptive: ${c.unsafe}] ` : "") + c.model.next_step : ""),
-        h("td", { class: "muted" }, `${c.rules.fault} / ${c.rules.root_cause}` + (c.agrees ? " ✓" : "")))))));
-  } catch (e) { a.className = "a err"; a.textContent = e.message; }
-  finally { $("#ask-diagnose").disabled = false; }
-});
 function selectedRuns() { return [...document.querySelectorAll("#results .run-sel:checked")].map(x => x.value); }
 function selChanged() {
   const n = selectedRuns().length, all = document.querySelectorAll("#results .run-sel").length;
