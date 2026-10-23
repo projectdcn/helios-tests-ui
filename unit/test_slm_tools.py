@@ -135,3 +135,41 @@ def test_prep_leaves_out_examples_whose_label_is_in_doubt(tmp_path):
     n = lambda o: sum(1 for f in ("train", "valid") for _ in (tmp_path / o / f"{f}.jsonl").read_text().splitlines())  # noqa: E731
     assert prep.main([str(d), "-o", str(tmp_path / "b"), "--max-healthy", "1", "--min-per-class", "0", "--keep-unreviewed"]) == 0
     assert n("b") == n("a") + 1
+
+
+def test_ask_shows_the_models_answer_next_to_the_rules(tmp_path, capsys):
+    import csv as _csv
+    import slm_ask
+    run = tmp_path / "g02-g17-20261023-064053"
+    run.mkdir()
+    msg = ("AFM pre-flight failed - rack not healthy, not starting:\n  - compute pod-1-12-ComputeTray: admitted conditions="
+           "[{'type': 'healthy', 'status': 'unknown', 'reason': 'ComputeNode health update not received since x'}]")
+    with open(run / "tc_results.csv", "w", newline="") as fh:
+        w = _csv.DictWriter(fh, ["tc_id", "test", "outcome", "message", "properties"])
+        w.writeheader()
+        w.writerow({"tc_id": "TC-SWH-060", "test": "t", "outcome": "blocked", "message": msg, "properties": "{}"})
+    seen = []
+
+    class H(BaseHTTPRequestHandler):
+        def do_POST(self):
+            seen.append(json.loads(self.rfile.read(int(self.headers["Content-Length"]))))
+            out = json.dumps({"choices": [{"message": {"content": json.dumps(
+                {"fault": "rack_not_healthy", "root_cause": "compute_health_stale", "category": "rack_setup",
+                 "summary": "pod-1-12 stopped reporting", "next_step": "check the tray"})}}]}).encode()
+            self.send_response(200)
+            self.end_headers()
+            self.wfile.write(out)
+
+        def log_message(self, *a):
+            pass
+
+    srv = ThreadingHTTPServer(("127.0.0.1", 0), H)
+    threading.Thread(target=srv.serve_forever, daemon=True).start()
+    try:
+        assert slm_ask.main([str(run), "--backend", "openai", "--model", "m",
+                             "--url", f"http://127.0.0.1:{srv.server_port}/v1"]) == 0
+    finally:
+        srv.shutdown()
+    out = capsys.readouterr().out
+    assert "rack_not_healthy / compute_health_stale" in out and "agrees with the rules" in out
+    assert "Test message: AFM pre-flight failed" in seen[0]["messages"][1]["content"]      # no timeline: message kept
