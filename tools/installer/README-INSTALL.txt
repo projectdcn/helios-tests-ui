@@ -95,3 +95,13 @@ Command-line runs on the server use the same code and venv:
     ../venv/bin/python -m pytest tests --inventory ~/helios-ui/data/inventories/mr3.local.yaml
 
 Link check (HC-012): when the bundle carries helios-debug/, install.sh puts it next to app/ (<prefix>/helios-debug); the rack health check's HC-012 then runs its link scan with the same venv. A bundle built with --no-debug leaves it out and HC-012 skips.
+
+Ask the model about a run (optional)
+------------------------------------
+Results tab, Ask on a run: a small language model answers questions about that run from its evidence, and Diagnose
+shows its diagnosis of each case next to the rules. The model runs behind an OpenAI-compatible endpoint the UI
+calls; set in config/ui.env, then restart the UI:
+    HELIOS_AI_URL=http://127.0.0.1:8090/v1     (Mac: mlx_lm.server; Linux: Ollama / llama.cpp / vLLM)
+    HELIOS_AI_MODEL=<the model name that server expects>
+    HELIOS_AI_KEY=<only if the endpoint wants a bearer key>
+Not set: the panel says so. Nothing is sent anywhere else. Answers are advisory - check them against the evidence.

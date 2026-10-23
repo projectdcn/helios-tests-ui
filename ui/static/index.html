@@ -221,6 +221,21 @@
       <span class="muted">empty = the password saved for this rack, if any</span></label>
     <button id="rerun-go" class="primary">Re-run failed</button> <button id="rerun-cancel">Cancel</button>
   </div>
+  <div id="ask-box" class="box" hidden>
+    <div class="row"><b>Ask about <span id="ask-run"></span></b>
+      <button id="ask-diagnose" title="the model's diagnosis of each case, next to what the rules say">Diagnose</button>
+      <button id="ask-reset" title="start the conversation over">Start over</button>
+      <button id="ask-close">Close</button>
+      <span id="ask-status" class="muted small"></span></div>
+    <p class="muted small">A small language model answers from this run's evidence only (with the rack's tray names,
+      the trays' cabling from the newest link scan and a read-only command reference). Advisory: check names and
+      numbers against the evidence before acting.</p>
+    <div id="ask-log" class="ask-log" aria-live="polite"></div>
+    <form id="ask-form" class="row" autocomplete="off">
+      <input id="ask-q" maxlength="2000" placeholder="e.g. why was TC-SWH-060 blocked, which trays should I look at?" aria-label="question about this run">
+      <button type="submit" class="primary" id="ask-go">Ask</button>
+    </form>
+  </div>
   <h3>Sessions</h3>
   <p class="muted small">One entry per session: the latest result of each test across the session's runs (an executed result beats a later skip). A session holds the runs started from this UI's Run tab - runs from elsewhere (e.g. the jump-host queue) are listed under Runs below and in Case history, not in a session. Rebuild builds the session's folder and report again from its runs.</p>
   <p id="rebuild-msg" class="small" role="status" aria-live="polite"></p>

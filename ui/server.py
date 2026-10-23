@@ -29,7 +29,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, quote, unquote, urlparse
 
-from . import defaults, inventory_edit, plan, presence, presets, sessions, share, sshkeys, testplan, trash
+from . import assist, defaults, inventory_edit, plan, presence, presets, sessions, share, sshkeys, testplan, trash
 from helios.compute import bmc_env
 
 from .config import ROOT, afm_username, inventory_rack_name, load_config
@@ -573,6 +573,8 @@ class Handler(BaseHTTPRequestHandler):
                 return self._static("index.html")
             if path.startswith("/static/"):
                 return self._static(path[len("/static/"):])
+            if path == "/api/ai/status":           # the Ask panel: is a model configured and answering
+                return self.json(assist.status())
             m = re.fullmatch(r"/results/([^/]+)/([^/]+)/?", path)
             if m:                                  # a run's folder: its report (else health report, else the csv)
                 p = self.app.profile(m.group(1))
@@ -824,6 +826,13 @@ class Handler(BaseHTTPRequestHandler):
             m = re.fullmatch(r"/api/racks/([^/]+)/sessions", path)
             if m:                                  # a new session becomes the rack's current one
                 return self.json(sessions.new_session(self.app.profile(m.group(1)), body.get("name")), 201)
+            m = re.fullmatch(r"/api/racks/([^/]+)/results/([^/]+)/(ask|diagnose)", path)
+            if m:                                  # Ask / Diagnose: the run's evidence to the model (ui/assist.py)
+                p = self.app.profile(m.group(1))
+                if m.group(3) == "ask":
+                    hist = body.get("history") if isinstance(body.get("history"), list) else []
+                    return self.json(assist.ask(p, m.group(2), body.get("question", ""), hist))
+                return self.json(assist.diagnose(p, m.group(2)))
             m = re.fullmatch(r"/api/racks/([^/]+)/results/clear", path)
             if m:                                  # Clear selected: {names: [run folders]} to the trash, all or none
                 rk = m.group(1)
