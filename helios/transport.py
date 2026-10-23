@@ -106,6 +106,40 @@ def key_path(key_file: str | None, who: str, host: str | None = None) -> str | l
     files, _ = resolve_keys(key_file, who, host)
     return files[0] if files and len(files) == 1 else files
 
+def load_known_hosts(client, path: str | None = None) -> None:
+    """client.load_system_host_keys(), but one malformed line does not stop every connection: paramiko raises on a
+    key that does not decode (InvalidHostKey) where OpenSSH skips the line. g02-g17 22 Oct 18:53: a truncated line in
+    the jump host's shared ~/.ssh/known_hosts ('Incorrect padding') made every switch SSH of the tests fail. The valid
+    lines are loaded from a cleaned temporary copy (the file itself is not changed) and the bad ones are logged."""
+    import paramiko
+    kh = os.path.expanduser(path or "~/.ssh/known_hosts")
+    try:
+        client.load_system_host_keys(kh if path else None)
+        return
+    except FileNotFoundError:
+        return
+    except Exception:  # noqa: BLE001 - InvalidHostKey, binascii / ValueError from a broken key
+        pass
+    good, bad = [], []
+    with open(kh, errors="replace") as fh:
+        for n, line in enumerate(fh, 1):
+            try:
+                if line.strip() and not line.lstrip().startswith("#"):
+                    paramiko.hostkeys.HostKeyEntry.from_line(line.strip(), n)
+                good.append(line if line.endswith("\n") else line + "\n")
+            except Exception:  # noqa: BLE001
+                bad.append(n)
+    import tempfile
+    with tempfile.NamedTemporaryFile("w", prefix="known_hosts-", delete=False) as tmp:
+        tmp.writelines(good)
+    try:
+        client.load_system_host_keys(tmp.name)
+    finally:
+        os.unlink(tmp.name)
+    logging.getLogger("helios").warning("%s: skipped malformed line(s) %s (as OpenSSH does); the rest of the host keys "
+                                        "are used", kh, ", ".join(map(str, bad)))
+
+
 @dataclass
 class CmdResult:
     host: str
@@ -221,7 +255,7 @@ class SshTransport:
             return _jump_client(self.jump, max(self.connect_timeout, 60))
         h = self.host
         client = paramiko.SSHClient()
-        client.load_system_host_keys()
+        load_known_hosts(client)
         # Lab racks get reimaged constantly; host-key pinning would just break runs.
         client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
         use_keys = h.password is None or bool(h.key_file)
@@ -433,7 +467,7 @@ def _jump_client(jump: dict, timeout: float, tag: str = ""):
         if c is not None and c.get_transport() is not None and c.get_transport().is_active():
             return c
         c = paramiko.SSHClient()
-        c.load_system_host_keys()
+        load_known_hosts(c)
         c.set_missing_host_key_policy(paramiko.AutoAddPolicy())
         kf = key_path(jump.get("key_file"), "transport.jump", key[0])
         c.connect(key[0], port=key[1], username=key[2], key_filename=kf,
