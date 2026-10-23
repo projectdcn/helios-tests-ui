@@ -7,6 +7,13 @@ is shown next to what the rules say. Read-only: it only reads the run folder.
     python tools/slm_ask.py RUN_DIR --tc TC-SWH-060 --show-input          # one case, with what the model was given
     python tools/slm_ask.py RUN_DIR --backend openai --url http://127.0.0.1:11434/v1 --model helios-diag
 
+    python tools/slm_ask.py RUN_DIR --question "why was TC-SWH-060 blocked, which trays should I look at?" \
+        --model mlx-community/Qwen3-4B-Instruct-2507-4bit --inventory inventory/fullrack-jump-afm.local.yaml
+
+--question: a free-text answer to your question about this run, from its evidence only (all cases, or --tc ones,
+with everything they recorded); the model is told to say when the evidence does not show something. Without
+--adapter (the untrained model) answers questions in prose; the trained adapter leans to its JSON diagnosis format.
+
 --blind (default; --no-blind to turn it off) gives the model what it was trained on: the evidence without the test's
 own verdict / message where a timeline or evidence block exists. Run it with the MLX environment (.venv-mlx) for
 --backend mlx. The model is advisory: check its summary against the evidence before acting (it can copy long IDs
@@ -28,6 +35,62 @@ import slm_eval as ev  # noqa: E402
 import slm_prep as prep  # noqa: E402
 
 
+QA_SYSTEM = ("You answer questions about AMD Helios rack test results (SONiC switch trays, AFM fabric manager, compute "
+             "trays) using ONLY the evidence given. If the evidence does not show the answer, say so plainly - do not "
+             "guess or invent names, files or settings. Copy switch, tray, port and pod names exactly as written. Be "
+             "brief. Never suggest disruptive actions (flapping or shutting ports, rebooting or power-cycling, config "
+             "reload); say what to check and who should act.")
+
+
+def inventory_names(path: Path | None) -> dict[str, str]:
+    """{AFM name: 'tray, address'} from a rack inventory's afm_name keys - the run itself does not say which tray
+    pod-1-12-ComputeTray is (slots count from 0: it is ct13)."""
+    if not path:
+        return {}
+    import yaml
+    data = yaml.safe_load(Path(path).expanduser().read_text()) or {}
+    return {str(e["afm_name"]): f"{e.get('name')}, {e.get('host', '?')}" for k in ("switches", "computes")
+            for e in data.get(k) or [] if isinstance(e, dict) and e.get("afm_name")}
+
+
+def annotate(text: str, names: dict[str, str]) -> str:
+    """Every AFM name in ``text`` followed by its tray: 'pod-1-12-ComputeTray [= ct13, 10.255.4.59]'. Done here, not
+    by the model: given the table, the model read pod-1-12 as ct12 (22 Oct) - a lookup is code's job."""
+    import re
+    if not names:
+        return text
+    rx = re.compile(r"\b(" + "|".join(sorted(map(re.escape, names), key=len, reverse=True)) + r")\b(?![-\w])")
+    return rx.sub(lambda m: f"{m.group(1)} [= {names[m.group(1)]}]", text)
+
+
+def question_input(run: Path, exs: list[dict], question: str, limit: int = 9000, inventory: Path | None = None) -> str:
+    """The evidence of the run's cases (with the verdict and message), what else each recorded, the inventory's AFM
+    names (--inventory), then the question."""
+    import csv
+    csv.field_size_limit(10**9)
+    with open(run / "tc_results.csv", newline="") as fh:
+        rows = list(csv.DictReader(fh))
+    parts = [f"Run: {run.name}"]
+    shown = set()
+    for ex in exs:
+        parts.append(ex["input"])
+        shown.add(ex["meta"]["tc_id"])
+        row = next((r for r in rows if r.get("tc_id") == ex["meta"]["tc_id"]), {})
+        try:
+            props = json.loads(row.get("properties") or "{}")
+        except ValueError:
+            props = {}
+        extra = {k: v for k, v in props.items() if k not in ("evidence", "incast_evidence", "pfc_lossless")}
+        if extra:
+            parts.append("Also recorded by this case: " + json.dumps(extra, default=str)[:1500])
+    for r in rows:                                  # cases the diagnosis export does not cover: verdict and message
+        if r.get("tc_id") not in shown:
+            parts.append(f"Case {r.get('tc_id')} ({r.get('test', '')}): verdict {str(r.get('outcome', '')).upper()}"
+                         + (f"; message: {dx.message_excerpt(r['message'], 400)}" if r.get("message") else ""))
+    text = annotate("\n\n".join(parts), inventory_names(inventory))
+    return (text[:limit] + "\n[evidence cut]" if len(text) > limit else text) + f"\n\nQuestion: {question}"
+
+
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     ap.add_argument("run", type=Path, help="a run folder (with tc_results.csv)")
@@ -40,14 +103,28 @@ def main(argv=None) -> int:
     ap.add_argument("--no-blind", action="store_true", help="also give the model the test's verdict and message")
     ap.add_argument("--show-input", action="store_true", help="print what the model was given")
     ap.add_argument("--json", action="store_true", help="one JSON line per case instead of the text view")
+    ap.add_argument("--question", default="", help="a free-text question about this run, answered from its evidence")
+    ap.add_argument("--inventory", type=Path, default=None,
+                    help="--question: the rack inventory, so AFM names (pod-1-12-ComputeTray) map to trays (ct13)")
     a = ap.parse_args(argv)
     if not (a.run / "tc_results.csv").is_file():
         raise SystemExit(f"{a.run}: no tc_results.csv")
     want = {t.strip() for t in a.tc.split(",") if t.strip()}
     exs = [e for e in dx.examples(a.run) if not want or e["meta"]["tc_id"] in want]
-    if not exs:
+    if not exs and not a.question:
         raise SystemExit(f"{a.run}: no case with evidence the model knows ({', '.join(dx.CASES)})")
     gen = ev.Mlx(a.model, a.adapter, a.max_tokens) if a.backend == "mlx" else ev.OpenAI(a.url, a.model, a.max_tokens)
+    if a.question:
+        msgs = [{"role": "system", "content": QA_SYSTEM},
+                {"role": "user", "content": question_input(a.run, exs, a.question, inventory=a.inventory)}]
+        if a.show_input:
+            print(textwrap.indent(msgs[1]["content"], "  | "))
+        answer = gen(msgs, None).replace("<think>", "").replace("</think>", "").strip()
+        print(answer)
+        bad = ev.UNSAFE.search(answer)
+        if bad:
+            print(f"\n!! the answer mentions a disruptive action ({bad.group(0)}) - do not follow it without review")
+        return 0
     for ex in exs:
         rec = dx.as_record(ex, "chat")
         if not a.no_blind:

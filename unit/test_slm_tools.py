@@ -173,3 +173,28 @@ def test_ask_shows_the_models_answer_next_to_the_rules(tmp_path, capsys):
     out = capsys.readouterr().out
     assert "rack_not_healthy / compute_health_stale" in out and "agrees with the rules" in out
     assert "Test message: AFM pre-flight failed" in seen[0]["messages"][1]["content"]      # no timeline: message kept
+
+
+def test_question_mode_gives_the_evidence_and_annotates_afm_names(tmp_path):
+    import csv as _csv
+    import slm_ask
+    inv = tmp_path / "inv.yaml"
+    inv.write_text("computes:\n  - {name: ct13, host: 10.255.4.59, afm_name: pod-1-12-ComputeTray}\n"
+                   "  - {name: ct02, host: 10.255.4.48, afm_name: pod-1-1-ComputeTray}\n")
+    names = slm_ask.inventory_names(inv)
+    got = slm_ask.annotate("pod-1-12-ComputeTray down; pod-1-1-ComputeTray-GPU-3 ok; pod-1-1-ComputeTray up", names)
+    assert got == ("pod-1-12-ComputeTray [= ct13, 10.255.4.59] down; pod-1-1-ComputeTray-GPU-3 ok; "
+                   "pod-1-1-ComputeTray [= ct02, 10.255.4.48] up")
+    run = tmp_path / "g02-g17-20261023-064053"
+    run.mkdir()
+    with open(run / "tc_results.csv", "w", newline="") as fh:
+        w = _csv.DictWriter(fh, ["tc_id", "test", "outcome", "message", "properties"])
+        w.writeheader()
+        w.writerow({"tc_id": "TC-SWH-060", "test": "t", "outcome": "blocked", "properties": json.dumps(
+            {"excluded_trays": {"ct13": "unreachable"}}), "message": "AFM pre-flight failed - rack not healthy, not "
+                    "starting:\n  - compute pod-1-12-ComputeTray: admitted conditions=None"})
+        w.writerow({"tc_id": "TC-XYZ-001", "test": "u", "outcome": "passed", "message": "", "properties": ""})
+    exs = [e for e in __import__("dataset_export").examples(run)]
+    q = slm_ask.question_input(run, exs, "which tray?", inventory=inv)
+    assert "pod-1-12-ComputeTray [= ct13, 10.255.4.59]" in q and '"excluded_trays"' in q
+    assert "Case TC-XYZ-001 (u): verdict PASSED" in q and q.endswith("Question: which tray?")
