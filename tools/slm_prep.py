@@ -164,8 +164,10 @@ def main(argv=None) -> int:
     unreviewed = [r for r in train if (r.get("meta") or {}).get("needs_review")]
     if unreviewed and not a.keep_unreviewed:      # rules and injected fault disagree: the label may be wrong
         train = [r for r in train if not (r.get("meta") or {}).get("needs_review")]
+    test_doubt = [r for r in test if (r.get("meta") or {}).get("needs_review")]
+    test = [r for r in test if not (r.get("meta") or {}).get("needs_review")]       # scored separately
     if a.blind:
-        train, test = [blind(r) for r in train], [blind(r) for r in test]
+        train, test, test_doubt = [blind(r) for r in train], [blind(r) for r in test], [blind(r) for r in test_doubt]
     tr, val = split_valid(train, a.valid_fraction, rng)
     tr_bal = balance(tr, a.max_healthy, a.min_per_class, rng)
     a.out.mkdir(parents=True, exist_ok=True)
@@ -175,6 +177,8 @@ def main(argv=None) -> int:
             fh.writelines(json.dumps(strip(r), ensure_ascii=False) + "\n" for r in rs)
     with open(a.out / "test.jsonl", "w") as fh:          # meta kept: tools/slm_eval.py reports by run / source
         fh.writelines(json.dumps(r, ensure_ascii=False) + "\n" for r in test)
+    with open(a.out / "test-unreviewed.jsonl", "w") as fh:   # held out, label in doubt (rules != injected fault)
+        fh.writelines(json.dumps(r, ensure_ascii=False) + "\n" for r in test_doubt)
     for f in a.eval_extra:                               # scoring only: unreviewed labels allowed, but counted
         rs = [blind(r) for r in load(f)] if a.blind else load(f)
         with open(a.out / f.name, "w") as fh:
@@ -191,7 +195,7 @@ def main(argv=None) -> int:
             "valid": dict(Counter(fault_of(r) for r in val)), "test": dict(Counter(fault_of(r) for r in test)),
             "n": {"train": len(tr_bal), "valid": len(val), "test": len(test)}, "lengths": ln, "iters": iters,
             "max_seq_length": max_seq, "extra": [str(f) for f in a.extra], "blind": a.blind,
-            "left_out_unreviewed": 0 if a.keep_unreviewed else len(unreviewed),
+            "left_out_unreviewed": 0 if a.keep_unreviewed else len(unreviewed), "test_unreviewed": len(test_doubt),
             "eval_extra": {f.name: {"n": len(load(f)), "needs_review": sum(1 for r in load(f)
                                                                           if (r.get("meta") or {}).get("needs_review"))}
                            for f in a.eval_extra}}

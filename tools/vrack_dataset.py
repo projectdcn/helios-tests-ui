@@ -49,7 +49,7 @@ SCENARIOS = [
     (["no_congestion_watermark"], 2),          # the switch reports no congestion under incast
     (["tb_slow"], 2),                          # the incast load stays far below line rate (BLOCKED)
     (["rack_vpod_configfailed"], 1),           # AFM pre-flight: system vPOD configurationfailed (g02-g17 18 / 20 Oct)
-    (["rack_compute_stale"], 1),               # AFM pre-flight: a compute stopped reporting health (g02-g17 20 Oct)
+    (["rack_compute_stale"], 2),               # AFM pre-flight: computes stopped reporting health (g02-g17 20 / 23 Oct)
     (["cni_netns"], 1),
     (["afm_unreachable"], 1),                  # the AFM API resets every connection (MR3 21-22 Oct)
     (["no_fdb_reconcile", "pfc_storm"], 1),
@@ -201,8 +201,10 @@ def main(argv=None) -> int:
                                            "frames": rng.choice([5000, 40000, 250000, 900000]),
                                            "watchdog": rng.random() < 0.6}
                     scope["pfc_storm"] = [SWITCHES[k]]
-                if "rack_compute_stale" in faults:
-                    params["rack_compute_stale"] = {"slot": rng.randrange(17)}
+                if "rack_compute_stale" in faults:   # one or two computes; half the time the vPOD fails with them
+                    sl = rng.sample(range(17), rng.choice([1, 1, 2]))
+                    params["rack_compute_stale"] = {"slot": sl[0], "slots": sl, "vpod": rng.random() < 0.5,
+                                                    "no_conditions": rng.random() < 0.25}
                 if "qos_odd_port" in faults:
                     k = rng.randrange(len(SWITCHES))
                     params["qos_odd_port"] = {"switch": k, "asic": rng.randrange(2), "port": rng.randrange(216)}

@@ -581,8 +581,10 @@ def examples(run: Path, source: str | None = None) -> list[dict]:
 
 # ------------------------------------------------------------------ older-style variants (training augmentation)
 
-LEGACY_FAULTS = ("switch_cli_broken", "afm_unreachable", "fdb_entry_not_restored", "foreign_fdb_not_removed")
-_FIRST_FRAME = {"TC-SWH-046": "tests/l1/test_switch_health.py:390: in test_pfc_qos_consistent_no_storm",
+LEGACY_FAULTS = ("switch_cli_broken", "afm_unreachable", "fdb_entry_not_restored", "foreign_fdb_not_removed",
+                 "incast_not_generated")
+_FIRST_FRAME = {"TC-SWH-060": "tests/afm/test_afm_switch_faults.py:330: in test_congestion_detected_on_incast",
+                "TC-SWH-046": "tests/l1/test_switch_health.py:390: in test_pfc_qos_consistent_no_storm",
                 "TC-SWH-061": "tests/afm/test_afm_switch_faults.py:421: in test_fdb_mismatch_missing_entry_restored",
                 "TC-SWH-062": "tests/afm/test_afm_switch_faults.py:462: in test_fdb_mismatch_foreign_entry_removed"}
 
@@ -590,6 +592,14 @@ _FIRST_FRAME = {"TC-SWH-046": "tests/l1/test_switch_health.py:390: in test_pfc_q
 def legacy_message(fault: str, tc: str, facts: dict, rng) -> tuple[str, str]:
     """(outcome, message) of a run from before the one-line BLOCKED reasons and the evidence timeline, as the real
     19-22 Oct runs reported the same fault: a raw traceback or a check message."""
+    if fault == "incast_not_generated":
+        # g02-g17 19 Oct, before the case reported BLOCKED: a rank died, then 'no congestion seen' on a load that never ran
+        a, b = rng.sample([f"ct{n:02d}" for n in range(1, 19)], 2)
+        err = rng.choice(["recv: Invalid argument", "connect: Connection refused", "hipErrorNoDevice"])
+        return "failed", (f"3 check(s) failed:\n  by node: {a} 2, {b} 1\n  - {a}->{b}: rank on {b} failed: rc=1 '{err}'\n"
+                          f"  - {a}->{b}: TransferBench failed: killed after the rank on {b} failed\n"
+                          f"  - no congestion seen on the 144 ports towards {b}: highest queue watermark "
+                          f"{rng.randrange(9000, 30000)} B under load, idle {rng.randrange(100, 900)} B (needs 100000 B)")
     sw = facts.get("switch") or rng.choice([f"st{n}" for n in range(1, 7)])
     ns = facts.get("ns") or rng.choice(["asic0", "asic1"])
     if fault == "switch_cli_broken":
@@ -623,7 +633,7 @@ def legacy_variant(ex: dict, rng) -> dict | None:
     """The same fault of ``ex`` as an older run reported it (no timeline, a raw traceback or check message), or
     None for a fault no older run reported differently. Labelled like ``ex``; needs_review when the rules disagree."""
     fault, tc = ex["output"]["fault"], ex["meta"]["tc_id"]
-    if fault not in LEGACY_FAULTS or tc not in _FIRST_FRAME:
+    if fault not in LEGACY_FAULTS or tc not in _FIRST_FRAME or (fault == "incast_not_generated") != (tc == "TC-SWH-060"):
         return None
     facts = {k: v for k, v in (ex.get("facts") or {}).items() if k in ("switch", "ns", "vlan", "mac")}
     outcome, msg = legacy_message(fault, tc, facts, rng)
@@ -633,7 +643,7 @@ def legacy_variant(ex: dict, rng) -> dict | None:
     rack = ex["input"].split("Rack: ", 1)[1].split("\n", 1)[0] if "Rack: " in ex["input"] else "?"
     text = evidence_text(tc, row, {}, rack)
     meta = {**ex["meta"], "variant": "legacy", "rule_fault": rf, "needs_review": rf != fault}
-    return {"input": text, "output": diagnosis(fault, detail, ev, _strip_ids(text)), "meta": meta}
+    return {"input": text, "output": diagnosis(fault, detail, ev, _strip_ids(text), msg), "meta": meta}
 
 
 def as_record(ex: dict, fmt: str) -> dict:

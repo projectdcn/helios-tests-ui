@@ -434,10 +434,13 @@ class Sim:
                 not ("last_compute_unhealthy" in self.f and slot == len(self.computes) - 1)   # quarantine tests
             o["status"]["conditions"] = [{"type": "healthy", "status": "true" if ok else "unknown"}]
             stale = (getattr(self.st, "params", {}).get("rack_compute_stale") or {}).get("slot", 1)
-            if "rack_compute_stale" in self.f and slot == stale:
-                # g02-g17 20 Oct: a compute's node agent stopped reporting - AFM keeps it admitted, health unknown
-                o["status"]["conditions"] = [{"type": "healthy", "status": "unknown", "last-transition-time": now(),
-                                              "reason": "ComputeNode health update not received since 2026-10-20T20:17:45Z"}]
+            sp = getattr(self.st, "params", {}).get("rack_compute_stale") or {}
+            if "rack_compute_stale" in self.f and (slot == stale or slot in (sp.get("slots") or [])):
+                # g02-g17 20 / 23 Oct: a compute's node agent stopped reporting - AFM keeps it admitted, health unknown
+                # (or no conditions at all: 'admitted conditions=None', pod-1-2 on 20 Oct)
+                o["status"]["conditions"] = None if sp.get("no_conditions") else [
+                    {"type": "healthy", "status": "unknown", "last-transition-time": now(),
+                     "reason": "ComputeNode health update not received since 2026-10-20T20:17:45Z"}]
             stuck = "compute_not_initialised" in self.f and slot == 0
             o["status"]["init-phase"] = "in-progress" if stuck else "success"
             o["status"]["is-connected-to-controller"] = host is not None and not stuck
@@ -495,11 +498,18 @@ class Sim:
             if name in self.cf_perm:
                 st["vpod-state"] = "configurationfailed"
                 continue
+            stale = getattr(self.st, "params", {}).get("rack_compute_stale") or {}
             if "rack_vpod_configfailed" in self.f and name.endswith(".system"):
                 # g02-g17 18 / 20 Oct: the system vPOD stuck in configurationfailed with a pending reprogram
                 st["vpod-state"] = "configurationfailed"
                 st["pending-ops"] = [{"operation": "reprogram_df", "version": "1755419", "pending-components": {
                     "gpus": [f"pod-1-{k}-ComputeTray-GPU-3" for k in range(4)]}}]
+                continue
+            if any(o.get("version") == "1755419" for o in st.get("pending-ops") or []):
+                st["pending-ops"] = []        # the fault is off again: no leftover reprogram (round 4 bug)
+            if "rack_compute_stale" in self.f and stale.get("vpod") and name.endswith(".system"):
+                # g02-g17 20 / 23 Oct: computes stopped reporting health AND the system vPOD failed with them
+                st["vpod-state"] = "configurationfailed"
                 continue
             if name in self.configfailed:
                 if not all_down and "configfailed_sticky" not in self.f:
