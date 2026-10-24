@@ -133,8 +133,8 @@ def load(profile) -> dict:
     for k in COLUMNS:
         seen = {}
         for r in rows:
-            v = r[k] or sc.EMPTY
-            seen.setdefault(v.lower(), v)           # matching is case-insensitive: one entry per value
+            for v in sc.tags(r[k]) or [sc.EMPTY]:    # one entry per tag ("Switch + Compute; IFCP" -> both)
+                seen.setdefault(v.lower(), v)           # matching is case-insensitive: one entry per value
         columns[k] = sorted(seen.values(), key=_sort_key)
     cases = [{"id": r["id"], "title": r["title"], **{k: r[k] for k in COLUMNS},
               "automated": r["id"] in auto, "suite": sc.suite_of(auto[r["id"]][0]) if r["id"] in auto else None}

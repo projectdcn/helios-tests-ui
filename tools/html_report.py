@@ -208,11 +208,13 @@ def dim_matrix(rows: list[dict], key: str, label: str) -> str:
     """Status counts per value of a workbook column (Scope / Origin), one row per value plus a total."""
     order = [o for o in ("PASS", "FAIL", "PARTIAL", "PENDING", "SKIP", "N/A", "NOT RUN", "NOT AUTOMATED")
              if any(r["status"] == o for r in rows)]
-    vals = sorted({r[key] or "(blank)" for r in rows}, key=lambda v: (-sum(1 for r in rows if (r[key] or "(blank)") == v), v))
+    def tg(r):                                  # a case tagged "Switch + Compute; IFCP" counts under both
+        return [t.strip() for t in str(r[key] or "").split(";") if t.strip()] or ["(blank)"]
+    vals = sorted({t for r in rows for t in tg(r)}, key=lambda v: (-sum(1 for r in rows if v in tg(r)), v))
     h = [f'<table><thead><tr><th>{esc(label)}</th>' + "".join(f'<th class="num">{esc(o)}</th>' for o in order) +
          '<th class="num">Total</th></tr></thead><tbody>']
     for v in vals + ["All"]:
-        sel = [r for r in rows if v == "All" or (r[key] or "(blank)") == v]
+        sel = [r for r in rows if v == "All" or v in tg(r)]
         c = Counter(r["status"] for r in sel)
         b = "<b>" if v == "All" else ""
         h.append(f'<tr><td>{b}{esc(v)}</td>' + "".join(f'<td class="num">{b}{c.get(o, 0)}</td>' for o in order) +

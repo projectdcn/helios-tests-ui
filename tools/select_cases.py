@@ -30,6 +30,12 @@ HEADERS = {1: "tid", 2: "level", 6: "execution status", 10: "scope", 11: "origin
 
 EMPTY = "(empty)"          # filter value matching a blank cell (e.g. --status "(empty)": never run)
 _SPLIT = re.compile(r",(?![^()]*\))")
+TAG_SEP = ";"               # a cell may carry several tags: Scope "Switch + Compute; IFCP" is both
+
+
+def tags(value: str) -> list[str]:
+    """The tags of a cell: "Switch + Compute; IFCP" -> ["Switch + Compute", "IFCP"]; a plain value is one tag."""
+    return [t.strip() for t in str(value or "").split(TAG_SEP) if t.strip()]
 
 
 class WorkbookLayoutError(ValueError):
@@ -65,8 +71,13 @@ def wanted(filters: dict) -> dict[str, set[str]]:
 
 
 def matches(case: dict, want: dict[str, set[str]]) -> bool:
-    """A plan row (plan_rows) passes every column filter: case-insensitive exact match."""
-    return all((case[k].lower() or EMPTY) in v for k, v in want.items())
+    """A plan row (plan_rows) passes every column filter: case-insensitive exact match of the whole cell or of any
+    one of its tags (--scope IFCP matches "Switch + Compute; IFCP", so does --scope "Switch + Compute")."""
+    def ok(cell: str, allowed: set[str]) -> bool:
+        if not cell:
+            return EMPTY.lower() in allowed or EMPTY in allowed
+        return cell.lower() in allowed or any(t.lower() in allowed for t in tags(cell))
+    return all(ok(case[k], v) for k, v in want.items())
 
 
 def _code_id(tid, title: str):
