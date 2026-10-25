@@ -462,7 +462,8 @@ def apply_link_faults(st: State, nodes: list, req: dict) -> dict:
       {"kind": "cable_out" | "sw_shut" | "gpu_idle" | "ifcp_stuck" | "mtu_low" | "flap", "switch": "st6", "asic": "asic0",
        "port": "Ethernet170"[, "mtu": 1500][, "count": 7]}     - one link (either end can be named instead:
        "tray": "ct02", "gpu": 0, "gpu_port": 25)
-      {"kind": "ifcp_chip", "switch": "st6", "asic": "asic0"}  - no IFCP session on any link of that chip
+      {"kind": "ifcp_chip", "switch": "st6", "asic": "asic0"[, "share": 0.9, "seed": 1]} - no IFCP session on the
+       links of that chip (share: a part of them, picked by seed)
       {"kind": "miscabled", ... one link ..., "with": "Ethernet178"} - the two ports' descriptions swapped: the cables
        are not where the cabling plan (descriptions) says
       {"kind": "tray_down", "tray": "ct05"[, "power_off": true]} - the tray refuses SSH (unreachable); power_off: its
@@ -567,6 +568,11 @@ def apply_link_faults(st: State, nodes: list, req: dict) -> dict:
         if kind == "ifcp_chip":
             i, ns = sw_idx[f["switch"]], f.get("asic") or "asic0"
             ls = [(i, ns, p, c) for p, c in sim.ports(i, ns).items()]
+            share = float(f.get("share", 1.0))     # part of the chip (real g02-g17 st6 asic0: 200 of 216 links)
+            if share < 1.0:
+                import random as _rnd
+                _rnd.Random(f.get("seed", 0)).shuffle(ls)
+                ls = sorted(ls[:max(1, round(len(ls) * share))], key=lambda x: int(x[2][8:]))
             for _i, _ns, _p, c in ls:
                 sim.ifcp_stuck.add((c[0], c[1], c[3]))
             applied.append({"kind": kind, "switch": f["switch"], "asic": ns, "links": [ends(*x) for x in ls]})

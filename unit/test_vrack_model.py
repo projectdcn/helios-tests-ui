@@ -193,3 +193,17 @@ def test_link_faults_switch_state_and_counters_for_labelled_link_checks():
     vrack.apply_link_faults(st, nodes, {"clear": True})
     assert not (sim.fdb_noport or sim.vlan_over or sim.port_err or sim.unprogrammed or sim.links_down)
     assert sw(0).run("show mac -n asic0").rc == 0
+
+
+def test_ifcp_chip_share_takes_part_of_the_chip():
+    import vrack
+    from types import SimpleNamespace as NS
+    st = State(set(), {"layout": "g02-g17"})
+    nodes = [NS(name=f"st{i + 1}", role="switch", down_until=0.0, sessions=[]) for i in range(6)] + \
+            [NS(name=f"ct{s + 1:02d}", role="compute", down_until=0.0, sessions=[], t=NS(slot=s)) for s in range(18)]
+    a = vrack.apply_link_faults(st, nodes, {"clear": True, "add": [{"kind": "ifcp_chip", "switch": "st6", "asic": "asic0",
+                                                                    "share": 0.5, "seed": 3}]})["applied"][0]
+    assert len(a["links"]) == 108 and len(st.sim.ifcp_stuck) == 108
+    b = vrack.apply_link_faults(st, nodes, {"clear": True, "add": [{"kind": "ifcp_chip", "switch": "st6", "asic": "asic0",
+                                                                    "share": 0.5, "seed": 3}]})["applied"][0]
+    assert a["links"] == b["links"]                       # the same seed picks the same links
