@@ -23,6 +23,9 @@ def test_unwrap_strips_only_the_transport_wrappers():
     assert vrack.unwrap("sudo -n env A=1 bash -c 'show version'") == ("show version", True, {"A": "1"})
     assert vrack.unwrap("sudo show interfaces status") == ("show interfaces status", True, {})
     assert vrack.unwrap("show version") == ("show version", False, {})
+    # helios-debug wraps its own scripts: sw.sh("bash -c " + quote(script), sudo=True)
+    assert vrack.unwrap("sudo -n bash -c 'bash -c '\"'\"'for k in x; do echo $k; done'\"'\"''") == \
+        ("for k in x; do echo $k; done", True, {})
 
 
 def test_split_shell_respects_quotes():

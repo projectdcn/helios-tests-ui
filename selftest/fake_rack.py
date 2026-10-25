@@ -146,6 +146,15 @@ class Sim:
         self.fru_bad: set[int] = set()        # switches whose fru.json was overwritten with invalid JSON
         self.mgmt_eth1: set[int] = set()      # switches with the management IP moved to eth1
         self.mtu: dict[tuple, int] = {}       # (sw, ns, port) -> MTU set with config interface mtu (default 9100)
+        self.desc_over: dict[tuple, tuple] = {}  # (sw, ns, port) -> cabling its description claims (vrack /links miscabled)
+        # vrack /links faults for labelled link checks: (sw, ns) -> forwarding entries without a switch port, each
+        # {mac, vlan, port, source: "runtime" (APPL_DB FDB_TABLE) | "hardware" (ASIC_DB only)}; (sw, ns, port) ->
+        # VLAN it is a member of instead of its own (None = in no VLAN); (sw, ns, port) -> {"rx_err", "fec_uncorr"}
+        # growth per counter read
+        self.fdb_noport: dict[tuple, list[dict]] = {}
+        self.vlan_over: dict[tuple, str | None] = {}
+        self.port_err: dict[tuple, dict] = {}
+        self.ctr_reads: dict[tuple, int] = {}
         self.events: list[dict] = []
         self.gpus: dict[int, list[str]] = {}  # slot -> gpu uuids
         self.st = st
@@ -952,6 +961,78 @@ class FakeSwitchTransport:
                                            "priority_tagged" if sim.mch else "untagged"}) + "\n")
             elif m := re.fullmatch(r"sonic-db-cli(?: -n (asic\d+))? CONFIG_DB keys 'VLAN\|\*'", cmd):
                 res = self._res(cmd, "".join(f"VLAN|{v}\n" for v in sim.vlans(i)))
+            elif (m := re.fullmatch(r"show mac(?: -n (asic\d+))?", cmd)) and any(
+                    (i, ns_) in sim.fdb_noport for ns_ in ([m.group(1)] if m.group(1) else ["asic0", "asic1"])):
+                # vrack /links fdb_no_port: SONiC's fdbshow looks every ASIC_DB FDB entry's bridge port up and dies on
+                # one without (g02-g17 st1/st2/st4 23 Oct: test MACs written at runtime for ports with no bridge port)
+                res = CmdResult(self.host.name, cmd, 1, "", (
+                    "Traceback (most recent call last):\n  File \"/usr/local/bin/fdbshow\", line 238, in <module>\n"
+                    "    main()\n  File \"/usr/local/bin/fdbshow\", line 81, in __init__\n    self.fetch_fdb_data()\n"
+                    "  File \"/usr/local/bin/fdbshow\", line 120, in fetch_fdb_data\n"
+                    "    port_id = self.if_br_oid_map[ent[b\"SAI_FDB_ENTRY_ATTR_BRIDGE_PORT_ID\"]]\n"
+                    "KeyError: 'SAI_FDB_ENTRY_ATTR_BRIDGE_PORT_ID'\n"))
+            elif "ASIC_DB keys 'ASIC_STATE:SAI_OBJECT_TYPE_FDB_ENTRY:*'" in cmd and "while IFS= read" in cmd:
+                # helios-debug _BROKEN_FDB_SCRIPT: the ASIC_DB FDB entries without SAI_FDB_ENTRY_ATTR_BRIDGE_PORT_ID
+                ns = re.search(r"-n (asic\d+)", cmd).group(1)
+                res = self._res(cmd, "".join(
+                    'ASIC_STATE:SAI_OBJECT_TYPE_FDB_ENTRY:{"bvid":"oid:0x26000000000a%02x","mac":"%s","switch_id":'
+                    '"oid:0x21000000000000"}\n' % (int(e["vlan"]) % 256, e["mac"].upper()) for e in sim.fdb_noport.get((i, ns), [])))
+            elif m := re.fullmatch(r"sonic-db-cli -n (asic\d+) (APPL_DB|CONFIG_DB) keys 'FDB\*([0-9A-Fa-f:]{17})'", cmd):
+                # broken_fdb_entries: where a broken entry came from - APPL_DB FDB_TABLE (the switch agent, at runtime)
+                ns, db, mac = m.groups()
+                res = self._res(cmd, "".join(f"FDB_TABLE:Vlan{e['vlan']}:{e['mac'].lower()}\n" for e in sim.fdb_noport.get((i, ns), [])
+                                             if db == "APPL_DB" and e["source"] == "runtime" and e["mac"].upper() == mac.upper()))
+            elif m := re.fullmatch(r"sonic-db-cli -n (asic\d+) APPL_DB hgetall '?FDB_TABLE:Vlan(\d+):([0-9a-f:]{17})'?", cmd):
+                ns, vlan, mac = m.groups()
+                e = next((e for e in sim.fdb_noport.get((i, ns), []) if e["mac"].lower() == mac and str(e["vlan"]) == vlan), None)
+                res = self._res(cmd, repr({"port": e["port"], "type": "static"}) + "\n" if e else "{}\n")
+            elif "CONFIG_DB keys 'VLAN|*'" in cmd and "VLAN_MEMBER|*" in cmd and cmd.startswith("for k in"):
+                # helios-debug read_vlans (_VLAN_SCRIPT): every VLAN, every member with its tagging mode - the vrack's
+                # one fabric VLAN (Vlan100, as VLAN_MEMBER above) on the GPU ports in use; vrack /links vlan_missing /
+                # vlan_wrong take one port out / put it in another VLAN
+                ns = re.search(r"-n (asic\d+)", cmd).group(1)
+                vl = sim.vlans(i)
+                mode = "tagged" if "mch_tagged" in st.f else "priority_tagged" if sim.mch or sim.layout else "untagged"
+                mem = []
+                for p in sim.ports(i, ns):
+                    v = sim.vlan_over.get((i, ns, p), "Vlan100") if "Vlan100" in vl else None
+                    if v and (sim.lane_used(i, ns, p) or "mch_vlan_on_unused" in st.f):
+                        mem.append((v, p))
+                vl = vl + sorted({v for v, _p in mem} - set(vl))
+                res = self._res(cmd, "".join(f"V {v}\n" for v in vl) + "".join(f"M {v}|{p} {mode}\n" for v, p in mem))
+            elif "APPL_DB keys 'PORT_TABLE:Ethernet*'" in cmd and cmd.startswith("for k in"):
+                # helios-debug read_flaps: APPL_DB PORT_TABLE of every port (flap_count / last_down_time, as port_states)
+                ns = re.search(r"-n (asic\d+)", cmd).group(1)
+                lines = []
+                for p, e in sim.all_ports(i, ns):
+                    fc, last = sim.flap_count.get((i, ns, p), (0, ""))
+                    lines.append(f"{p}|" + repr({"admin_status": sim.admin(i, ns, p), "alias": e["alias"], "lanes": e["lanes"],
+                                                 "mtu": str(sim.mtu.get((i, ns, p), 9100)), "speed": sim.port_mbps(e),
+                                                 "oper_status": "up" if sim.link_state(i, ns, p) == "up" else "down",
+                                                 "flap_count": str(fc), **({"last_down_time": last} if last else {})}))
+                res = self._res(cmd, "\n".join(lines) + "\n")
+            elif (m := re.fullmatch(r"show interfaces counters(?: (fec-stats))? -n (asic\d+)(?: -d all)?", cmd)) \
+                    and (sim.layout or sim.port_err):
+                # per-port counters (the replay lists the self-test rack's ports, not a recorded layout's): traffic
+                # grows a little at every read, errors only where vrack /links errors injected a growth per read
+                fec, ns = m.group(1), m.group(2)
+                k = (i, ns, "fec" if fec else "ctr")
+                n = sim.ctr_reads[k] = sim.ctr_reads.get(k, 0) + 1
+                rows = []
+                for x, (p, _e) in enumerate(sim.all_ports(i, ns)):
+                    up = p in sim.ports(i, ns) and sim.link_state(i, ns, p) == "up"
+                    err = sim.port_err.get((i, ns, p)) or {}
+                    if fec:
+                        rows.append([p, "U" if up else "D", f"{4695 + 10 * x + 3 * n:,}", f"{10 + err.get('fec_uncorr', 0) * n:,}",
+                                     f"{4934 + 10 * x + 3 * n:,}", "1.2e-08", "nan", "N/A", "0", "0"])
+                    else:
+                        rx, tx = (1_204_331 + n * 1_000, 1_198_002 + n * 1_000) if up else (1_204_331, 1_198_002)
+                        rows.append([p, "U" if up else "D", f"{rx:,}", "12.30 MB/s", "0.02%", f"{err.get('rx_err', 0) * n:,}",
+                                     "3", "0", f"{tx:,}", "11.90 MB/s", "0.02%", "0", "0", "0"])
+                res = self._res(cmd, _table(["IFACE", "STATE", "FEC_CORR", "FEC_UNCORR", "FEC_SYMBOL_ERR", "FEC_PRE_BER",
+                                             "FEC_POST_BER", "FEC_PRE_BER_MAX", "FLR(O)", "FLR(P) (Accuracy)"] if fec else
+                                            ["IFACE", "STATE", "RX_OK", "RX_BPS", "RX_UTIL", "RX_ERR", "RX_DRP", "RX_OVR",
+                                             "TX_OK", "TX_BPS", "TX_UTIL", "TX_ERR", "TX_DRP", "TX_OVR"], rows))
             elif m := re.fullmatch(r"show mac(?: -n (asic\d+))?", cmd):
                 # the switch's static FDB entries (one per GPU port of an admitted compute, as CONFIG_DB FDB) while
                 # the switch is admitted, plus fault stale_macs leftovers
@@ -1010,7 +1091,8 @@ class FakeSwitchTransport:
                 off = 1 if "desc_acc_off_by_one" in st.f else 0
                 cabled = sim.ports(i, ns)
                 res = self._res(cmd, "".join(f"{p}|To ComputeTray Slot{c[0]}/GPU{c[1]}[{c[2] + off}]/Port{c[3]}\n"
-                                             if (c := cabled.get(p)) else f"{p}|\n" for p, _e in sim.all_ports(i, ns)))
+                                             if (c := sim.desc_over.get((i, ns, p)) or cabled.get(p)) else f"{p}|\n"
+                                             for p, _e in sim.all_ports(i, ns)))
             elif "CONFIG_DB keys 'FDB|*'" in cmd and cmd.startswith("for k in"):
                 # static FDB: one entry per VLAN-member port of an admitted compute (fault stale_fdb: + one in Vlan2)
                 ns = re.search(r"-n (asic\d+)", cmd).group(1)

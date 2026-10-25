@@ -85,6 +85,11 @@ def unwrap(cmd: str) -> tuple[str, bool, dict]:
             # rest stay operators (re-quoting the split tokens would turn them into arguments)
             cmd = re.sub(r"^\s*sudo(?:\s+-\w+)*\s+", "", cmd, count=1)
             continue
+        if tok[:2] == ["bash", "-c"] and len(tok) == 3:
+            # a script the caller wraps itself (helios-debug: sw.sh("bash -c " + quote(script), sudo=True) -> 'sudo -n
+            # bash -c '"'"'bash -c ...'"'"''): the script is the command
+            cmd = tok[2]
+            continue
         if tok[:1] == ["env"] and len(tok) > 1 and "=" in tok[1]:
             # only build_command's own wrapper (env K=V bash -c '...'); a test's 'env K=V tool ...' is the command
             rest = tok[1:]
@@ -447,7 +452,170 @@ def _listen(node: Node, bind: str, host_key, keys) -> None:
         threading.Thread(target=_client, args=(node, conn, host_key, keys), daemon=True).start()
 
 
-def _control(st: State, bind: str, port: int) -> ThreadingHTTPServer:
+LINK_FAULTS = ("cable_out", "sw_shut", "gpu_idle", "ifcp_stuck", "ifcp_chip", "mtu_low", "flap", "miscabled", "tray_down",
+               "fdb_no_port", "vlan_missing", "vlan_wrong", "errors", "coupled", "gpu_unprogrammed")
+
+
+def apply_link_faults(st: State, nodes: list, req: dict) -> dict:
+    """POST /links: link-level faults for labelled link-check data (helios-slm linkfault.py). {"clear": true} first
+    undoes every earlier one; each of "add" names a kind (LINK_FAULTS) and where:
+      {"kind": "cable_out" | "sw_shut" | "gpu_idle" | "ifcp_stuck" | "mtu_low" | "flap", "switch": "st6", "asic": "asic0",
+       "port": "Ethernet170"[, "mtu": 1500][, "count": 7]}     - one link (either end can be named instead:
+       "tray": "ct02", "gpu": 0, "gpu_port": 25)
+      {"kind": "ifcp_chip", "switch": "st6", "asic": "asic0"}  - no IFCP session on any link of that chip
+      {"kind": "miscabled", ... one link ..., "with": "Ethernet178"} - the two ports' descriptions swapped: the cables
+       are not where the cabling plan (descriptions) says
+      {"kind": "tray_down", "tray": "ct05"[, "power_off": true]} - the tray refuses SSH (unreachable); power_off: its
+       links go down too ("links": all of them)
+      {"kind": "fdb_no_port", "switch": "st1", "asic": "asic0"[, "count": 2][, "source": "runtime" | "hardware"]
+       [, "port": "Ethernet0"]}                                - forwarding entries without a switch port (g02-g17
+       st1/st2/st4 23 Oct): test MACs 00:11:22:33:44:55.. in ASIC_DB without a bridge port, added at runtime to APPL_DB
+       FDB_TABLE (or in the hardware only); SONiC `show mac` then fails with KeyError SAI_FDB_ENTRY_ATTR_BRIDGE_PORT_ID
+      {"kind": "vlan_missing", ... one link ...}               - the switch port in no VLAN
+      {"kind": "vlan_wrong", ... one link ...[, "vlan": "Vlan200"]} - the switch port in another VLAN than the other
+       GPUs' same port number on that chip
+      {"kind": "errors", ... one link ...[, "fec_uncorr": 40][, "rx_err": 0]} - errors growing by that much at every
+       counter read on a link that works (default: uncorrectable FEC codewords)
+      {"kind": "coupled", ... one link ...}                    - the port shut (admin down) and, as on g02-g17 (shutting
+       Eth243 dropped Eth251), the next cabled port of the chip down with admin up: both links are in "links"
+      {"kind": "gpu_unprogrammed", "tray": "ct04", "gpu": 1}   - the GPU listed but not configured by AFM (afmctl
+       config_phase PROVIDER, accelerator 0: a GPU reset never re-programmed); "links": its links
+    Returns every applied fault with both ends of each link it touches - the labels."""
+    sim = st.sim
+    names = {n.name: n for n in nodes}
+    sw_idx = {n.name: k for k, n in enumerate(x for x in nodes if x.role == "switch")}
+    ct_idx = {n.name: k for k, n in enumerate(x for x in nodes if x.role == "compute")}
+    sw_name = {v: k for k, v in sw_idx.items()}
+    ct_name = {v: k for k, v in ct_idx.items()}
+    if req.get("clear"):
+        sim.links_down.clear()
+        sim.cmp_admin_down.clear()
+        sim.ifcp_stuck.clear()
+        sim.mtu.clear()
+        sim.flap_count.clear()
+        sim.desc_over.clear()
+        sim.fdb_noport.clear()
+        sim.vlan_over.clear()
+        sim.port_err.clear()
+        sim.unprogrammed.clear()
+        for n in nodes:
+            if n.role == "compute" and n.down_until == float("inf"):
+                n.down_until = 0.0
+                sim.mgmt_compute(n.t.slot, False)
+
+    def link(f):
+        """(i, ns, port, (slot, gpu, acc, pid)) of the link a fault names, from the switch end or the GPU end."""
+        if f.get("switch"):
+            i, ns = sw_idx[f["switch"]], f.get("asic") or "asic0"
+            cab = sim.ports(i, ns).get(f.get("port"))
+            if cab is None:
+                raise ValueError(f"no cabled port {f.get('port')} on {f['switch']} {ns}")
+            return i, ns, f["port"], cab
+        s, g, pid = ct_idx[f["tray"]], int(f["gpu"]), int(f["gpu_port"])
+        ia = sim.pid_link(pid)
+        if ia is None:
+            raise ValueError(f"GPU port {pid} is not cabled")
+        i, ns = ia[0], f"asic{ia[1]}"
+        port = next(p for p, c in sim.ports(i, ns).items() if (c[0], c[1], c[3]) == (s, g, pid))
+        return i, ns, port, sim.ports(i, ns)[port]
+
+    def ends(i, ns, port, cab):
+        return {"switch": sw_name[i], "asic": ns, "port": port, "tray": ct_name[cab[0]], "gpu": cab[1], "acc": cab[2],
+                "gpu_port": cab[3]}
+    applied = []
+    for f in req.get("add") or []:
+        kind = f.get("kind")
+        if kind not in LINK_FAULTS:
+            raise ValueError(f"kind: one of {', '.join(LINK_FAULTS)}")
+        if kind == "tray_down":
+            n = names[f["tray"]]
+            n.down_until = float("inf")
+            for tr in list(n.sessions):
+                try:
+                    tr.close()
+                except Exception:  # noqa: BLE001
+                    pass
+            sim.mgmt_compute(n.t.slot, True)
+            ls = []
+            if f.get("power_off"):                  # powered off, not just unreachable: its links go down as well
+                ls = [(i, f"asic{a}", p, c) for i in range(sim.n_sw) for a in (0, 1)
+                      for p, c in sim.ports(i, f"asic{a}").items() if c[0] == n.t.slot]
+                for i, ns, p, _c in ls:
+                    n_, _ = sim.flap_count.get((i, ns, p), (0, ""))
+                    sim.flap_count[(i, ns, p)] = (n_ + 1, time.strftime("%Y-%m-%d %H:%M:%S", time.gmtime()))
+                    sim.links_down[(i, ns, p)] = {"since": time.monotonic(), "known": True, "admin": False}
+            applied.append({"kind": kind, "tray": f["tray"], "links": [ends(*x) for x in ls]})
+            continue
+        if kind == "fdb_no_port":
+            i, ns = sw_idx[f["switch"]], f.get("asic") or "asic0"
+            ports = [p for p, _e in sim.all_ports(i, ns)]
+            spare = [p for p in ports if p not in sim.ports(i, ns)]      # ports the hardware has no bridge port for
+            port = f.get("port") or (spare or ports)[0]
+            src = "hardware" if str(f.get("source", "runtime")).startswith("hard") else "runtime"
+            es = [{"mac": f"00:11:22:33:{0x44 + k // 256:02x}:{(0x55 + k) % 256:02x}", "vlan": 100, "port": port, "source": src}
+                  for k in range(int(f.get("count", 2)))]
+            sim.fdb_noport.setdefault((i, ns), []).extend(es)
+            applied.append({"kind": kind, "switch": f["switch"], "asic": ns, "entries": es, "links": []})
+            continue
+        if kind == "gpu_unprogrammed":
+            s, g = ct_idx[f["tray"]], int(f["gpu"])
+            sim.unprogrammed.add((s, g))
+            ls = [(i, f"asic{a}", p, c) for i in range(sim.n_sw) for a in (0, 1) for p, c in sim.ports(i, f"asic{a}").items()
+                  if (c[0], c[1]) == (s, g)]
+            applied.append({"kind": kind, "tray": f["tray"], "gpu": g, "links": [ends(*x) for x in ls]})
+            continue
+        if kind == "ifcp_chip":
+            i, ns = sw_idx[f["switch"]], f.get("asic") or "asic0"
+            ls = [(i, ns, p, c) for p, c in sim.ports(i, ns).items()]
+            for _i, _ns, _p, c in ls:
+                sim.ifcp_stuck.add((c[0], c[1], c[3]))
+            applied.append({"kind": kind, "switch": f["switch"], "asic": ns, "links": [ends(*x) for x in ls]})
+            continue
+        i, ns, port, cab = link(f)
+        key, out = (i, ns, port), {"kind": kind, "links": [ends(i, ns, port, cab)]}
+        if kind in ("cable_out", "sw_shut", "gpu_idle", "coupled"):
+            n_, _ = sim.flap_count.get(key, (0, ""))
+            sim.flap_count[key] = (n_ + 1, time.strftime("%Y-%m-%d %H:%M:%S", time.gmtime(time.time() - 3600 * float(f.get("hours_ago", 2)))))
+            sim.links_down[key] = {"since": time.monotonic(), "known": True, "admin": kind in ("sw_shut", "coupled")}
+            if kind == "gpu_idle":
+                sim.cmp_admin_down.add((cab[0], cab[1], cab[3]))
+            if kind == "coupled":                    # the neighbour: next cabled port of the chip, oper down, admin up
+                names_ = sorted(sim.ports(i, ns), key=lambda x: int(x[8:]))
+                nb = names_[(names_.index(port) + 1) % len(names_)]
+                n_, _ = sim.flap_count.get((i, ns, nb), (0, ""))
+                sim.flap_count[(i, ns, nb)] = (n_ + 1, sim.flap_count[key][1])
+                sim.links_down[(i, ns, nb)] = {"since": time.monotonic(), "known": True, "admin": False}
+                out["links"].append(ends(i, ns, nb, sim.ports(i, ns)[nb]))
+        elif kind == "ifcp_stuck":
+            sim.ifcp_stuck.add((cab[0], cab[1], cab[3]))
+        elif kind == "mtu_low":
+            sim.mtu[key] = int(f.get("mtu", 1500))
+            out["mtu"] = sim.mtu[key]
+        elif kind == "flap":
+            sim.flap_count[key] = (int(f.get("count", 6)), time.strftime("%Y-%m-%d %H:%M:%S", time.gmtime(time.time() - 600)))
+            out["count"] = sim.flap_count[key][0]
+        elif kind in ("vlan_missing", "vlan_wrong"):
+            sim.vlan_over[key] = None if kind == "vlan_missing" else str(f.get("vlan") or "Vlan200")
+            out["vlan"] = sim.vlan_over[key]
+        elif kind == "errors":
+            e = {"fec_uncorr": int(f.get("fec_uncorr", 0 if f.get("rx_err") else 40)), "rx_err": int(f.get("rx_err", 0))}
+            sim.port_err[key] = e
+            out |= e
+        elif kind == "miscabled":
+            other = f.get("with")
+            if isinstance(other, dict):             # {"tray", "gpu"}: that GPU's cable on the same GPU port number
+                ws, wg = ct_idx[other["tray"]], int(other["gpu"])
+                other = next((p for p, c in sim.ports(i, ns).items() if (c[0], c[1], c[3]) == (ws, wg, cab[3])), None)
+            oc = sim.ports(i, ns).get(other)
+            if oc is None:
+                raise ValueError(f"with: no cabled port {other} on the same chip")
+            sim.desc_over[key], sim.desc_over[(i, ns, other)] = oc, cab
+            out["links"].append(ends(i, ns, other, oc))
+        applied.append(out)
+    return {"applied": applied}
+
+
+def _control(st: State, bind: str, port: int, nodes: list | None = None) -> ThreadingHTTPServer:
     class H(BaseHTTPRequestHandler):
         def log_message(self, *a):
             pass
@@ -476,6 +644,12 @@ def _control(st: State, bind: str, port: int) -> ThreadingHTTPServer:
                 req = json.loads(self.rfile.read(n) or b"{}")
             except ValueError:
                 return self._send(400, {"error": "JSON body expected: {\"add\": [...], \"remove\": [...]}"})
+            if self.path.startswith("/links"):
+                with st.lock:
+                    try:
+                        return self._send(200, apply_link_faults(st, nodes or [], req))
+                    except (ValueError, KeyError, StopIteration) as e:
+                        return self._send(400, {"error": f"links: {e!r}"})
             with st.lock:
                 st.f |= set(req.get("add") or [])
                 st.f -= set(req.get("remove") or [])
@@ -689,7 +863,7 @@ def main(argv=None) -> int:
         build = fake_redfish.blanton if n.role == "switch" else fake_redfish.openbmc
         reset = (lambda body, node=n: node.reboot()) if n.role == "compute" else None
         n.bmc = fake_redfish.RedfishServer(build, n.role, (a.bind, bmc_base + k), on_reset=reset).start()
-    _control(st, a.bind, a.afm_port + 1)
+    _control(st, a.bind, a.afm_port + 1, nodes)
     inv = Path(a.inventory).expanduser() if a.inventory else state_dir / "vrack.local.yaml"
     inv.parent.mkdir(parents=True, exist_ok=True)
     write_inventory(inv, st, nodes, afm.url, a.topology, a.bind, template, a.time_scale)
