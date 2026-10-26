@@ -1,0 +1,13 @@
+Capability codes: (R) Router, (B) Bridge, (O) Other
+LocalPort    RemoteDevice  RemotePortID  Capability  RemotePortDescr
+-----------  ------------  ------------  ----------  ---------------
+Ethernet0    compute-c1    eth0          O           IFoE port
+Ethernet8    compute-c1    eth1          O           IFoE port
+Ethernet16   compute-c1    eth2          O           IFoE port
+Ethernet24   compute-c1    eth3          O           IFoE port
+Ethernet256  compute-c1    eth4          O           IFoE port
+Ethernet264  compute-c1    eth5          O           IFoE port
+Ethernet272  compute-c1    eth6          O           IFoE port
+Ethernet280  compute-c1    eth7          O           IFoE port
+------------------------------------------------------------
+Total entries displayed:  8

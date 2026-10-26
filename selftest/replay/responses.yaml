@@ -76,37 +76,37 @@
 - cmd: ^sonic\-db\-cli\ STATE_DB\ hgetall\ 'FAN_INFO\|FanTray1_Fan1'$
   rc: 0
   host: ^sw
-  stdout: '{''presence'': ''True'', ''status'': ''True'', ''speed'': ''42'', ''drawer_name'': ''FanTray1''}
+  stdout: '{''presence'': ''True'', ''status'': ''True'', ''speed'': ''42'', ''speed_target'': ''42'', ''drawer_name'': ''FanTray1''}
 
     '
 - cmd: ^sonic\-db\-cli\ STATE_DB\ hgetall\ 'FAN_INFO\|FanTray1_Fan2'$
   rc: 0
   host: ^sw
-  stdout: '{''presence'': ''True'', ''status'': ''True'', ''speed'': ''41'', ''drawer_name'': ''FanTray1''}
+  stdout: '{''presence'': ''True'', ''status'': ''True'', ''speed'': ''41'', ''speed_target'': ''41'', ''drawer_name'': ''FanTray1''}
 
     '
 - cmd: ^sonic\-db\-cli\ STATE_DB\ hgetall\ 'FAN_INFO\|FanTray2_Fan1'$
   rc: 0
   host: ^sw
-  stdout: '{''presence'': ''True'', ''status'': ''True'', ''speed'': ''44'', ''drawer_name'': ''FanTray2''}
+  stdout: '{''presence'': ''True'', ''status'': ''True'', ''speed'': ''44'', ''speed_target'': ''44'', ''drawer_name'': ''FanTray2''}
 
     '
 - cmd: ^sonic\-db\-cli\ STATE_DB\ hgetall\ 'FAN_INFO\|FanTray2_Fan2'$
   rc: 0
   host: ^sw
-  stdout: '{''presence'': ''True'', ''status'': ''True'', ''speed'': ''43'', ''drawer_name'': ''FanTray2''}
+  stdout: '{''presence'': ''True'', ''status'': ''True'', ''speed'': ''43'', ''speed_target'': ''43'', ''drawer_name'': ''FanTray2''}
 
     '
 - cmd: ^sonic\-db\-cli\ STATE_DB\ hgetall\ 'FAN_INFO\|PSU\ 1\ FAN\ 1'$
   rc: 0
   host: ^sw
-  stdout: '{''presence'': ''True'', ''status'': ''True'', ''speed'': ''35'', ''drawer_name'': ''PSU 1''}
+  stdout: '{''presence'': ''True'', ''status'': ''True'', ''speed'': ''35'', ''speed_target'': ''35'', ''drawer_name'': ''PSU 1''}
 
     '
 - cmd: ^sonic\-db\-cli\ STATE_DB\ hgetall\ 'FAN_INFO\|PSU\ 2\ FAN\ 1'$
   rc: 0
   host: ^sw
-  stdout: '{''presence'': ''True'', ''status'': ''True'', ''speed'': ''36'', ''drawer_name'': ''PSU 2''}
+  stdout: '{''presence'': ''True'', ''status'': ''True'', ''speed'': ''36'', ''speed_target'': ''36'', ''drawer_name'': ''PSU 2''}
 
     '
 - cmd: ^show\ platform\ psustatus$
@@ -125,14 +125,16 @@
   rc: 0
   host: ^sw
   stdout: '{''presence'': ''true'', ''status'': ''true'', ''model'': ''PWR-3000-AC'', ''serial'': ''PSU1SN0001'', ''revision'': ''A1'', ''voltage'': ''12.05'', ''current'': ''92.10'', ''power'': ''1110.00'',
-    ''temp'': ''38.5'', ''temp_threshold'': ''65.0'', ''voltage_min_threshold'': ''11.4'', ''voltage_max_threshold'': ''12.6'', ''power_overload'': ''False'', ''led_status'': ''green''}
+    ''temp'': ''38.5'', ''temp_threshold'': ''65.0'', ''voltage_min_threshold'': ''11.4'', ''voltage_max_threshold'': ''12.6'', ''power_overload'': ''False'', ''led_status'': ''green'', ''input_voltage'':
+    ''230.0'', ''input_current'': ''5.20''}
 
     '
 - cmd: ^sonic\-db\-cli\ STATE_DB\ hgetall\ 'PSU_INFO\|PSU\ 2'$
   rc: 0
   host: ^sw
   stdout: '{''presence'': ''true'', ''status'': ''true'', ''model'': ''PWR-3000-AC'', ''serial'': ''PSU2SN0002'', ''revision'': ''A1'', ''voltage'': ''12.04'', ''current'': ''88.40'', ''power'': ''1064.00'',
-    ''temp'': ''38.5'', ''temp_threshold'': ''65.0'', ''voltage_min_threshold'': ''11.4'', ''voltage_max_threshold'': ''12.6'', ''power_overload'': ''False'', ''led_status'': ''green''}
+    ''temp'': ''38.5'', ''temp_threshold'': ''65.0'', ''voltage_min_threshold'': ''11.4'', ''voltage_max_threshold'': ''12.6'', ''power_overload'': ''False'', ''led_status'': ''green'', ''input_voltage'':
+    ''230.0'', ''input_current'': ''5.20''}
 
     '
 - cmd: ^show\ platform\ temperature$
@@ -689,6 +691,230 @@
   stdout: '7.92 3.10 1.20 9/412 31337
 
     '
+- cmd: ^lsusb\ \-t\ \|\ grep\ \-i\ 'CDC\ Data'$
+  rc: 0
+  host: ^sw
+  stdout: '        |__ Port 1: Dev 2, If 1, Class=CDC Data, Driver=cdc_ether, 480M
+
+    '
+- cmd: ^ip\ link\ show\ usb0$
+  rc: 0
+  host: ^sw
+  stdout: "5: usb0: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc fq_codel state UP mode DEFAULT group default qlen 1000\n    link/ether 02:00:00:00:c8:01 brd ff:ff:ff:ff:ff:ff\n"
+- cmd: ^ip\ addr\ show\ usb0$
+  rc: 0
+  host: ^sw
+  stdout: "5: usb0: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 state UP\n    inet 192.168.200.1/24 brd 192.168.200.255 scope global usb0\n"
+- cmd: ^ping -c 3 -W 2 192\.168\.200\.200
+  rc: 0
+  host: ^sw
+  stdout: '3 packets transmitted, 3 received, 0% packet loss, time 2003ms
+
+    '
+- cmd: ^show\ system\-health\ detail$
+  rc: 0
+  host: ^sw
+  file: system_health_detail.txt
+- cmd: ^systemctl\ is\-active\ system\-health$
+  rc: 0
+  host: ^sw
+  stdout: 'active
+
+    '
+- cmd: ^sonic\-db\-cli\ STATE_DB\ keys\ 'SYSTEM_HEALTH_INFO\*'$
+  rc: 0
+  host: ^sw
+  stdout: 'SYSTEM_HEALTH_INFO
+
+    '
+- cmd: ^sonic\-db\-cli\ STATE_DB\ hgetall\ SYSTEM_HEALTH_INFO$
+  rc: 0
+  host: ^sw
+  stdout: '{''summary'': ''OK'', ''container_checker'': ''OK'', ''routeCheck'': ''OK''}
+
+    '
+- cmd: ^watchdogutil\ \-\-help$
+  rc: 0
+  host: ^sw
+  stdout: "Usage: watchdogutil [OPTIONS] COMMAND [ARGS]...\n\nCommands:\n  arm      Arm HW watchdog\n  disarm   Disarm HW watchdog\n  status   Check the watchdog status\n  version  Display version info\n"
+- cmd: ^systemctl\ list\-units\ \-\-failed\ \-\-no\-legend\ \-\-plain$
+  rc: 0
+  host: ^sw
+  stdout: ''
+- cmd: ^docker\ ps\ \-a\ \-\-format\ '\{\{\.Names\}\}\|\{\{\.Status\}\}'$
+  rc: 0
+  host: ^sw
+  file: docker_ps_status.txt
+- cmd: ^show\ interfaces\ counters\ errors\ \-n\ asic0\ \-d\ all$
+  rc: 0
+  host: ^sw
+  file: intf_errors_asic0.txt
+- cmd: ^show\ interfaces\ counters\ errors\ \-n\ asic1\ \-d\ all$
+  rc: 0
+  host: ^sw
+  file: intf_errors_asic1.txt
+- cmd: ^for u in .*; do echo \"\$u \$\(systemctl is-active \$u\)\"; done$
+  rc: 0
+  host: ^sw
+  file: services_active.txt
+- cmd: ^vmstat\ 1\ 2$
+  rc: 0
+  host: ^sw
+  file: vmstat.txt
+- cmd: ^cat\ /proc/uptime$
+  rc: 0
+  host: ^sw
+  file: uptime.txt
+- cmd: ^cat\ /etc/resolv\.conf$
+  rc: 0
+  host: ^sw
+  file: resolv.txt
+- cmd: ^getent hosts \S+$
+  rc: 0
+  host: ^sw
+  stdout: '10.0.0.10      afm.lab.local
+
+    '
+- cmd: ^ip\ route\ show$
+  rc: 0
+  host: ^sw
+  file: ip_route.txt
+- cmd: ^ping\ \-c\ 5\ \-W\ 2\ 10\.0\.0\.254$
+  rc: 0
+  host: ^sw
+  file: ping_gw.txt
+- cmd: ^cat\ /etc/sonic/fru\.json$
+  rc: 0
+  host: ^sw
+  file: fru.json
+- cmd: ^test\ \-s\ /var/log/auth\.log$
+  rc: 0
+  host: ^sw
+  stdout: ''
+- cmd: ^grep\ \-hE\ 'authentication\ failure\|Failed\ password\|Invalid\ user'\ /var/log/auth\.log$
+  rc: 1
+  host: ^sw
+  file: auth_failures.txt
+- cmd: ^dmesg\ \-\-level=emerg,alert,crit$
+  rc: 0
+  host: ^sw
+  file: dmesg_crit.txt
+- cmd: ^journalctl\ \-b\ \-p\ 2\ \-\-no\-pager\ \-q$
+  rc: 0
+  host: ^sw
+  stdout: ''
+- cmd: ^ls\ \-1\ /etc/logrotate\.d$
+  rc: 0
+  host: ^sw
+  file: logrotate_d.txt
+- cmd: ^systemctl\ is\-enabled\ logrotate\.timer\ \|\|\ test\ \-f\ /etc/cron\.d/logrotate$
+  rc: 0
+  host: ^sw
+  stdout: 'enabled
+
+    '
+- cmd: ^iptables\ \-S$
+  rc: 0
+  host: ^sw
+  file: iptables.txt
+- cmd: ^sshd\ \-T$
+  rc: 0
+  host: ^sw
+  file: sshd_t.txt
+- cmd: ^config\ vlan\ add\ 4093$
+  rc: 1
+  host: ^sw
+  file: config_nonroot.txt
+- cmd: ^getent\ passwd$
+  rc: 0
+  host: ^sw
+  file: passwd.txt
+- cmd: ^hostname$
+  rc: 0
+  host: ^sw
+  file: hostname.txt
+- cmd: ^sonic\-db\-cli\ CONFIG_DB\ keys\ 'NTP_SERVER\|\*'$
+  rc: 0
+  host: ^sw
+  file: ntp_servers.txt
+- cmd: ^timedatectl\ show\ \-p\ NTPSynchronized\ \-\-value$
+  rc: 0
+  host: ^sw
+  file: ntp_sync.txt
+- cmd: ^sonic\-db\-cli\ CONFIG_DB\ hgetall\ 'FEATURE\|lldp'$
+  rc: 0
+  host: ^sw
+  file: feature_lldp.txt
+- cmd: ^show\ lldp\ table$
+  rc: 0
+  host: ^sw
+  file: lldp_table.txt
+- cmd: ^cp -p \S+ \S+$
+  rc: 0
+  host: ^sw
+  stdout: ''
+- cmd: ^sha256sum < \S+$
+  rc: 0
+  host: ^sw
+  file: sha256.txt
+- cmd: '^rm -f '
+  rc: 0
+  host: ^sw
+  stdout: ''
+- cmd: '^sonic-cfggen -d --print-data > /tmp/helios-running-\d+\.json && config load -y '
+  rc: 0
+  host: ^sw
+  stdout: ''
+- cmd: ^config\ reload\ \-y$
+  rc: 0
+  host: ^sw
+  stdout: 'Disabling container monitoring ...
+
+    Stopping SONiC target ...
+
+    Running command: /usr/local/bin/sonic-cfggen -j /etc/sonic/init_cfg.json -j /etc/sonic/config_db.json --write-to-db
+
+    Restarting SONiC target ...
+
+    Reloading Monit configuration ...
+
+    '
+- cmd: ^config\ save\ \-y$
+  rc: 0
+  host: ^sw
+  stdout: 'Running command: /usr/local/bin/sonic-cfggen -n asic0 -d --print-data > /etc/sonic/config_db0.json
+
+    '
+- cmd: ^dd if=/dev/zero of=\S+ bs=1M count=64 conv=fdatasync 2>&1$
+  rc: 0
+  host: ^sw
+  file: dd.txt
+- cmd: ^sonic-installer (set-default \S+|cleanup -y|remove -y \S+)$
+  rc: 0
+  host: ^sw
+  stdout: ''
+- cmd: ^systemctl\ restart\ syncd@0$
+  rc: 0
+  host: ^sw
+  stdout: ''
+- cmd: ^systemctl is-active lldp@\d+$
+  rc: 0
+  host: ^sw
+  stdout: 'active
+
+    '
+- cmd: ^show\ techsupport\ \-\-since\ '1\ hour\ ago'$
+  rc: 0
+  host: ^sw
+  stdout: 'Collecting dump ...
+
+    /var/dump/sonic_dump_sw1_20261026_120000.tar.gz
+
+    '
+- cmd: ^tar\ \-tzf\ /var/dump/sonic_dump_sw1_20261026_120000\.tar\.gz$
+  rc: 0
+  host: ^sw
+  file: techsupport_list.txt
 - cmd: ^rdma\ link\ show$
   rc: 0
   file: rdma_link.txt

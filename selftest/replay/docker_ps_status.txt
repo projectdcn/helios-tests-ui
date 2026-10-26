@@ -1,0 +1,15 @@
+database|Up 3 days
+database0|Up 3 days
+database1|Up 3 days
+pmon|Up 3 days
+lldp|Up 3 days
+lldp0|Up 3 days
+lldp1|Up 3 days
+swss0|Up 3 days
+swss1|Up 3 days
+syncd0|Up 3 days
+syncd1|Up 3 days
+bgp0|Up 3 days
+bgp1|Up 3 days
+afm-agent|Up 3 days
+afm-controller|Up 3 days

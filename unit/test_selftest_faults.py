@@ -126,7 +126,8 @@ def test_healthy_rack_passes(tmp_path):
 # every test behind the datapath pre-flight gate (helios/preflight.py) - a broken fabric must block all of them
 GATED_TRAFFIC = {"SMOKE-RCCL-1N", "SMOKE-RCCL-MN", "TC-AFM-001", "TC-AFM-002", "TC-AFM-003", "TC-AFM-004",
                  "TC-AFM-005A", "TC-HW-008", "TC-HW-017", "TC-AFM-LU-001", "TC-RAS-reset-001", "TC-RAS-reset-002",
-                 "TC-RAS-reset-003", "TC-RAS-reset-004", "TC-RAS-reset-007", "TC-RAS-reset-008", "TC-RAS-reset-009"}
+                 "TC-RAS-reset-003", "TC-RAS-reset-004", "TC-RAS-reset-007", "TC-RAS-reset-008", "TC-RAS-reset-009",
+                 "TC-SWH-037T"}
 IBS_ALL = {"TC-IBS-001", "TC-IBS-002", "TC-IBS-003", "TC-IBS-004", "TC-IBS-005", "TC-IBS-006"}
 RAS_TRAFFIC = {"TC-RAS-reset-001", "TC-RAS-reset-002", "TC-RAS-reset-003", "TC-RAS-reset-004", "TC-RAS-reset-007", "TC-RAS-reset-008", "TC-RAS-reset-009"}
 
@@ -134,14 +135,15 @@ FAULTS = {
     "slow_fan": (lambda d: _edit(d / "platform_fan.txt", r"(FanTray2_Fan1\s+)44%", r"\g<1> 4%"),
                  {"TC-SWH-002", "TC-SWH-003", "TC-SWH-006", "TC-SWH-008"}),
     "fan_missing": (lambda d: _edit(d / "platform_fan.txt", r"(FanTray1_Fan2.*)Present   OK    ", r"\1Absent    N/A   "),
-                    {"TC-SWH-002", "TC-SWH-006", "TC-SWH-008", "TC-SWH-017"}),
+                    {"TC-SWH-002", "TC-SWH-006", "TC-SWH-008", "TC-SWH-017",
+                     "TC-SWH-047T", "TC-SWH-048T", "TC-SWH-049T", "TC-SWH-050T"}),
     "psu_failed": (lambda d: _edit(d / "psustatus.txt", r"1110\.00  OK      green", "   0.00  NOT OK  red  "),
                    {"TC-SWH-010", "TC-SWH-019", "TC-SWH-027"}),
     "psu_led_wrong": (lambda d: _edit(d / "psustatus.txt", r"OK      green", "OK      amber"), {"TC-SWH-028"}),
     "port_down": (lambda d: _edit(d / "intf_status_asic1.txt", r"(Ethernet264.*trunk\s+)up  ", r"\1down"),
-                  {"TC-SWH-030", "TC-SWH-031"}),
+                  {"TC-SWH-030", "TC-SWH-031", "TC-SWH-091"}),
     "port_slow": (lambda d: _edit(d / "intf_status_asic0.txt", r"(Ethernet8\s+\S+\s+)400G", r"\g<1>200G"),
-                  {"TC-SWH-032"}),
+                  {"TC-SWH-032", "TC-SWH-091"}),
     "mtu_wrong": (lambda d: _edit(d / "intf_status_asic0.txt", r"(Ethernet16\s+\S+\s+400G  )9100", r"\g<1>1500"),
                   {"TC-SWH-033"}),
     "eeprom_bad_mac": (lambda d: _edit(d / "syseeprom.txt", "AA:BB:CC:00:11:22", "00:00:00:00:00:00"), {"TC-SWH-014"}),
@@ -153,13 +155,13 @@ FAULTS = {
     "asic1_missing": (lambda d: _edit_rule(d, "ip\\ netns\\ list", stdout="asic0 (id: 0)\n"),
                       {"TC-SWH-016", "TC-SWH-031", "TC-HW-013", "TC-E2E-062"}),  # asic1 FDB/descriptions unreadable
     "vlan_no_members": (lambda d: _edit_rule(d, "-n\\ asic1\\ CONFIG_DB\\ keys\\ 'VLAN_MEMBER", stdout=""),
-                        {"TC-SWH-036", "TC-SWA-079", "TC-SWH-037"}),  # also member symmetry; cabled ports in no VLAN
+                        {"TC-SWH-036", "TC-SWA-079", "TC-SWH-037", "TC-SWH-075"}),  # also member symmetry; cabled ports in no VLAN
     "ping_loss": (lambda d: _edit(d / "afmctl_ping.txt", r"IFoE Request    : 35/35 PASS, 0/35 fail",
                                   "IFoE Request    : 33/35 PASS, 2/35 fail"),
                   {"TC-AFM-001", "TC-HW-017", *GATED_TRAFFIC}),  # pre-flight ping probe blocks traffic
     # RAS cases and TC-HW-008 re-validate with the same TransferBench / RCCL workloads
     "tb_slow": (lambda d: _edit(d / "transferbench.txt", r"612\.48", "212.48"),
-                {"TC-AFM-002", "TC-AFM-003", "TC-HW-008", "TC-HW-017", "TC-AFM-LU-001", *RAS_TRAFFIC}),
+                {"TC-AFM-002", "TC-AFM-003", "TC-HW-008", "TC-HW-017", "TC-AFM-LU-001", "TC-SWH-037T", *RAS_TRAFFIC}),
     "rccl_wrong": (lambda d: _edit(d / "rccl.txt", r"^(\s+2048 .*?)0$", r"\g<1>7"), {"TC-AFM-004", "TC-AFM-005A", *RAS_TRAFFIC}),
     "rccl_truncated": (lambda d: _edit(d / "rccl.txt", r"^\s+1073741824 .*\n", ""),
                        {"TC-AFM-004", "TC-AFM-005A", *RAS_TRAFFIC}),
@@ -172,16 +174,18 @@ FAULTS = {
     "vlan_asymmetry": (lambda d: _edit_rule(d, "-n\\ asic1\\ CONFIG_DB\\ keys\\ 'VLAN\\|", stdout="VLAN|Vlan100\n"),
                        {"TC-SWA-079", "TC-SWH-036"}),
     "installer_missing_cmd": (lambda d: _edit_rule(d, "sonic\\-installer\\ \\-\\-help",
-                                                   stdout="Commands:\n  install\n  list\n  remove\n"), {"TC-SWA-138"}),
+                                                   stdout="Commands:\n  install\n  list\n  remove\n"),
+                              {"TC-SWA-138", "TC-SWH-069"}),
     "set_next_boot_fails": (lambda d: _edit_rule(d, "set-next-boot ", rc=1, stderr="Error: image not found"),
                             {"TC-SWA-129"}),
     "lldpd_down": (lambda d: _edit(d / "supervisor_lldp0.txt", r"^lldpd(\s+)RUNNING", r"lldpd\1EXITED "),
-                   {"TC-SWA-223", "TC-SWA-140", "TC-SWH-057"}),   # 057: lldpd is a critical process
+                   {"TC-SWA-223", "TC-SWA-140", "TC-SWH-057", "TC-SWH-105"}),   # 057: lldpd is a critical process
     "syncd_not_recovering": (lambda d: _edit(d / "supervisor_syncd0.txt", r"^syncd(\s+)RUNNING", r"syncd\1FATAL  "),
-                             {"TC-SWA-141", "TC-SWH-057"}),   # 057: syncd is a critical process
+                             {"TC-SWA-141", "TC-SWH-057", "TC-SWH-060T",
+                              "TC-SWH-094", "TC-SWH-095", "TC-SWH-104", "TC-SWH-106"}),   # 057/060T: syncd is a critical process; recovery waits fail
     "port_speed_mismatch": (lambda d: _edit_rule(d, "sonic-db-cli -n asic0 CONFIG_DB keys 'PORT",
                                                  stdout="Ethernet0 400000 400000\nEthernet8 400000 200000\n"),
-                            {"TC-HW-002"}),
+                            {"TC-HW-002", "TC-SWH-058T"}),
     # ---- scale-out RDMA
     "rdma_cqe_error": (lambda d: _edit(d / "perftest.txt", r"^ #bytes", " Completion with error at client\n #bytes"),
                        {"TC-IBS-001", "TC-IBS-002", "TC-IBS-003", "TC-IBS-004", "TC-IBS-005", "TC-IBS-006"}),
@@ -231,15 +235,17 @@ FAULTS = {
                        {"SMOKE-RCCL-1N", "SMOKE-RCCL-MN"}),
     "tb_worker_rank_fails": (lambda d: _edit_rule(d, "TB_RANK=[1-9]", rc=1, stderr="connect to master failed"),
                              {"TC-AFM-003", "TC-RAS-reset-003", "TC-RAS-reset-004", "TC-RAS-reset-007",
-                              "TC-RAS-reset-008", "TC-RAS-reset-009"}),
+                              "TC-RAS-reset-008", "TC-RAS-reset-009", "TC-SWH-037T"}),
     # one bad tray: the pre-flight excludes c2 - single-tray cases run on c1 as PARTIAL, two-tray cases are BLOCKED
     "gpu_not_active": (lambda d: _edit(d / "afmctl_device_c2.json", r'"config_phase": "ACTIVE"', '"config_phase": "PROVIDER"'),
                        {"TC-BU-011", "HC-003", *GATED_TRAFFIC}),
     "ping_no_summary": (lambda d: _edit(d / "afmctl_ping.txt", r"Summary:(.|\n)*", "ERR - Failed to start ping test\n"),
                         {"TC-AFM-001", "TC-HW-017", *GATED_TRAFFIC}),
     # MR3 failure mode: one plane silently drops a port's ingress while links/LLDP/VLAN look healthy
-    "port_dropping_lifetime": (lambda d: _drops(d, "Ethernet264", live=False), {"TC-SWA-074"}),
-    "port_still_dropping": (lambda d: _drops(d, "Ethernet272", live=True), {"TC-SWA-074", *GATED_TRAFFIC}),
+    "port_dropping_lifetime": (lambda d: _drops(d, "Ethernet264", live=False),
+                               {"TC-SWA-074", "TC-SWH-054T", "TC-SWH-055T"}),
+    "port_still_dropping": (lambda d: _drops(d, "Ethernet272", live=True),
+                            {"TC-SWA-074", "TC-SWH-054T", "TC-SWH-055T", *GATED_TRAFFIC}),
     # ---- sideband bring-up / destination MACs
     "sb_slot_missing": (lambda d: _edit(d / "afm_agent_ps.txt", r"^/sb-node-agent -slot-id 0 .*\n", ""), {"TC-BU-009"}),
     "agent_on_compute": (lambda d: _edit(d / "compute_ps.txt", r"\Z", "inb-node-agent  /usr/bin/inb-node-agent\n"),
@@ -270,10 +276,11 @@ FAULTS = {
     # the tools a datapath test declares are missing on every tray (g02-g17: TransferBench not installed on 7 trays):
     # the pre-flight excludes all trays for exactly those tests -> BLOCKED; tests without declared tools still run
     "tools_missing": (lambda d: _edit_rule(d, "^command -v", rc=1),
-                      {"TC-AFM-002", "TC-AFM-003", "TC-AFM-004", "TC-AFM-005A", "SMOKE-RCCL-1N", "SMOKE-RCCL-MN"}),
+                      {"TC-AFM-002", "TC-AFM-003", "TC-AFM-004", "TC-AFM-005A", "SMOKE-RCCL-1N", "SMOKE-RCCL-MN",
+                       "TC-SWH-037T"}),
     # ---- added switch cases (TC-SWH-037..042)
     "gpu_port_routed": (lambda d: _edit(d / "intf_status_asic0.txt", r"(Ethernet8\s+.*?)trunk ", r"\1routed"),
-                        {"TC-SWH-037"}),
+                        {"TC-SWH-037", "TC-SWH-091"}),
     "optics_low_rx": (lambda d: _edit(d / "xcvr_dom.txt", r"RX1Power: -1\.20dBm", "RX1Power: -14.20dBm"), {"TC-SWH-039"}),
     "fec_ber_high": (lambda d: _edit(d / "fec_asic0.txt", r"1\.2e-08", "3.4e-04"), {"TC-SWH-040"}),
     "container_restarted": (lambda d: _edit(d / "docker_restarts.txt", r"^/syncd0 0 ", "/syncd0 3 "), {"TC-SWH-041"}),
@@ -285,11 +292,12 @@ FAULTS = {
     "container_missing": (lambda d: _edit_rule(d, "docker\\ ps\\ \\-\\-format\\ '\\{\\{\\.Names",
                                                stdout="database\npmon\nlldp\nlldp0\nlldp1\nswss0\nswss1\nsyncd1\n"
                                                       "afm-agent\ndatabase0\ndatabase1\n"),
-                          {"TC-SWH-041", "TC-SWH-016", "TC-SWA-141"}),   # 016/SWA-141 read the same container list
+                          {"TC-SWH-041", "TC-SWH-016", "TC-SWA-141", "TC-SWH-094", "TC-SWH-095", "TC-SWH-104",
+                           "TC-SWH-106"}),   # 016/SWA-141 read the same container list; recovery waits fail
     "kernel_panic": (lambda d: _edit_rule(d, "^show\\ reboot\\-cause$", stdout="Kernel Panic - Out of memory [Time: Tue Oct 13]\n"),
                      {"TC-SWH-042"}),
     "core_file": (lambda d: _edit_rule(d, "^ls\\ \\-1\\ /var/core$", stdout="syncd.1760313600.4242.core.gz\n"),
-                  {"TC-SWH-042"}),
+                  {"TC-SWH-042", "TC-SWH-044T"}),
     # ---- added switch cases, second batch (TC-SWH-043..047)
     "kernel_aer": (lambda d: _edit_rule(d, "^grep -hE", stdout="2026 Oct 14 16:20:01.000001 sw1 WARNING kernel: "
                                        "[1201.5] pcieport 0000:00:01.1: AER: Corrected error received: 0000:01:00.0\n", rc=0),
@@ -312,9 +320,10 @@ FAULTS = {
     "mgmt_errors": (lambda d: _cycle(d, "eth0.txt", r"(1630377338 12608432)      0", r"\1     42",
                                      "ip\\ \\-s\\ link"), {"TC-SWH-054"}),
     "voltage_warning": (lambda d: _edit(d / "voltage.txt", r"False", "True "), {"TC-SWH-055"}),
-    "disk_full": (lambda d: _edit(d / "df.txt", r"2% /var/log", "95% /var/log"), {"TC-SWH-056"}),
+    "disk_full": (lambda d: _edit(d / "df.txt", r"2% /var/log", "95% /var/log"), {"TC-SWH-056", "TC-SWH-061T", "TC-SWH-082"}),
     "critical_process_exited": (lambda d: _edit(d / "supervisor_swss0.txt", r"^(orchagent\s+)RUNNING", r"\1EXITED "),
-                                {"TC-SWH-057", "TC-SWA-141"}),   # SWA-141 also checks swss processes
+                                {"TC-SWH-057", "TC-SWA-141", "TC-SWH-060T",
+                                 "TC-SWH-094", "TC-SWH-095", "TC-SWH-104", "TC-SWH-106"}),   # SWA-141 also checks swss processes; recovery waits fail
     "watchdog_unarmed": (lambda d: _edit(d / "watchdog.txt", r"Status: Armed", "Status: Unarmed"), {"TC-SWH-058"}),
     # full-rack health check (tests/health)
     "gpu_uncorrectable_ecc": (lambda d: _edit(d / "amd_smi_ecc.json", r'"total_uncorrectable_count": 0', '"total_uncorrectable_count": 2'),
@@ -332,7 +341,93 @@ FAULTS = {
     "gpu_firmware_mixed": (lambda d: _edit(d / "amd_smi_firmware.json", r'"fw_version": "2430"', '"fw_version": "2431"'),
                            {"HC-010"}),
     "tray_driver_version_missing": (lambda d: _edit_rule(d, "amdgpu/version", rc=1), {"HC-010"}),
-    "thermalctld_down": (lambda d: _edit_rule(d, "thermalctld", stdout="thermalctld   EXITED\n"), {"TC-SWH-004"}),
+    "thermalctld_down": (lambda d: _edit_rule(d, "thermalctld", stdout="thermalctld   EXITED\n"), {"TC-SWH-004", "TC-SWH-099"}),
+    # ---- tracking-sheet switch cases (tests/switch/test_switch_platform.py)
+    "temp_critical": (lambda d: _edit(d / "temperature.txt", r"(ASIC1\s+)54\.0", r"\g<1>116.0"),
+                      {"TC-SWH-004", "TC-SWH-038T", "TC-SWH-042T", "TC-SWH-055"}),
+    "health_summary_bad": (lambda d: _edit_rule(d, "system\\-health\\ summary",
+                                                stdout="System status summary\n  Services:\n    Status: Not OK\n"
+                                                       "  Hardware:\n    Status: OK\n"), {"TC-SWH-039T", "TC-SWH-041"}),
+    "health_component_not_ok": (lambda d: _edit(d / "system_health_detail.txt", r"(routeCheck\s+)OK    ", r"\1Not OK"),
+                                {"TC-SWH-040T"}),
+    "health_monitor_inactive": (lambda d: _edit_rule(d, "is\\-active\\ system\\-health", stdout="inactive\n"),
+                                {"TC-SWH-041T"}),
+    "watchdog_no_disarm": (lambda d: _edit_rule(d, "watchdogutil\\ \\-\\-help",
+                                                stdout="Commands:\n  arm  Arm HW watchdog\n  status  Check\n"),
+                           {"TC-SWH-043T"}),
+    "systemd_unit_failed": (lambda d: _edit_rule(d, "list\\-units\\ \\-\\-failed",
+                                                 stdout="snmp.service loaded failed failed SNMP agent\n"), {"TC-SWH-045T"}),
+    "container_exited": (lambda d: _edit(d / "docker_ps_status.txt", r"^bgp0\|Up 3 days", "bgp0|Exited (1) 2 hours ago"),
+                         {"TC-SWH-046T"}),
+    "fan_led_amber": (lambda d: _edit(d / "platform_fan.txt", r"green(\s+FanTray2_Fan2)", r"amber\1"), {"TC-SWH-047T"}),
+    "fan_airflow_mixed": (lambda d: _edit(d / "platform_fan.txt", r"(FanTray2_Fan1\s+44%\s+)intake ", r"\1exhaust"),
+                          {"TC-SWH-051T"}),
+    "fan_rpm_zero": (lambda d: _edit_rule(d, "hgetall\\ 'FAN_INFO\\|FanTray1_Fan2'", stdout=repr(
+        {"presence": "True", "status": "True", "speed": "0", "speed_target": "41", "drawer_name": "FanTray1"}) + "\n"),
+                     {"TC-SWH-006", "TC-SWH-052T", "TC-SWH-099"}),
+    "fan_off_target": (lambda d: _edit_rule(d, "hgetall\\ 'FAN_INFO\\|FanTray2_Fan1'", stdout=repr(
+        {"presence": "True", "status": "True", "speed": "44", "speed_target": "90", "drawer_name": "FanTray2"}) + "\n"),
+                       {"TC-SWH-099"}),
+    "psu_inefficient": (lambda d: _edit_rule(d, "hgetall\\ 'PSU_INFO\\|PSU\\ 2'", stdout=repr(
+        {"presence": "true", "status": "true", "model": "PWR-3000-AC", "serial": "PSU2SN0002", "revision": "A1",
+         "voltage": "12.04", "current": "88.40", "power": "1064.00", "temp": "38.5", "temp_threshold": "65.0",
+         "voltage_min_threshold": "11.4", "voltage_max_threshold": "12.6", "power_overload": "False",
+         "led_status": "green", "input_voltage": "230.0", "input_current": "9.80"}) + "\n"), {"TC-SWH-053T"}),
+    "error_counters_missing_port": (lambda d: _edit(d / "intf_errors_asic1.txt", r"^Ethernet264 .*\n", ""),
+                                    {"TC-SWH-056T"}),
+    "xcvr_absent": (lambda d: _edit(d / "xcvr_presence_asic0.txt", r"(Ethernet8\s+)Present", r"\1Not present"),
+                    {"TC-SWH-039", "TC-SWH-057T"}),
+    "service_failed": (lambda d: _edit(d / "services_active.txt", r"^syncd@1 active", "syncd@1 failed"), {"TC-SWH-059T"}),
+    "cpu_busy": (lambda d: _edit(d / "vmstat.txt", r" 6  3 91  0  0\n\Z", "90  7  3  0  0\n"), {"TC-SWH-061T"}),
+    "load_high": (lambda d: _edit(d / "meminfo.txt", r"^1\.63 ", "41.63 "), {"TC-SWH-056", "TC-SWH-062T"}),
+    "unexpected_recent_reboot": (lambda d: [_edit(d / "uptime.txt", r"^259200\.12", "120.40"),
+                                            _edit_rule(d, "^show\\ reboot\\-cause$", stdout="Kernel Panic - Oops\n")],
+                                 {"TC-SWH-042", "TC-SWH-063"}),
+    "no_nameserver": (lambda d: _edit(d / "resolv.txt", r"^nameserver .*\n", ""), {"TC-SWH-064", "TC-CTL-059"}),
+    "running_version_differs": (lambda d: _edit_rule(d, "^show\\ version$",
+                                                     stdout="SONiC Software Version: SONiC.202411.3\n"),
+                                {"TC-SWH-067"}),
+    "next_boot_differs": (lambda d: _edit(d / "sonic_installer_list.txt", r"^Next: .*$", "Next: SONiC-OS-helios.202411.3"),
+                          {"TC-SWH-068", "TC-SWH-102", "TC-SWA-129"}),
+    "asic_port_table_missing": (lambda d: [_edit(d / f, r'"PORT": \{', '"PORT_X": {')
+                                           for f in ("cfg_running_asic1.json", "cfg_saved_asic1.json")],
+                                {"TC-SWH-070", "TC-SWH-071", "TC-SWH-073"}),
+    "interface_table_missing": (lambda d: [_edit(d / f, r'"INTERFACE": \{', '"INTERFACE_X": {')
+                                           for f in ("cfg_running_asic0.json", "cfg_saved_asic0.json")],
+                                {"TC-SWH-072"}),
+    "vlan_id_differs": (lambda d: [_edit(d / f, r'"vlanid": "101"', '"vlanid": "102"')
+                                   for f in ("cfg_running_asic1.json", "cfg_saved_asic1.json")], {"TC-SWH-074"}),
+    "port_no_admin_status": (lambda d: [_edit(d / f, r'"admin_status": "up",\s*', "")
+                                        for f in ("cfg_running_asic0.json", "cfg_saved_asic0.json")], {"TC-SWH-073"}),
+    "only_default_route": (lambda d: _edit(d / "ip_route.txt", r"^10\.0\.0\.0/24 .*\n", ""), {"TC-SWH-077"}),
+    "gateway_ping_loss": (lambda d: _edit(d / "ping_gw.txt", r"5 received, 0% packet loss", "3 received, 40% packet loss"),
+                          {"TC-SWH-078"}),
+    "fru_mac_count": (lambda d: _edit(d / "fru.json", r'"num-mac-address": 512', '"num-mac-address": 256'), {"TC-SWH-079"}),
+    "auth_failures": (lambda d: _edit_rule(d, "authentication\\ failure", rc=0, file=None,
+                                           stdout="Oct 26 10:00:01 sw1 sshd[42]: Failed password for root from 10.9.9.9\n"),
+                      {"TC-SWH-080"}),
+    "dmesg_critical": (lambda d: _edit_rule(d, "dmesg\\ \\-\\-level", file=None,
+                                            stdout="[  12.3] mce: [Hardware Error]: Machine check events logged\n"),
+                       {"TC-SWH-081"}),
+    "no_rsyslog_rotation": (lambda d: _edit(d / "logrotate_d.txt", r"^rsyslog\n", ""), {"TC-SWH-082"}),
+    "firewall_open": (lambda d: _edit(d / "iptables.txt", r"^-A INPUT (.|\n)*", ""), {"TC-SWH-083"}),
+    "ssh_root_login": (lambda d: _edit(d / "sshd_t.txt", r"^permitrootlogin no", "permitrootlogin yes"), {"TC-SWH-084"}),
+    "cli_not_locked": (lambda d: _edit_rule(d, "config\\ vlan\\ add\\ 4093", rc=0, file=None, stdout=""), {"TC-SWH-085"}),
+    "extra_uid0": (lambda d: _edit(d / "passwd.txt", r"\Z", "backdoor:x:0:0::/root:/bin/bash\n"), {"TC-SWH-086"}),
+    "default_hostname": (lambda d: _edit(d / "hostname.txt", r"^sw1$", "sonic"), {"TC-SWH-087"}),
+    "clock_unsynced": (lambda d: _edit(d / "ntp_sync.txt", r"^yes$", "no"), {"TC-SWH-088", "TC-CTL-035"}),
+    "lldp_total_wrong": (lambda d: _edit(d / "lldp_table.txt", r"displayed:  8", "displayed:  9"), {"TC-SWH-090"}),
+    "fec_uncorr_climbing": (lambda d: _cycle(d, "fec_asic0.txt", r"(Ethernet8  U\s+4,705\s+)10", r"\g<1>99",
+                                             "fec\\-stats\\ \\-n\\ asic0"), {"TC-SWH-040", "TC-SWH-092"}),
+    "config_hash_changes": (lambda d: _cycle(d, "sha256.txt", r"^9f2c", "0000", "^sha256sum < "),
+                            {"TC-SWH-093", "TC-SWH-096", "TC-SWH-097"}),
+    "config_load_fails": (lambda d: _edit_rule(d, "config load -y", rc=1, stdout="", stderr="Error: invalid JSON"),
+                          {"TC-SWH-094"}),
+    "config_reload_fails": (lambda d: _edit_rule(d, "^config\\ reload\\ \\-y$", rc=1), {"TC-SWH-095"}),
+    "config_save_fails": (lambda d: _edit_rule(d, "^config\\ save\\ \\-y$", rc=1), {"TC-SWH-097"}),
+    "disk_slow": (lambda d: _edit(d / "dd.txt", r"167 MB/s", "4.2 MB/s"), {"TC-SWH-098"}),
+    "syncd_restart_fails": (lambda d: _edit_rule(d, "restart\\ syncd@0", rc=1, stderr="Job failed"), {"TC-SWH-104"}),
+    "techsupport_incomplete": (lambda d: _edit(d / "techsupport_list.txt", r"^.*/dump/\n.*/dump/docker\.ps\n", ""), {"TC-SWH-107"}),
 }
 
 

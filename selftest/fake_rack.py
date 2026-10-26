@@ -1011,7 +1011,10 @@ class FakeComputeTransport:
             st.sim.refresh(st.objs)
             if "TransferBench" in c:
                 sim.tb_at[self.slot] = time.monotonic()      # the congestion case's watermarks rise on these ports
-            if c == "amd-smi process --json":
+            if "TransferBench" in c and "tb_low_after_trigger" in st.f and any(k[0] == self.slot for k in sim.flapped):
+                # a link of this tray came back after a trigger, but the traffic does not use it again
+                out = "TransferBench v1.50\nSummary: 12 transfers\nAggregate bandwidth (GPU Timed):   58.20 GB/s\n"
+            elif c == "amd-smi process --json":
                 out = json.dumps([{"gpu": g, "process_list": [{"process_info": {"name": "gpu-collectives", "pid": 4242 + g}}]
                                    if "gpu_busy" in st.f else []} for g in range(4)])
             elif c == "afmctl show device --json":

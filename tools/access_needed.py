@@ -40,6 +40,7 @@ TRAFFIC = "Compute SSH + datapath traffic"
 FILE_ACCESS = {
     "tests/l1/test_switch_hw.py": SW,
     "tests/switch/test_switch_agent.py": SW,
+    "tests/switch/test_switch_platform.py": SW,
     "tests/l1/test_afm_datapath.py": TRAFFIC,
     "tests/l1/test_rccl_smoke.py": TRAFFIC,
     "tests/ifoe/test_ifoe_driver.py": TRAFFIC,
@@ -51,7 +52,7 @@ FILE_ACCESS = {
     "tests/scaleout/test_rdma_perftest.py": "Compute SSH + scale-out NICs",
 }
 ID_ACCESS = {
-    "TC-HW-002": SW, "TC-HW-008": TRAFFIC, "TC-HW-013": SW_CMP,
+    "TC-HW-002": SW, "TC-HW-008": TRAFFIC, "TC-HW-013": SW_CMP, "TC-SWH-037T": SW_CMP + " + datapath traffic",
     "TC-RAS-reset-007": TRAFFIC + " + node reboot", "TC-RAS-reset-008": TRAFFIC + " + BMC",
     "TC-RAS-reset-009": TRAFFIC + " + PDU",
     "TC-CTL-059": SW, "TC-BUG-022": SW, "TC-E2E-118": SW, "TC-BUG-021": SW + " + switch reboot",

@@ -1,0 +1,6 @@
+IFACE       STATE  RX_ERR  RX_DRP  RX_OVR  TX_ERR  TX_DRP  TX_OVR
+----------  -----  ------  ------  ------  ------  ------  ------
+Ethernet0   U           0       3       0       0       0       0
+Ethernet8   U           0       3       0       0       0       0
+Ethernet16  U           0       3       0       0       0       0
+Ethernet24  U           0       3       0       0       0       0

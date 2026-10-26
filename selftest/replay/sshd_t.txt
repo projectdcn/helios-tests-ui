@@ -1,0 +1,5 @@
+port 22
+permitrootlogin no
+permitemptypasswords no
+maxauthtries 6
+passwordauthentication yes

@@ -1,7 +1,9 @@
-"""Shared helpers for the disruptive AFM suites (test_afm_links.py, test_afm_failover.py)."""
+"""Shared helpers for the disruptive AFM suites (test_afm_links.py, test_afm_failover.py) and the telemetry metrics
+queries (test_afm_rbac_audit.py, test_afm_metrics_charts.py)."""
 from __future__ import annotations
 
 import logging
+import time
 
 import pytest
 
@@ -158,3 +160,54 @@ def _user_vpod_restore(ops, sysv, user, moved):
         ops.add_gpus(sysv, moved)
 
 
+# ------------------------------------------------------------------ telemetry metrics
+
+METRICS = "/telemetry/v1/metrics"
+CLUSTER_FIELDS = ["AdmittedComputeNodes", "AdmittedSwitchNodes", "DecommissionedComputeNodes",
+                  "DecommissionedSwitchNodes", "DisconnectedComputeNodes", "DisconnectedSwitchNodes",
+                  "HealthyComputeNodes", "HealthySwitchNodes", "PendingComputeNodes", "PendingSwitchNodes",
+                  "RejectedComputeNodes", "RejectedSwitchNodes", "UnhealthyComputeNodes", "UnhealthySwitchNodes"]
+PORT_FIELDS = ["InOctets", "InPackets", "OutBroadcast", "OutMulticast", "OutOctets", "OutPackets", "InBroadcast",
+               "InDiscards", "InErrors", "InMulticast", "OutDiscards", "OutErrors", "PauseRxPkts", "PauseTxPkts",
+               "PfcRxPkts", "PfcTxPkts"]
+# KI-F07-005: these SwitchPortStats fields return no series on hardware
+PORT_KNOWN_NO_SERIES = ["InBroadcast", "InErrors", "InMulticast", "OutDiscards", "OutErrors", "PauseRxPkts",
+                        "PauseTxPkts", "PfcRxPkts", "PfcTxPkts"]
+
+
+def _metric_spec(kind: str, fields, selectors=None, window="1h", group_by_field=None, function="last",
+                 count: int = 1) -> dict:
+    """One telemetry query: ``fields`` a field name or a list; ``window`` the look-back of start-time (end now())."""
+    q = {"kind": kind, "fields": [fields] if isinstance(fields, str) else list(fields), "function": function,
+         "start-time": f"now() - {window}", "end-time": "now()", "sort-order": "descending",
+         "pagination": {"count": count}}
+    if selectors:
+        q["selectors"] = [{"requirements": selectors}]
+    if group_by_field:
+        q["group-by-field"] = group_by_field
+    return q
+
+
+def _metric_raw(afm, queries: list[dict]):
+    """POST the queries; retries while AFM rate-limits metric queries (413 "query rate limit exceeded")."""
+    body = {"tenant": None, "namespace": None, "queries": queries}
+    for attempt in range(8):
+        r = afm.raw("POST", METRICS, body)
+        if r.status_code != 413:
+            break
+        time.sleep(min(2 ** attempt * 0.5, 10))
+    return r
+
+
+def _metric_series(afm, q: dict) -> list[dict]:
+    """Series of one query; an HTTP error raises."""
+    r = _metric_raw(afm, [q])
+    if r.status_code >= 400:
+        raise AssertionError(f"metrics query {q.get('kind')}.{','.join(q.get('fields') or [])} -> HTTP {r.status_code}: "
+                             f"{r.text[:200]}")
+    res = r.json()
+    return ((res or {}).get("results") or [{}])[0].get("series") or []
+
+
+def _metric(afm, kind: str, field: str, selectors=None, window="1h", group_by_field=None):
+    return _metric_series(afm, _metric_spec(kind, field, selectors, window, group_by_field))

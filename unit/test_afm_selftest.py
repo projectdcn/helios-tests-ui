@@ -175,6 +175,14 @@ LIFECYCLE_FAULTS = [
     ("no_readmit", {"TC-NA-019"}),
     ("configdone_stuck", {"TC-NA-016"}),
     ("no_listing_control", {"TC-CTL-006"}),      # real AFM ends the initial list with a Control event
+    # metrics charts (tests/afm/test_afm_metrics_charts.py; chart_api set in inventory-afm3.yaml)
+    ("metrics_wrong_admitted", {"TC-AFM-L2-57"}),   # Cluster.AdmittedComputeNodes one more than the node list
+    ("chart_put_ignored", {"TC-AFM-L2-58", "TC-AFM-L2-59"}),   # chart PUT answers 200, the edit is lost
+    ("metrics_window_ignored", {"TC-AFM-L2-59"}),   # samples outside the requested start/end time
+    ("chart_delete_noop", {"TC-AFM-L2-60"}),     # chart DELETE answers 200, the chart stays
+    # station path-to-port map + TransferBench after link triggers (tests/afm/test_afm_path_traffic.py)
+    ("station_map_stale", {"TC-AFM-L1-6", "TC-AFM-L1-7"}),    # a down / drained port stays in the map
+    ("tb_low_after_trigger", {"TC-AFM-L1-6", "TC-AFM-L1-7"}),  # bandwidth below the floor after a trigger
 ]
 # group H: sideband agent placement / control path (tests/afm/test_afm_sideband_more.py), 3-switch fake
 SIDEBAND_FAULTS = [

@@ -1,8 +1,9 @@
 """In-process fake AFM controller (REST + AggWatch WebSocket) for the offline self-test of tests/afm.
 
 Models the behaviour documented in results/extract-afm-api.md: /v1/login + sid cookie, 401 without it,
-RBAC by Role permissions, Status error envelopes, audit records, metrics, techsupport and the AggWatch
-stream. ``faults`` switches individual behaviours off so the self-test can prove each test catches them.
+RBAC by Role permissions, Status error envelopes, audit records, metrics (a 2 h history, one sample every
+METRIC_STEP_S, start/end-time honoured), metrics charts (a stand-in collection at CHART_PATH: the real chart API is
+not documented), techsupport and the AggWatch stream. ``faults`` switches individual behaviours off so the self-test can prove each test catches them.
 
     srv = FakeAfm(faults={"cookie_flags"}).start(); ...; srv.stop()
 """
@@ -24,7 +25,7 @@ import threading
 import sys
 import time
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, unquote, urlsplit
@@ -33,6 +34,10 @@ ADMIN = ("admin", "selftest-admin-pw")  # fake credentials (selftest/inventory.y
 WS_GUID = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11"
 CLUSTER_KINDS = {"computenodes": "ComputeNode", "switchnodes": "SwitchNode", "vpods": "VPod", "pods": "Pod",
                  "failoverpolicies": "FailoverPolicy"}
+# metrics charts: a stand-in for the undocumented AFM UI chart objects (thresholds.afm.metrics.chart_api)
+CHART_PATH = "/configs/preferences/v1/metricscharts"
+METRIC_STEP_S = 30
+METRIC_HISTORY_S = 7200
 KNOWN_NO_SERIES = {"InBroadcast", "InErrors", "InMulticast", "OutDiscards", "OutErrors", "PauseRxPkts",
                    "PauseTxPkts", "PfcRxPkts", "PfcTxPkts"}
 
@@ -101,6 +106,7 @@ class State:
                                                              {"datafabric-reconfig": "automatic",
                                                               "link-fail-threshold": 10})},
             "SyslogExport": {},
+            "MetricsChart": {},
             "AlertPolicy": {"default-event-based-alerts": obj("AlertPolicy", "default-event-based-alerts", {   # as g02-g17
                 "resource": "Event", "severity": "critical", "enable": True,
                 "requirements": [{"key": "severity", "operator": "equals", "values": ["critical"]}]})},
@@ -339,6 +345,9 @@ class Handler(BaseHTTPRequestHandler):
             return self._send(200, {"kind": "AuditEventList", "items": self._select(st.audit, qs)})
         if path == "/telemetry/v1/metrics" and method == "POST":
             return self._metrics(body)
+        if path == CHART_PATH or path.startswith(CHART_PATH + "/"):
+            return self._crud(method, "preferences", "MetricsChart", p[5] if len(p) > 5 else None, body, user, path,
+                              action)
         if path == "/sysruntime/v1/cluster/recoverykeys":
             if st.recovery_key_taken and "recovery_key_reusable" not in st.f:
                 return self._err(412, "recovery key already downloaded")
@@ -424,7 +433,8 @@ class Handler(BaseHTTPRequestHandler):
             return self._err(404, "Object get failed: object not found")
         if method == "PUT":
             o = coll[name]
-            if not (kind == "FailoverPolicy" and "policy_edit_ignored" in st.f):   # 200, but the edit is lost
+            if not ((kind == "FailoverPolicy" and "policy_edit_ignored" in st.f)    # 200, but the edit is lost
+                    or (kind == "MetricsChart" and "chart_put_ignored" in st.f)):
                 o["spec"] = (body or {}).get("spec") or o["spec"]
             o["meta"]["mod-time"] = now()
             o["meta"]["resource-version"] = str(next(st.rv))
@@ -436,6 +446,8 @@ class Handler(BaseHTTPRequestHandler):
                      if v["spec"].get("failover-policy") == name]
             if kind == "FailoverPolicy" and users and "policy_delete_in_use" not in st.f:
                 return self._err(412, f"failover policy {name} is in use by vPods {users}")
+            if kind == "MetricsChart" and "chart_delete_noop" in st.f:     # 200, but the chart stays
+                return self._send(200, coll[name])
             o = coll.pop(name)
             st.record(user, "Delete", kind, name, path)
             st.publish("Deleted", group, kind, o)
@@ -702,22 +714,84 @@ class Handler(BaseHTTPRequestHandler):
             out = [e for e in out if ((e.get(a) or {}).get(b) if b else e.get(a)) == v]
         return list(reversed(out))[: int((qs.get("page-size") or [1000])[0])]
 
+    @staticmethod
+    def _when(expr: str, ref: datetime) -> datetime | None:
+        """'now()', 'now() - 15m' (s/m/h/d) or RFC3339; None if neither."""
+        m = re.fullmatch(r"now\(\)\s*(?:-\s*(\d+)\s*([smhd]))?", (expr or "").strip())
+        if m:
+            return ref - timedelta(seconds=int(m.group(1) or 0) * {"s": 1, "m": 60, "h": 3600, "d": 86400}[m.group(2) or "s"])
+        try:
+            t = _ts(expr)
+        except ValueError:
+            return None
+        return t if expr and t.tzinfo else None
+
+    def _series(self, q, tags, value, start, end, ref):
+        """One series of q's window: samples every METRIC_STEP_S over the last METRIC_HISTORY_S, reduced by
+        q.function (last / max / min / mean; anything else = every sample), sorted and paginated."""
+        t = datetime.fromtimestamp(int(ref.timestamp()) // METRIC_STEP_S * METRIC_STEP_S, timezone.utc)
+        pts = []
+        while (ref - t).total_seconds() <= METRIC_HISTORY_S:
+            if start <= t <= end:
+                pts.append([t, value(t)])
+            t -= timedelta(seconds=METRIC_STEP_S)
+        if not pts:
+            return None
+        fn = str(q.get("function") or "none").lower()
+        vals = [v for _, v in pts]
+        if fn == "last":
+            pts = pts[:1]
+        elif fn in ("max", "min", "mean"):
+            pts = [[pts[0][0], {"max": max, "min": min, "mean": lambda x: sum(x) / len(x)}[fn](vals)]]
+        if str(q.get("sort-order") or "descending").lower().startswith("asc"):
+            pts.reverse()
+        n = int((q.get("pagination") or {}).get("count") or 0)
+        pts = pts[:n] if n > 0 else pts
+        return {"name": q.get("kind"), "tags": tags, "columns": ["time"] + list(q.get("fields") or []),
+                "values": [[t.strftime("%Y-%m-%dT%H:%M:%SZ"), v] for t, v in pts]}
+
     def _metrics(self, body):
         st = self.st
+        ref = datetime.now(timezone.utc)
+
+        def admitted(kind):
+            return [o for o in st.objs[kind].values() if (o.get("status") or {}).get("admission-phase") == "admitted"]
+
+        def healthy(kind):
+            return sum(1 for o in admitted(kind) if any(c.get("type") == "healthy" and str(c.get("status")).lower() == "true"
+                                                        for c in (o.get("status") or {}).get("conditions") or []))
         res = []
         for q in body.get("queries") or []:
             f = (q.get("fields") or [""])[0]
+            start, end = self._when(q.get("start-time") or "now() - 1h", ref), self._when(q.get("end-time") or "now()", ref)
+            if start is None or end is None:
+                return self._err(400, f"invalid start-time / end-time {q.get('start-time')!r} / {q.get('end-time')!r}")
+            if "metrics_window_ignored" in st.f:          # every sample, whatever window was asked for
+                start, end = ref - timedelta(seconds=METRIC_HISTORY_S), ref
             if q.get("kind") == "Cluster":
-                vals = {"AdmittedComputeNodes": len(st.objs["ComputeNode"]), "AdmittedSwitchNodes": len(st.objs["SwitchNode"]),
-                        "HealthyComputeNodes": len(st.objs["ComputeNode"]), "HealthySwitchNodes": len(st.objs["SwitchNode"])}
+                vals = {"AdmittedComputeNodes": len(admitted("ComputeNode")), "AdmittedSwitchNodes": len(admitted("SwitchNode")),
+                        "HealthyComputeNodes": healthy("ComputeNode"), "HealthySwitchNodes": healthy("SwitchNode")}
+                vals["UnhealthyComputeNodes"] = vals["AdmittedComputeNodes"] - vals["HealthyComputeNodes"]
+                vals["UnhealthySwitchNodes"] = vals["AdmittedSwitchNodes"] - vals["HealthySwitchNodes"]
+                if "metrics_wrong_admitted" in st.f:
+                    vals["AdmittedComputeNodes"] += 1
                 if "metrics_missing" in st.f and f == "HealthySwitchNodes":
                     res.append({"statement_id": 0})
                     continue
-                res.append({"statement_id": 0, "series": [{"name": "Cluster", "values": [[now(), vals.get(f, 0)]]}]})
+                series = [({}, lambda t, v=vals.get(f, 0): v)]
             elif q.get("kind") == "SwitchPortStats" and f not in KNOWN_NO_SERIES:
-                res.append({"statement_id": 0, "series": [{"tags": {"name": "Ethernet1"}, "values": [[now(), 1234]]}]})
+                reqs = [r for sel in q.get("selectors") or [] for r in sel.get("requirements") or []]
+                rep = next((r["values"][0] for r in reqs if r.get("key") == "reporterID" and r.get("values")),
+                           next(iter(st.objs["SwitchNode"]), "switch"))
+                # counters grow with time (bytes / packets since boot)
+                series = [({"reporterID": rep, "name": port},
+                           lambda t, k=k: 10 ** 9 + 1000 * k + int(t.timestamp()) * (4096 if "Octets" in f else 4))
+                          for k, port in enumerate(("Ethernet0", "Ethernet8"))]
             else:
                 res.append({"statement_id": 0})
+                continue
+            out = [x for x in (self._series(q, tags, v, start, end, ref) for tags, v in series) if x]
+            res.append({"statement_id": 0, "series": out} if out else {"statement_id": 0})
         self._send(200, {"results": res})
 
     def _techsupport(self, method, name, body, user):

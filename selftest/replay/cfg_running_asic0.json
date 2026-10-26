@@ -21,6 +21,17 @@
             "speed": "400000"
         }
     },
+    "DEVICE_METADATA": {
+        "localhost": {
+            "hostname": "sw1",
+            "asic_name": "asic0",
+            "sub_role": "BackEnd"
+        }
+    },
+    "INTERFACE": {
+        "Ethernet-BP0": {},
+        "Ethernet-BP0|10.1.0.0/31": {}
+    },
     "VLAN": {
         "Vlan100": {
             "vlanid": "100"

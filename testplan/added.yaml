@@ -908,3 +908,463 @@ cases:
   category: bmc-blanton
   origin: added 2026-10-20
   scope: BMC (ARIM rack manager)
+
+# Cases from AMD's Helios ScaleUp test-tracking sheet (Helios_ScaleUp_Test_Tracking_Trimmed.xlsx) that were in
+# neither the BKC-26.12 plan nor this file, merged 26 Oct 2026. tracking_id = the sheet's TID; the sheet reuses
+# TC-SWH-037..062 for other cases than the ones above, so those run as TC-SWH-037T..062T.
+- id: TC-SWH-037T
+  level: L2
+  title: Interface counters — traffic flow (self-generating IFoE traffic between two vPod computes)
+  category: switch-hw
+  origin: AMD tracking sheet 2026-10-26
+  tracking_id: TC-SWH-037
+- id: TC-SWH-038T
+  level: L1
+  title: Platform temperature sensors within thresholds (no critical over-temp)
+  category: switch-hw
+  origin: AMD tracking sheet 2026-10-26
+  tracking_id: TC-SWH-038
+- id: TC-SWH-039T
+  level: L1
+  title: System health summary reports OK (no failed components)
+  category: switch-hw
+  origin: AMD tracking sheet 2026-10-26
+  tracking_id: TC-SWH-039
+- id: TC-SWH-040T
+  level: L2
+  title: System health detail — every monitored component reports OK
+  category: switch-hw
+  origin: AMD tracking sheet 2026-10-26
+  tracking_id: TC-SWH-040
+- id: TC-SWH-041T
+  level: L2
+  title: System health monitor service running and populated
+  category: switch-hw
+  origin: AMD tracking sheet 2026-10-26
+  tracking_id: TC-SWH-041
+- id: TC-SWH-042T
+  level: L2
+  title: Environment sensors (voltage/temperature) within configured thresholds
+  category: switch-hw
+  origin: AMD tracking sheet 2026-10-26
+  tracking_id: TC-SWH-042
+- id: TC-SWH-043T
+  level: L2
+  title: Hardware watchdog manageable via SONiC (watchdogutil)
+  category: switch-hw
+  origin: AMD tracking sheet 2026-10-26
+  tracking_id: TC-SWH-043
+- id: TC-SWH-044T
+  level: L1
+  title: No unexpected kernel/application core dumps present
+  category: switch-hw
+  origin: AMD tracking sheet 2026-10-26
+  tracking_id: TC-SWH-044
+- id: TC-SWH-045T
+  level: L1
+  title: No failed systemd units on the switch
+  category: switch-hw
+  origin: AMD tracking sheet 2026-10-26
+  tracking_id: TC-SWH-045
+- id: TC-SWH-046T
+  level: L1
+  title: All SONiC docker containers running and healthy
+  category: switch-hw
+  origin: AMD tracking sheet 2026-10-26
+  tracking_id: TC-SWH-046
+- id: TC-SWH-047T
+  level: L2
+  title: Fan LED colour consistent with fan operational status
+  category: switch-hw
+  origin: AMD tracking sheet 2026-10-26
+  tracking_id: TC-SWH-047
+- id: TC-SWH-048T
+  level: L1
+  title: All fans report operational (OK) status
+  category: switch-hw
+  origin: AMD tracking sheet 2026-10-26
+  tracking_id: TC-SWH-048
+- id: TC-SWH-049T
+  level: L2
+  title: All fan drawers present with status OK
+  category: switch-hw
+  origin: AMD tracking sheet 2026-10-26
+  tracking_id: TC-SWH-049
+- id: TC-SWH-050T
+  level: L2
+  title: Fan redundancy maintained (survives a single fan down)
+  category: switch-hw
+  origin: AMD tracking sheet 2026-10-26
+  tracking_id: TC-SWH-050
+- id: TC-SWH-051T
+  level: L2
+  title: All fans share the same airflow direction
+  category: switch-hw
+  origin: AMD tracking sheet 2026-10-26
+  tracking_id: TC-SWH-051
+- id: TC-SWH-052T
+  level: L2
+  title: Fan RPM readable and non-zero for every fan
+  category: switch-hw
+  origin: AMD tracking sheet 2026-10-26
+  tracking_id: TC-SWH-052
+- id: TC-SWH-053T
+  level: L2
+  title: PSU power efficiency (output/input) within expected range
+  category: switch-hw
+  origin: AMD tracking sheet 2026-10-26
+  tracking_id: TC-SWH-053
+- id: TC-SWH-054T
+  level: L2
+  title: Interface drop-counter plausibility (RX_DRP not implausibly high vs RX_OK)
+  category: switch-hw
+  origin: AMD tracking sheet 2026-10-26
+  tracking_id: TC-SWH-054
+- id: TC-SWH-055T
+  level: L2
+  title: No excessive RX/TX packet drops on fabric interfaces
+  category: switch-hw
+  origin: AMD tracking sheet 2026-10-26
+  tracking_id: TC-SWH-055
+- id: TC-SWH-056T
+  level: L2
+  title: Per-interface error counters readable (show interfaces counters errors)
+  category: switch-hw
+  origin: AMD tracking sheet 2026-10-26
+  tracking_id: TC-SWH-056
+- id: TC-SWH-057T
+  level: L2
+  title: Transceiver presence consistent with port medium (backplane = not-present expected)
+  category: switch-hw
+  origin: AMD tracking sheet 2026-10-26
+  tracking_id: TC-SWH-057
+- id: TC-SWH-058T
+  level: L2
+  title: Port speed profile matches active 400G profile (BCM bcm_dsc_dump)
+  category: switch-hw
+  origin: AMD tracking sheet 2026-10-26
+  tracking_id: TC-SWH-058
+- id: TC-SWH-059T
+  level: L1
+  title: All SONiC critical services active (per ASIC)
+  category: switch-hw
+  origin: AMD tracking sheet 2026-10-26
+  tracking_id: TC-SWH-059
+- id: TC-SWH-060T
+  level: L2
+  title: Critical system processes (syncd/orchagent/etc.) present and running
+  category: switch-hw
+  origin: AMD tracking sheet 2026-10-26
+  tracking_id: TC-SWH-060
+- id: TC-SWH-061T
+  level: L2
+  title: System CPU/memory/disk utilisation within limits
+  category: switch-hw
+  origin: AMD tracking sheet 2026-10-26
+  tracking_id: TC-SWH-061
+- id: TC-SWH-062T
+  level: L2
+  title: System load average within acceptable range
+  category: switch-hw
+  origin: AMD tracking sheet 2026-10-26
+  tracking_id: TC-SWH-062
+- id: TC-SWH-063
+  level: L1
+  title: System uptime stable (no unexpected recent reboot)
+  category: switch-hw
+  origin: AMD tracking sheet 2026-10-26
+  tracking_id: TC-SWH-063
+- id: TC-SWH-064
+  level: L2
+  title: DNS configuration present and resolvable
+  category: switch-hw
+  origin: AMD tracking sheet 2026-10-26
+  tracking_id: TC-SWH-064
+- id: TC-SWH-065
+  level: L1
+  title: SONiC OS version matches expected build
+  category: switch-hw
+  origin: AMD tracking sheet 2026-10-26
+  tracking_id: TC-SWH-065
+- id: TC-SWH-066
+  level: L2
+  title: At least one SONiC image installed and listable (sonic-installer list)
+  category: switch-hw
+  origin: AMD tracking sheet 2026-10-26
+  tracking_id: TC-SWH-066
+- id: TC-SWH-067
+  level: L2
+  title: Running image version matches sonic-installer Current
+  category: switch-hw
+  origin: AMD tracking sheet 2026-10-26
+  tracking_id: TC-SWH-067
+- id: TC-SWH-068
+  level: L2
+  title: Image binary version consistent (Current == Next boot image)
+  category: switch-hw
+  origin: AMD tracking sheet 2026-10-26
+  tracking_id: TC-SWH-068
+- id: TC-SWH-069
+  level: L2
+  title: Image management commands available (sonic-installer subcommands)
+  category: switch-hw
+  origin: AMD tracking sheet 2026-10-26
+  tracking_id: TC-SWH-069
+- id: TC-SWH-070
+  level: L2
+  title: Running config is valid JSON with required tables (DEVICE_METADATA/PORT)
+  category: switch-hw
+  origin: AMD tracking sheet 2026-10-26
+  tracking_id: TC-SWH-070
+- id: TC-SWH-071
+  level: L2
+  title: ConfigDB core tables present per ASIC namespace
+  category: switch-hw
+  origin: AMD tracking sheet 2026-10-26
+  tracking_id: TC-SWH-071
+- id: TC-SWH-072
+  level: L2
+  title: ConfigDB INTERFACE table populated per namespace
+  category: switch-hw
+  origin: AMD tracking sheet 2026-10-26
+  tracking_id: TC-SWH-072
+- id: TC-SWH-073
+  level: L2
+  title: ConfigDB PORT table populated with speed + admin_status per ASIC
+  category: switch-hw
+  origin: AMD tracking sheet 2026-10-26
+  tracking_id: TC-SWH-073
+- id: TC-SWH-074
+  level: L2
+  title: ConfigDB VLAN table consistent across both ASICs
+  category: switch-hw
+  origin: AMD tracking sheet 2026-10-26
+  tracking_id: TC-SWH-074
+- id: TC-SWH-075
+  level: L2
+  title: VLAN membership symmetric across asic0/asic1
+  category: switch-hw
+  origin: AMD tracking sheet 2026-10-26
+  tracking_id: TC-SWH-075
+- id: TC-SWH-076
+  level: L2
+  title: MAC/FDB table populated and readable
+  category: switch-hw
+  origin: AMD tracking sheet 2026-10-26
+  tracking_id: TC-SWH-076
+- id: TC-SWH-077
+  level: L2
+  title: Routing table populated (default + route entries present)
+  category: switch-hw
+  origin: AMD tracking sheet 2026-10-26
+  tracking_id: TC-SWH-077
+- id: TC-SWH-078
+  level: L1
+  title: Management/network connectivity reachable (ping, 0% loss)
+  category: switch-hw
+  origin: AMD tracking sheet 2026-10-26
+  tracking_id: TC-SWH-078
+- id: TC-SWH-079
+  level: L2
+  title: FRU JSON valid and complete (num-mac-address == 512)
+  category: switch-hw
+  origin: AMD tracking sheet 2026-10-26
+  tracking_id: TC-SWH-079
+- id: TC-SWH-080
+  level: L2
+  title: Audit/authentication logs present with no unexpected auth failures
+  category: switch-hw
+  origin: AMD tracking sheet 2026-10-26
+  tracking_id: TC-SWH-080
+- id: TC-SWH-081
+  level: L2
+  title: No critical errors in boot logs (dmesg/journal scan)
+  category: switch-hw
+  origin: AMD tracking sheet 2026-10-26
+  tracking_id: TC-SWH-081
+- id: TC-SWH-082
+  level: L2
+  title: Log rotation configured (log growth is bounded)
+  category: switch-hw
+  origin: AMD tracking sheet 2026-10-26
+  tracking_id: TC-SWH-082
+- id: TC-SWH-083
+  level: L2
+  title: Host firewall (iptables) active with expected chains
+  category: switch-hw
+  origin: AMD tracking sheet 2026-10-26
+  tracking_id: TC-SWH-083
+- id: TC-SWH-084
+  level: L2
+  title: SSH hardening correct (no root login / password weakening)
+  category: switch-hw
+  origin: AMD tracking sheet 2026-10-26
+  tracking_id: TC-SWH-084
+- id: TC-SWH-085
+  level: L2
+  title: SONiC CLI lockdown / privilege restrictions enforced
+  category: switch-hw
+  origin: AMD tracking sheet 2026-10-26
+  tracking_id: TC-SWH-085
+- id: TC-SWH-086
+  level: L2
+  title: User accounts as expected (no unauthorized or extra UID-0 accounts)
+  category: switch-hw
+  origin: AMD tracking sheet 2026-10-26
+  tracking_id: TC-SWH-086
+- id: TC-SWH-087
+  level: L2
+  title: System hostname set (non-default) and RFC-1123 valid
+  category: switch-hw
+  origin: AMD tracking sheet 2026-10-26
+  tracking_id: TC-SWH-087
+- id: TC-SWH-088
+  level: L2
+  title: NTP configured and system clock synchronized
+  category: switch-hw
+  origin: AMD tracking sheet 2026-10-26
+  tracking_id: TC-SWH-088
+- id: TC-SWH-089
+  level: L2
+  title: LLDP neighbors discovered (cleanly skipped when LLDP disabled)
+  category: switch-hw
+  origin: AMD tracking sheet 2026-10-26
+  tracking_id: TC-SWH-089
+- id: TC-SWH-090
+  level: L2
+  title: show lldp table parses cleanly (AFOS-43 regression guard)
+  category: switch-hw
+  origin: AMD tracking sheet 2026-10-26
+  tracking_id: TC-SWH-090
+- id: TC-SWH-091
+  level: L2
+  title: RTM line-side ports up at correct speed/mode (no single-link-down on a present tray)
+  category: switch-hw
+  origin: AMD tracking sheet 2026-10-26
+  tracking_id: TC-SWH-091
+- id: TC-SWH-092
+  level: L2
+  title: No uncorrectable FEC errors climbing on any up interface
+  category: switch-hw
+  origin: AMD tracking sheet 2026-10-26
+  tracking_id: TC-SWH-092
+- id: TC-SWH-093
+  level: L2
+  title: Configuration backup (config_db.json copy, byte-identical)
+  category: switch-hw
+  origin: AMD tracking sheet 2026-10-26
+  tracking_id: TC-SWH-093
+- id: TC-SWH-094
+  level: L2
+  title: Configuration load (re-apply running config, no restart)
+  category: switch-hw
+  origin: AMD tracking sheet 2026-10-26
+  tracking_id: TC-SWH-094
+- id: TC-SWH-095
+  level: L2
+  title: Configuration reload (config reload -y) — forwarding-disruptive
+  category: switch-hw
+  origin: AMD tracking sheet 2026-10-26
+  tracking_id: TC-SWH-095
+- id: TC-SWH-096
+  level: L2
+  title: Configuration restore (sha256-guarded backup/restore)
+  category: switch-hw
+  origin: AMD tracking sheet 2026-10-26
+  tracking_id: TC-SWH-096
+- id: TC-SWH-097
+  level: L2
+  title: Configuration save (config save -y, idempotent)
+  category: switch-hw
+  origin: AMD tracking sheet 2026-10-26
+  tracking_id: TC-SWH-097
+- id: TC-SWH-098
+  level: L2
+  title: Disk performance (fdatasync write throughput floor)
+  category: switch-hw
+  origin: AMD tracking sheet 2026-10-26
+  tracking_id: TC-SWH-098
+- id: TC-SWH-099
+  level: L2
+  title: Fan speed adjustment (thermalctld auto-control)
+  category: switch-hw
+  origin: AMD tracking sheet 2026-10-26
+  tracking_id: TC-SWH-099
+- id: TC-SWH-100
+  level: L2
+  title: Image cleanup (remove old images; no-op if only current)
+  category: switch-hw
+  origin: AMD tracking sheet 2026-10-26
+  tracking_id: TC-SWH-100
+- id: TC-SWH-101
+  level: L2
+  title: Image remove (remove a non-current image)
+  category: switch-hw
+  origin: AMD tracking sheet 2026-10-26
+  tracking_id: TC-SWH-101
+- id: TC-SWH-102
+  level: L2
+  title: Set default boot image
+  category: switch-hw
+  origin: AMD tracking sheet 2026-10-26
+  tracking_id: TC-SWH-102
+- id: TC-SWH-104
+  level: L2
+  title: Single process restart (syncd@0) — forwarding-disruptive
+  category: switch-hw
+  origin: AMD tracking sheet 2026-10-26
+  tracking_id: TC-SWH-104
+- id: TC-SWH-105
+  level: L2
+  title: Service restart capability
+  category: switch-hw
+  origin: AMD tracking sheet 2026-10-26
+  tracking_id: TC-SWH-105
+- id: TC-SWH-106
+  level: L2
+  title: SWSS restart and interface recovery — forwarding-disruptive
+  category: switch-hw
+  origin: AMD tracking sheet 2026-10-26
+  tracking_id: TC-SWH-106
+- id: TC-SWH-107
+  level: L2
+  title: Techsupport content validation
+  category: switch-hw
+  origin: AMD tracking sheet 2026-10-26
+  tracking_id: TC-SWH-107
+- id: TC-AFM-L2-57
+  level: L2
+  title: Metrics Validation - Create Metrics and validate the data
+  category: afm
+  origin: AMD tracking sheet 2026-10-26
+  tracking_id: TC-AFM-L2-57
+- id: TC-AFM-L2-58
+  level: L2
+  title: Metrics Validation - Edit the existing chart and check the data
+  category: afm
+  origin: AMD tracking sheet 2026-10-26
+  tracking_id: TC-AFM-L2-58
+- id: TC-AFM-L2-59
+  level: L2
+  title: Metrics Validation - Edit existing chart's start/end time and validate
+  category: afm
+  origin: AMD tracking sheet 2026-10-26
+  tracking_id: TC-AFM-L2-59
+- id: TC-AFM-L2-60
+  level: L2
+  title: Metrics Validation - Delete operation
+  category: afm
+  origin: AMD tracking sheet 2026-10-26
+  tracking_id: TC-AFM-L2-60
+- id: TC-AFM-L1-6
+  level: L1
+  title: Path-to-Port Mapping — In-Domain TxB Traffic After Trigger
+  category: afm
+  origin: AMD tracking sheet 2026-10-26
+  tracking_id: TC-AFM-L1-6
+- id: TC-AFM-L1-7
+  level: L1
+  title: Path-to-Port Map — Cross-Domain TxB Validation
+  category: afm
+  origin: AMD tracking sheet 2026-10-26
+  tracking_id: TC-AFM-L1-7

@@ -1,0 +1,7 @@
+{
+  "fru": {
+    "product-name": "HELIOS-SW-2ASIC",
+    "num-mac-address": 512,
+    "base-mac-address": "AA:BB:CC:00:11:22"
+  }
+}

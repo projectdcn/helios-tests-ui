@@ -1,0 +1,7 @@
+sonic_dump_sw1_20261026_120000/dump/
+sonic_dump_sw1_20261026_120000/dump/docker.ps
+sonic_dump_sw1_20261026_120000/log/syslog
+sonic_dump_sw1_20261026_120000/log/syslog.1
+sonic_dump_sw1_20261026_120000/etc/sonic/config_db.json
+sonic_dump_sw1_20261026_120000/etc/sonic/config_db0.json
+sonic_dump_sw1_20261026_120000/etc/sonic/config_db1.json

@@ -1,0 +1,26 @@
+System status summary
+
+  System status LED  green
+  Services:
+    Status: OK
+  Hardware:
+    Status: OK
+
+System services and devices monitor list
+
+Name               Status  Type
+-----------------  ------  ----------
+container_checker  OK      Program
+routeCheck         OK      Program
+sw1                OK      System
+rsyslog            OK      Process
+root-overlay       OK      Filesystem
+PSU 1              OK      PSU
+PSU 2              OK      PSU
+FanTray1_Fan1      OK      Fan
+ASIC0              OK      ASIC
+
+System services and devices ignore list
+
+Name  Status  Type
+----  ------  ----

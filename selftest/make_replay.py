@@ -65,10 +65,10 @@ add("docker ps --format '{{.Names}}'",
     "\n".join(["database", "pmon", "lldp0", "lldp1", "swss0", "swss1", "syncd0", "syncd1", "bgp0", "bgp1",
                "afm-agent", "afm-controller", "lldp", "database0", "database1"]) + "\n", host=SW)
 
-fans = [["FanTray1", "N/A", "FanTray1_Fan1", "42%", "intake", "Present", "OK", "20261009 10:00:00"],
-        ["FanTray1", "N/A", "FanTray1_Fan2", "41%", "intake", "Present", "OK", "20261009 10:00:00"],
-        ["FanTray2", "N/A", "FanTray2_Fan1", "44%", "intake", "Present", "OK", "20261009 10:00:00"],
-        ["FanTray2", "N/A", "FanTray2_Fan2", "43%", "intake", "Present", "OK", "20261009 10:00:00"],
+fans = [["FanTray1", "green", "FanTray1_Fan1", "42%", "intake", "Present", "OK", "20261009 10:00:00"],
+        ["FanTray1", "green", "FanTray1_Fan2", "41%", "intake", "Present", "OK", "20261009 10:00:00"],
+        ["FanTray2", "green", "FanTray2_Fan1", "44%", "intake", "Present", "OK", "20261009 10:00:00"],
+        ["FanTray2", "green", "FanTray2_Fan2", "43%", "intake", "Present", "OK", "20261009 10:00:00"],
         ["PSU 1", "N/A", "PSU 1 FAN 1", "35%", "intake", "Present", "OK", "20261009 10:00:00"],
         ["PSU 2", "N/A", "PSU 2 FAN 1", "36%", "intake", "Present", "OK", "20261009 10:00:00"]]
 add("show platform fan", table(["Drawer", "LED", "FAN", "Speed", "Direction", "Presence", "Status", "Timestamp"],
@@ -76,7 +76,8 @@ add("show platform fan", table(["Drawer", "LED", "FAN", "Speed", "Direction", "P
 add(db(None, "STATE_DB", "keys", "FAN_INFO|*"), "\n".join(f"FAN_INFO|{f[2]}" for f in fans) + "\n", host=SW)
 for f in fans:
     add(db(None, "STATE_DB", "hgetall", f"FAN_INFO|{f[2]}"),
-        repr({"presence": "True", "status": "True", "speed": f[3].rstrip("%"), "drawer_name": f[0]}) + "\n", host=SW)
+        repr({"presence": "True", "status": "True", "speed": f[3].rstrip("%"), "speed_target": f[3].rstrip("%"),
+          "drawer_name": f[0]}) + "\n", host=SW)
 
 psus = [["PSU 1", "PWR-3000-AC", "PSU1SN0001", "A1", "12.05", "92.10", "1110.00", "OK", "green"],
         ["PSU 2", "PWR-3000-AC", "PSU2SN0002", "A1", "12.04", "88.40", "1064.00", "OK", "green"]]
@@ -88,7 +89,7 @@ for p in psus:
         "presence": "true", "status": "true", "model": p[1], "serial": p[2], "revision": p[3],
         "voltage": p[4], "current": p[5], "power": p[6], "temp": "38.5", "temp_threshold": "65.0",
         "voltage_min_threshold": "11.4", "voltage_max_threshold": "12.6", "power_overload": "False",
-        "led_status": p[8]}) + "\n", host=SW)
+        "led_status": p[8], "input_voltage": "230.0", "input_current": "5.20"}) + "\n", host=SW)
 
 add("show platform temperature", table(
     ["Sensor", "Temperature", "High TH", "Low TH", "Crit High TH", "Crit Low TH", "Warning", "Timestamp"],
@@ -201,6 +202,8 @@ for ns in NS:
 _cfg = {"host": {"DEVICE_METADATA": {"localhost": {"hostname": "sw1", "asic_name": "", "platform": "x86_64-juniper_qfx5252-r0"}}}}
 for i, ns in enumerate(NS):
     _cfg[ns] = {"PORT": {p: {"admin_status": "up", "mtu": "9100", "speed": "400000"} for p in PORTS[ns]},
+                "DEVICE_METADATA": {"localhost": {"hostname": "sw1", "asic_name": ns, "sub_role": "BackEnd"}},
+                "INTERFACE": {INTERNAL[ns]: {}, f"{INTERNAL[ns]}|10.1.{i}.0/31": {}},
                 "VLAN": {"Vlan100": {"vlanid": "100"}, "Vlan101": {"vlanid": "101"}},
                 "VLAN_MEMBER": {f"Vlan{100 + j % 2}|{p}": {"tagging_mode": "untagged"} for j, p in enumerate(PORTS[ns])}}
 add("sonic-cfggen -d --print-data", _json.dumps(_cfg["host"], indent=4), name="cfg_running_host.json", host=SW)
@@ -252,7 +255,7 @@ add("watchdogutil status", "Status: Armed\nTime remaining: 162 seconds\n", name=
 add("ssdutil", "Disk Type    : NVME\nDevice Model : TS2TMTE712P-VS2\nHealth       : 100.0%\nTemperature  : 41.0C\n",
     name="ssd.txt", host=SW)
 
-IMG_CUR, IMG_OLD = "SONiC-OS-helios.202505.1", "SONiC-OS-helios.202411.3"
+IMG_CUR, IMG_OLD = "SONiC-OS-202505I20260915070938_x100.15", "SONiC-OS-helios.202411.3"
 add("sonic-installer list", f"Current: {IMG_CUR}\nNext: {IMG_CUR}\nAvailable:\n{IMG_CUR}\n{IMG_OLD}\n",
     name="sonic_installer_list.txt", host=SW)
 add("sonic-installer --help", """Usage: sonic-installer [OPTIONS] COMMAND [ARGS]...
@@ -269,6 +272,101 @@ Commands:
 """, host=SW)
 add(rf"^sonic-installer set-next-boot ", "", host=SW, regex=True)
 add("cat /proc/loadavg", "7.92 3.10 1.20 9/412 31337\n", host=SW)
+# Blanton BMC over USB (TC-BLT-7.1.1-1): CDC Data device, usb0 192.168.200.1/24, BMC at .200 answers ping
+add("lsusb -t | grep -i 'CDC Data'", "        |__ Port 1: Dev 2, If 1, Class=CDC Data, Driver=cdc_ether, 480M\n", host=SW)
+add("ip link show usb0", "5: usb0: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc fq_codel state UP mode DEFAULT "
+    "group default qlen 1000\n    link/ether 02:00:00:00:c8:01 brd ff:ff:ff:ff:ff:ff\n", host=SW)
+add("ip addr show usb0", "5: usb0: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 state UP\n"
+    "    inet 192.168.200.1/24 brd 192.168.200.255 scope global usb0\n", host=SW)
+add(r"^ping -c 3 -W 2 192\.168\.200\.200", "3 packets transmitted, 3 received, 0% packet loss, time 2003ms\n",
+    host=SW, regex=True)
+
+# tracking-sheet switch cases (tests/switch/test_switch_platform.py: TC-SWH-037T..062T, 063..107), healthy outputs
+add("show system-health detail", "System status summary\n\n  System status LED  green\n  Services:\n    Status: OK\n"
+    "  Hardware:\n    Status: OK\n\nSystem services and devices monitor list\n\n" + table(
+        ["Name", "Status", "Type"],
+        [["container_checker", "OK", "Program"], ["routeCheck", "OK", "Program"], ["sw1", "OK", "System"],
+         ["rsyslog", "OK", "Process"], ["root-overlay", "OK", "Filesystem"], ["PSU 1", "OK", "PSU"],
+         ["PSU 2", "OK", "PSU"], ["FanTray1_Fan1", "OK", "Fan"], ["ASIC0", "OK", "ASIC"]]) +
+    "\nSystem services and devices ignore list\n\n" + table(["Name", "Status", "Type"], []),
+    name="system_health_detail.txt", host=SW)
+add("systemctl is-active system-health", "active\n", host=SW)
+add(db(None, "STATE_DB", "keys", "SYSTEM_HEALTH_INFO*"), "SYSTEM_HEALTH_INFO\n", host=SW)
+add(db(None, "STATE_DB", "hgetall", "SYSTEM_HEALTH_INFO"),
+    repr({"summary": "OK", "container_checker": "OK", "routeCheck": "OK"}) + "\n", host=SW)
+add("watchdogutil --help", "Usage: watchdogutil [OPTIONS] COMMAND [ARGS]...\n\nCommands:\n"
+    "  arm      Arm HW watchdog\n  disarm   Disarm HW watchdog\n  status   Check the watchdog status\n"
+    "  version  Display version info\n", host=SW)
+add("systemctl list-units --failed --no-legend --plain", "", host=SW)
+add("docker ps -a --format '{{.Names}}|{{.Status}}'", "".join(f"{c}|Up 3 days\n" for c in _ctrs),
+    name="docker_ps_status.txt", host=SW)
+for ns, ports in PORTS.items():
+    add(f"show interfaces counters errors -n {ns} -d all", table(
+        ["IFACE", "STATE", "RX_ERR", "RX_DRP", "RX_OVR", "TX_ERR", "TX_DRP", "TX_OVR"],
+        [[p_, "U", "0", "3", "0", "0", "0", "0"] for p_ in ports], right=set(range(2, 8))),
+        name=f"intf_errors_{ns}.txt", host=SW)
+_units = ["database", "pmon", "lldp"] + [f"{b}@{i}" for b in ("database", "swss", "syncd", "lldp") for i in (0, 1)]
+add(r"^for u in .*; do echo \"\$u \$\(systemctl is-active \$u\)\"; done$", "".join(f"{u} active\n" for u in _units),
+    name="services_active.txt", host=SW, regex=True)
+add("vmstat 1 2", "procs -----------memory---------- ---swap-- -----io---- -system-- ------cpu-----\n"
+    " r  b   swpd   free   buff  cache   si   so    bi    bo   in   cs us sy id wa st\n"
+    " 1  0      0 23254044 512000 4096000    0    0     1     5  100  200  5  2 93  0  0\n"
+    " 1  0      0 23254044 512000 4096000    0    0     0     8 1200 2400  6  3 91  0  0\n", name="vmstat.txt", host=SW)
+add("cat /proc/uptime", "259200.12 3801600.55\n", name="uptime.txt", host=SW)
+add("cat /etc/resolv.conf", "search lab.local\nnameserver 10.0.0.53\n", name="resolv.txt", host=SW)
+add(r"^getent hosts \S+$", "10.0.0.10      afm.lab.local\n", host=SW, regex=True)
+add("ip route show", "default via 10.0.0.254 dev eth0 metric 202\n10.0.0.0/24 dev eth0 proto kernel scope link "
+    "src 10.0.0.11\n", name="ip_route.txt", host=SW)
+add("ping -c 5 -W 2 10.0.0.254", "5 packets transmitted, 5 received, 0% packet loss, time 4006ms\n",
+    name="ping_gw.txt", host=SW)
+add("cat /etc/sonic/fru.json", _json.dumps({"fru": {"product-name": "HELIOS-SW-2ASIC", "num-mac-address": 512,
+                                                    "base-mac-address": "AA:BB:CC:00:11:22"}}, indent=2),
+    name="fru.json", host=SW)
+add("test -s /var/log/auth.log", "", host=SW)
+add("grep -hE 'authentication failure|Failed password|Invalid user' /var/log/auth.log", "", rc=1,
+    name="auth_failures.txt", host=SW)
+add("dmesg --level=emerg,alert,crit", "", name="dmesg_crit.txt", host=SW)
+add("journalctl -b -p 2 --no-pager -q", "", host=SW)
+add("ls -1 /etc/logrotate.d", "apt\ndpkg\nrsyslog\n", name="logrotate_d.txt", host=SW)
+add("systemctl is-enabled logrotate.timer || test -f /etc/cron.d/logrotate", "enabled\n", host=SW)
+add("iptables -S", "-P INPUT ACCEPT\n-P FORWARD ACCEPT\n-P OUTPUT ACCEPT\n-A INPUT -s 127.0.0.1/32 -i lo -j ACCEPT\n"
+    "-A INPUT -p tcp -m tcp --dport 22 -j ACCEPT\n-A INPUT -p tcp -m tcp --dport 443 -j ACCEPT\n",
+    name="iptables.txt", host=SW)
+add("sshd -T", "port 22\npermitrootlogin no\npermitemptypasswords no\nmaxauthtries 6\npasswordauthentication yes\n",
+    name="sshd_t.txt", host=SW)
+add("config vlan add 4093", "Root privileges are required for this operation\n", rc=1, name="config_nonroot.txt", host=SW)
+add("getent passwd", "root:x:0:0:root:/root:/bin/bash\ndaemon:x:1:1:daemon:/usr/sbin:/usr/sbin/nologin\n"
+    "admin:x:1000:1000:SONiC admin:/home/admin:/bin/bash\n", name="passwd.txt", host=SW)
+add("hostname", "sw1\n", name="hostname.txt", host=SW)
+add(db(None, "CONFIG_DB", "keys", "NTP_SERVER|*"), "NTP_SERVER|10.0.0.123\n", name="ntp_servers.txt", host=SW)
+add("timedatectl show -p NTPSynchronized --value", "yes\n", name="ntp_sync.txt", host=SW)
+add(db(None, "CONFIG_DB", "hgetall", "FEATURE|lldp"), repr({"state": "enabled", "auto_restart": "enabled"}) + "\n",
+    name="feature_lldp.txt", host=SW)
+_lldp_rows = [[p_, "compute-c1", f"eth{i}", "O", "IFoE port"] for i, p_ in enumerate(PORTS["asic0"] + PORTS["asic1"])]
+add("show lldp table", "Capability codes: (R) Router, (B) Bridge, (O) Other\n" + table(
+    ["LocalPort", "RemoteDevice", "RemotePortID", "Capability", "RemotePortDescr"], _lldp_rows) +
+    "-" * 60 + f"\nTotal entries displayed:  {len(_lldp_rows)}\n", name="lldp_table.txt", host=SW)
+add(r"^cp -p \S+ \S+$", "", host=SW, regex=True)
+add(r"^sha256sum < \S+$", "9f2c1d0e5b7a43c8a1e6d4b2f0c9e8a7b6d5c4e3f2a1b0c9d8e7f6a5b4c3d2e1  -\n",
+    name="sha256.txt", host=SW, regex=True)
+add(r"^rm -f ", "", host=SW, regex=True)
+add(r"^sonic-cfggen -d --print-data > /tmp/helios-running-\d+\.json && config load -y ", "", host=SW, regex=True)
+add("config reload -y", "Disabling container monitoring ...\nStopping SONiC target ...\nRunning command: "
+    "/usr/local/bin/sonic-cfggen -j /etc/sonic/init_cfg.json -j /etc/sonic/config_db.json --write-to-db\n"
+    "Restarting SONiC target ...\nReloading Monit configuration ...\n", host=SW)
+add("config save -y", "Running command: /usr/local/bin/sonic-cfggen -n asic0 -d --print-data > /etc/sonic/config_db0.json\n",
+    host=SW)
+add(r"^dd if=/dev/zero of=\S+ bs=1M count=64 conv=fdatasync 2>&1$",
+    "64+0 records in\n64+0 records out\n67108864 bytes (67 MB, 64 MiB) copied, 0.402 s, 167 MB/s\n",
+    name="dd.txt", host=SW, regex=True)
+add(r"^sonic-installer (set-default \S+|cleanup -y|remove -y \S+)$", "", host=SW, regex=True)
+add("systemctl restart syncd@0", host=SW)
+add(r"^systemctl is-active lldp@\d+$", "active\n", host=SW, regex=True)
+_ts = "/var/dump/sonic_dump_sw1_20261026_120000.tar.gz"
+add("show techsupport --since '1 hour ago'", f"Collecting dump ...\n{_ts}\n", host=SW)
+add(f"tar -tzf {_ts}", "".join(f"sonic_dump_sw1_20261026_120000/{e}\n" for e in (
+    "dump/", "dump/docker.ps", "log/syslog", "log/syslog.1", "etc/sonic/config_db.json",
+    "etc/sonic/config_db0.json", "etc/sonic/config_db1.json")), name="techsupport_list.txt", host=SW)
 
 # --------------------------------------------------------------- computes
 PERF = """---------------------------------------------------------------------------------------
@@ -392,8 +490,8 @@ Summary:
 """, name="afmctl_ping.txt", regex=True)
 # TransferBench socket multi-rank: rank 0 prints the results, workers print nothing
 # (multi-rank jobs carry a HELIOS_RUN=<tag> marker so a failed job's other ranks can be killed)
-rules.append({"cmd": r"^(HELIOS_RUN=\w+ )?TB_NUM_RANKS=\d+ TB_RANK=0 ", "rc": 0, "file": "transferbench.txt"})
-add(r"^(HELIOS_RUN=\w+ )?TB_NUM_RANKS=\d+ TB_RANK=[1-9]", "", regex=True)
+rules.append({"cmd": r"^(HELIOS_RUN=\w+ )?(TB_MASTER_PORT=\d+ )?TB_NUM_RANKS=\d+ TB_RANK=0 ", "rc": 0, "file": "transferbench.txt"})
+add(r"^(HELIOS_RUN=\w+ )?(TB_MASTER_PORT=\d+ )?TB_NUM_RANKS=\d+ TB_RANK=[1-9]", "", regex=True)
 add(r"RcclSmokeTest", """RcclSmokeTest v0.36 (96e7ac2)
 Running single-node smoke test
 GPUs      : 4

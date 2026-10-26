@@ -101,6 +101,7 @@ thresholds:
     aggwatch: {event_wait_s: 5, settle_s: 0.5, quiet_s: 2, idle_s: 3, cycles: 5, burst: 10, concurrent: 3, no_options_s: 5}
   switch:
     expected_fans: 4
+    fec_window_s: 1          # TC-SWH-092 (default 10 s)
     expected_psus: 2
     psu_capacity_w: 3000
     psu_current_max_a: 250
@@ -117,6 +118,7 @@ thresholds:
     cpu_stress_s: 0
     expected_lldp_neighbors: 8
     recover_timeout_s: 1
+    reload_timeout_s: 1      # TC-SWH-095 (default 900 s)
     poll_interval_s: 0
   ras: {settle_s: 0, down_wait_s: 0, boot_timeout_s: 1, poll_interval_s: 0}
   platform: {down_wait_s: 0, boot_timeout_s: 1, poll_interval_s: 0, topo_log_max_age_h: 24}

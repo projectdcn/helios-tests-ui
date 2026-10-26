@@ -1,0 +1,2 @@
+default via 10.0.0.254 dev eth0 metric 202
+10.0.0.0/24 dev eth0 proto kernel scope link src 10.0.0.11

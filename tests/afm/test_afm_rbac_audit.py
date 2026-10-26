@@ -11,6 +11,7 @@ from datetime import datetime, timezone
 
 import pytest
 
+from afm_helpers import CLUSTER_FIELDS, PORT_FIELDS, PORT_KNOWN_NO_SERIES, _metric
 from helios.afm import AUTH, CLUSTER, MONITORING, perm, wait_for
 
 FP = f"{CLUSTER}/failoverpolicies"
@@ -215,37 +216,6 @@ def test_audit_events_crud_login(afm, uniq, cleanup, checks, record_property):
 
 
 # ------------------------------------------------------------------ telemetry metrics
-
-CLUSTER_FIELDS = ["AdmittedComputeNodes", "AdmittedSwitchNodes", "DecommissionedComputeNodes",
-                  "DecommissionedSwitchNodes", "DisconnectedComputeNodes", "DisconnectedSwitchNodes",
-                  "HealthyComputeNodes", "HealthySwitchNodes", "PendingComputeNodes", "PendingSwitchNodes",
-                  "RejectedComputeNodes", "RejectedSwitchNodes", "UnhealthyComputeNodes", "UnhealthySwitchNodes"]
-PORT_FIELDS = ["InOctets", "InPackets", "OutBroadcast", "OutMulticast", "OutOctets", "OutPackets", "InBroadcast",
-               "InDiscards", "InErrors", "InMulticast", "OutDiscards", "OutErrors", "PauseRxPkts", "PauseTxPkts",
-               "PfcRxPkts", "PfcTxPkts"]
-# KI-F07-005: these SwitchPortStats fields return no series on hardware
-PORT_KNOWN_NO_SERIES = ["InBroadcast", "InErrors", "InMulticast", "OutDiscards", "OutErrors", "PauseRxPkts",
-                        "PauseTxPkts", "PfcRxPkts", "PfcTxPkts"]
-
-
-def _metric(afm, kind: str, field: str, selectors=None, window="1h", group_by_field=None):
-    q = {"kind": kind, "fields": [field], "function": "last", "start-time": f"now() - {window}", "end-time": "now()",
-         "sort-order": "descending", "pagination": {"count": 1}}
-    if selectors:
-        q["selectors"] = [{"requirements": selectors}]
-    if group_by_field:
-        q["group-by-field"] = group_by_field
-    body = {"tenant": None, "namespace": None, "queries": [q]}
-    for attempt in range(8):                 # AFM rate-limits metric queries: 413 "query rate limit exceeded"
-        r = afm.raw("POST", "/telemetry/v1/metrics", body)
-        if r.status_code != 413:
-            break
-        time.sleep(min(2 ** attempt * 0.5, 10))
-    if r.status_code >= 400:
-        raise AssertionError(f"metrics query {kind}.{field} -> HTTP {r.status_code}: {r.text[:200]}")
-    res = r.json()
-    return ((res or {}).get("results") or [{}])[0].get("series") or []
-
 
 def _metrics(afm, inventory, checks, record_property):
     out = {}

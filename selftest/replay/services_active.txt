@@ -1,0 +1,11 @@
+database active
+pmon active
+lldp active
+database@0 active
+database@1 active
+swss@0 active
+swss@1 active
+syncd@0 active
+syncd@1 active
+lldp@0 active
+lldp@1 active

@@ -4,9 +4,10 @@ pytest automation for the **AMD Helios full-rack scale-up test plan**
 (`Helios_ScaleUp_TestPlan-AMD.xlsx`): 6 SONiC switch trays (2 ASICs each),
 18 compute trays (4 GPUs each), with the AFM controller and the IFoE fabric - plus a web UI to run it.
 
-- **Test cases**: 574 of the 696 plan cases automated (BKC-26.12 plan + cases added here: switch-tray checks,
-  failure injection, health checks HC-000…012, BMC over Redfish TC-BMC-001…006, and 109 read-only cases of the
-  Blanton switch-BMC plan TPI-151974 as TC-BLT-<plan id>); `tools/coverage.py` lists them.
+- **Test cases**: 650 of the 772 plan cases automated (BKC-26.12 plan + cases added here: switch-tray checks,
+  failure injection, health checks HC-000…012, BMC over Redfish TC-BMC-001…006, 109 read-only cases of the
+  Blanton switch-BMC plan TPI-151974 as TC-BLT-<plan id>, and 76 cases of AMD's ScaleUp test-tracking sheet);
+  `tools/coverage.py` lists them.
 - **Rack health check** (`tools/rack_health.py`): GO / NO-GO before disruptive work, quarantine-aware.
 - **Web UI** (`python -m ui`, or the offline installers for a Linux server and macOS): run cases picked from the
   test plan (scope, disruptive, last status), live log, reports and a Share zip with secrets removed,
@@ -52,7 +53,7 @@ helios/                 framework
   pytest_plugin.py      --inventory/--tc/..., per-switch params, results CSV
 tests/                  rack tests, each tagged @pytest.mark.tc("TC-...")
   l1/                   switch hardware (TC-SWH) + scale-up datapath (TC-AFM-001..005A)
-  switch/               SONiC switch agent (TC-SWA)
+  switch/               SONiC switch agent (TC-SWA); test_switch_platform.py: tracking-sheet switch cases
   hw/                   hardware (TC-HW)
   scaleout/             mortaro RDMA perftest (TC-IBS)
   ras/                  RAS datapath reset / reboot / power cycle (TC-RAS-reset)
@@ -397,12 +398,22 @@ and title.
   `~/helios-ui/bin/install.sh --rollback`; `~/helios-ui/bin/helios-ui {start|stop|status|logs|token [new]|users}`.
   See docs/how-to-run.html, 9b.9.
 
-## Coverage (574 of 696 cases: the 542 plan cases + the cases added here - switch trays, failure injection, health checks HC-000…012, BMC TC-BMC-001…006, Blanton BMC TC-BLT-*; `tools/coverage.py` for the current numbers)
+## Coverage (650 of 772 cases: the 542 plan cases + the cases added here - switch trays, failure injection, health checks HC-000…012, BMC TC-BMC-001…006, Blanton BMC TC-BLT-*, tracking-sheet cases; `tools/coverage.py` for the current numbers)
 
 * **TC-SWH-001…036, switch hardware.** Firmware, fans, PSUs, platform/EEPROM,
   multi-ASIC namespaces, interface state/speed/MTU, error-counter deltas,
   VLAN tables. Each test is parametrized per switch tray. Numeric PSU and fan
   checks read STATE_DB, because CLI table columns vary between SONiC releases.
+* **TC-SWH-037T…062T and TC-SWH-063…107, tracking-sheet switch cases**
+  (`tests/switch/test_switch_platform.py`, from AMD's Helios_ScaleUp_Test_Tracking_Trimmed.xlsx). The sheet
+  reuses TC-SWH-037…062 for other cases than the ones added here, so those run with a `T` suffix; the sheet's ID
+  is `tracking_id` in `testplan/added.yaml`. System health, sensors, fans, PSU efficiency, drop/error counters,
+  transceiver presence, services and processes, CPU/memory/load/uptime, DNS/NTP/hostname, SONiC images, CONFIG_DB
+  tables, routes, management ping, FRU JSON, auth/boot logs, log rotation, firewall, sshd, CLI lockdown, accounts,
+  LLDP, per-tray link state, FEC, config backup/restore/save (+ load/reload, disruptive), disk write speed, fan
+  auto-control, image cleanup/remove/set-default, syncd/swss/service restarts (disruptive) and techsupport.
+  Thresholds: `thresholds.switch.*`, listed in the module docstring. TC-SWH-100/101 delete SONiC images and run
+  only with `switch.allow_image_cleanup` / `switch.removable_image`.
 * **TC-AFM-001…004 and 005A, datapath.** L2 ping (within each tray, plus
   cross-tray in both directions), TransferBench in-domain and cross-domain,
   and the five RCCL collectives in-domain and cross-domain. RCCL results are
@@ -463,6 +474,10 @@ and title.
   * **RBAC.** Cluster, auth, monitoring and workload roles; bad-login counting; read-only users get 403 on Reconfigure.
   * **Audit, metrics, techsupport.** Audit events for CRUD and login, Cluster and SwitchPortStats metrics,
     and techsupport bundles.
+  * **Metrics charts (`test_afm_metrics_charts.py`, TC-AFM-L2-57…60).** One chart per metric kind with data
+    checked against the node lists and port counters, chart edit (field/function), start/end-time windows,
+    delete. The chart REST collection is not documented: set `thresholds.afm.metrics.chart_api`
+    (`{path, kind}`) to exercise chart CRUD; without it L2-57…59 check only the telemetry data and L2-60 skips.
   * **AggWatch WebSocket (28 cases).** Auth and expired sessions, single and multi-kind watches,
     Created/Updated/Deleted events, RBAC filtering and a role revoked mid-stream, CSWSH origin,
     no or malformed watch options, idle, concurrent connections, reconnect, 50 connect cycles, and a burst of 100 events.
@@ -528,6 +543,8 @@ and title.
       automatic reconfigure on the policy timer (SWA-037/180/204/214).
     * **Traffic with AFM:** NA-003/004/005/006/019, HW-010, TRG-001, E2E-009 and RAS-reset
       005/006/010…017 (hard reset = AFM Reconfigure).
+    * **Path-to-port map + TransferBench after link triggers (`test_afm_path_traffic.py`):** link down, flap,
+      drain and activate, then in-domain (TC-AFM-L1-6) or cross-domain (TC-AFM-L1-7) TransferBench.
     * **Not automated:** SPDM session, SelectedLink and IFCP packet-format cases. They need data
       that neither afmctl nor the node-agent API exposes (AMD tooling or packet capture).
   * **Sideband agent placement and control path (23, `test_afm_sideband_more.py`).**
