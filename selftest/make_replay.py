@@ -368,6 +368,20 @@ add(f"tar -tzf {_ts}", "".join(f"sonic_dump_sw1_20261026_120000/{e}\n" for e in 
     "dump/", "dump/docker.ps", "log/syslog", "log/syslog.1", "etc/sonic/config_db.json",
     "etc/sonic/config_db0.json", "etc/sonic/config_db1.json")), name="techsupport_list.txt", host=SW)
 
+# IFCP on the wire (tests/sideband/test_ifcp_wire.py): tcpdump format as captured on g02-g17 st1 (26 Oct 2026),
+# one keepalive each way every 5 s, the compute answering within a millisecond; stopped by timeout (rc 124)
+_SW_MAC, _GPU_MAC = "12:34:56:78:01:00", "74:27:2c:09:72:a9"
+_ifcp = []
+for i in range(3):
+    t = 1793044800.0 + 5 * i
+    _ifcp += [f"{t + 0.930709:.6f} {_SW_MAC} > {_GPU_MAC}, ethertype 802.1Q (0x8100), length 25: vlan 0, p 7, "
+              "ethertype Unknown (0x88b6), \n\t0x0000:  0120 0003 0101 00",
+              f"{t + 0.931305:.6f} {_GPU_MAC} > {_SW_MAC}, ethertype Unknown (0xeb87), length 56: \n"
+              "\t0x0000:  0120 0003 0101 0000 0000 0000 0000 0000\n\t0x0010:  0000 0000 0000 0000 0000 0000 0000 0000\n"
+              "\t0x0020:  0000 0000 0000 0000 0000"]
+add(r"^ip netns exec asic\d timeout \d+ tcpdump -i Ethernet\d+ -nn -e -tt -x ", "\n".join(_ifcp) + "\n",
+    name="ifcp_capture.txt", rc=124, host=SW, regex=True)
+
 # --------------------------------------------------------------- computes
 PERF = """---------------------------------------------------------------------------------------
                     RDMA_Write BW Test

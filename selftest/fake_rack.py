@@ -120,6 +120,8 @@ class Sim:
         self.fru_bad: set[int] = set()        # switches whose fru.json was overwritten with invalid JSON
         self.mgmt_eth1: set[int] = set()      # switches with the management IP moved to eth1
         self.mtu: dict[tuple, int] = {}       # (sw, ns, port) -> MTU set with config interface mtu (default 9100)
+        self.requests: dict[int, list[dict]] = {}   # slot -> node-agent /api/runtime/requests
+        self.mask_reset: set[int] = set()     # slots whose lane mask came back all-enabled on readmit (fault)
         self.events: list[dict] = []
         self.gpus: dict[int, list[str]] = {}  # slot -> gpu uuids
         self.st = st
@@ -246,6 +248,24 @@ class Sim:
                     for pid in self.gpu_pids():
                         self.ifcp_stuck.add((s, g, pid))
 
+    def starved(self, slot) -> bool:
+        """Fault cp_starved_by_dp: a tray's IFCP keepalives lost while TransferBench runs on it (started < 3 s ago)."""
+        return "cp_starved_by_dp" in self.f and time.monotonic() - self.tb_at.get(slot, -99.0) < 3.0
+
+    def agent_requests(self, slot) -> list[dict]:
+        """The slot's node-agent config requests, as /api/runtime/requests lists them (selftest/replay layout)."""
+        if slot not in self.requests:
+            self.requests[slot] = []
+            self.add_request(slot)
+        return self.requests[slot]
+
+    def add_request(self, slot, reason: str = ""):
+        reqs = self.requests.setdefault(slot, [])
+        t = now()
+        reqs.append({"id": f"req-{slot}-{len(reqs)}", "created-at": t, "completed-by-agent-at": t,
+                     "config-status": {"config-type": 5, "state": 1, "reason": reason}, "version": 1,
+                     "device-reset": False, "status": "applied"})
+
     def set_link(self, i, ns, port, up: bool, quiet: bool = False):
         key = (i, ns, port)
         ports = self.ports(i, ns)
@@ -342,7 +362,9 @@ class Sim:
                     and not ("switch_stuck_unknown" in self.f and self.stops[i] >= 2) and i not in self.wedged
                 o["status"]["conditions"] = [{"type": "healthy", "status": "true" if ok else "unknown"}]
                 o["status"]["asic-info"] = {"asics": [{"name": ns, "ports": [
-                    {"name": p, "oper-state": "PortReady" if self._sw_port_ready(i, ns, p, cab[0]) else "PortDown",
+                    {"name": p, "oper-state": "PortReady" if self._sw_port_ready(i, ns, p, cab[0])
+                     or ("afm_switch_port_stale" in self.f and (i, ns, p) in self.links_down) else "PortDown",
+                     "admin-status": "up" if "afm_switch_port_stale" in self.f else self.admin(i, ns, p),
                      "switching-plane-id": 0 if ("plane_mismatch" in self.f and i == 0 and ns == "asic1" and k == 0) else cab[3],
                      "peer": {"slot-id": cab[0], "gpu-id": cab[1], "port-id": cab[3],
                               "display": f"Slot{cab[0]}/GPU{cab[1]}/Port{cab[3]}"}}
@@ -365,6 +387,8 @@ class Sim:
                         else "PortDisabled"
                     if self.mch and n == min(set(range(36)) - self.used) and "mch_unused_failed" in self.f:
                         prt["oper-state"] = "PortFailed"
+                    if "afm_gpu_port_state_wrong" in self.f and (slot, g["index"], n) == (0, 0, min(self.used)):
+                        prt["oper-state"] = "PortDown"     # the link is up on the GPU
         lost = sum(self.planes // self.n_sw for i in range(self.n_sw) if self.phase_sw(i) != "admitted"
                    and not (self.phase_sw(i) in ("drained", "decommissioned") and "planes_no_drop" in self.f))
         lost += sum(self.planes // self.n_sw for i in self.stale)
@@ -379,6 +403,8 @@ class Sim:
                 if k not in self.failed_evt:
                     self.failed_evt.add(k)
                     self.event("link_failed", f"PortName {k[2]} asic {k[1]} switch {self.sname(k[0])} is FAILED")
+                    if "reconfigure_per_port" in self.f:    # one reprogramming per failed port, not one per batch
+                        self.vpod_event("vpod_bandwidth_change", name, f"reconfigured for {k[2]}")
                 s_, g_, _, pid = self.ports(k[0], k[1])[k[2]]
                 c = self.computes.get(self.cname(s_))
                 if c:
@@ -522,6 +548,8 @@ class Sim:
                     if "no_readmit" not in self.f:
                         self.computes[self.cname(slot)] = self._compute_obj(slot, gi)
                         self.readmit_at[slot] = time.monotonic()
+                        if "mch_mask_reset_on_readmit" in self.f:
+                            self.mask_reset.add(slot)
                         self.lifecycle_event("admitted", slot)
                         if "readmit_forgets_down_ports" in self.f:
                             for k, d in self.links_down.items():
@@ -669,6 +697,28 @@ class FakeSwitchTransport:
         r = self.run(f"for k in $(sonic-db-cli -n {ns} CONFIG_DB keys 'FDB|*'); do :; done")
         return [ln for ln in r.stdout.splitlines() if ln.startswith("FDB|")]
 
+    def _ifcp_frames(self, ns, port, seconds: int) -> str:
+        """tcpdump -e -tt -x output of a fabric port's IFCP keepalives (real rack, QFX5252 26 Oct): one frame each way
+        every 5 s while the session is up - switch->compute 802.1Q VLAN 0 priority 7 / 0x88b6, compute->switch 0xeb87."""
+        sim = self.st.sim
+        cab = sim.ports(self.i, ns).get(port)
+        if cab is None:
+            return ""
+        s, g, _acc, pid = cab
+        up = sim.link_state(self.i, ns, port) == "up" and (s, g, pid) not in sim.cmp_admin_down \
+            and (s, g, pid) not in sim.ifcp_stuck and sim.mtu.get((self.i, ns, port), 9100) >= IFCP_MTU \
+            and not sim.starved(s)
+        if not up:
+            return ""
+        t0, sw_mac, gpu_mac = time.time(), f"02:aa:00:00:{self.i:02x}:01", f"02:00:{s:02x}:{g:02x}:{pid:02x}:01"
+        out = []
+        for k in range(seconds // 5):
+            out += [f"{t0 + 5 * k:.6f} {sw_mac} > {gpu_mac}, ethertype 802.1Q (0x8100), length 25: vlan 0, p 7, "
+                    "ethertype Unknown (0x88b6), ", "\t0x0000:  0102 0304 0506 0708 090a 0b"]
+            out += [f"{t0 + 5 * k + 0.5:.6f} {gpu_mac} > {sw_mac}, ethertype Unknown (0xeb87), length 56: ",
+                    "\t0x0000:  0102 0304 0506 0708 090a 0b0c 0d0e 0f10"]
+        return "\n".join(out) + ("\n" if out else "")
+
     def run(self, cmd: str, *, timeout: float = 120, sudo: bool = False, env=None) -> CmdResult:
         st, sim, i = self.st, self.st.sim, self.i
         res = None
@@ -736,9 +786,14 @@ class FakeSwitchTransport:
                     elif slot in sim.stopped:
                         sim.stopped.discard(slot)
                         sim.stick_slot_ports([slot])
+                        if "sb_no_reconcile" not in st.f:   # the resumed agent re-syncs its config with AFM
+                            sim.add_request(slot, "station-enabled-ports-already-in-sync")
                         if "no_healthy_event" not in st.f:
                             sim.event("computenode_healthy", f"compute {sim.cname(slot)} healthy")
                     res = self._res(cmd)
+            elif m := re.fullmatch(r"(?:ip netns exec (asic\d+) )?timeout (\d+) tcpdump -i (Ethernet\d+) -nn -e -tt -x "
+                                   r"'ether proto 0xeb87 or \(vlan and ether proto 0x88b6\)'", cmd):
+                res = self._res(cmd, self._ifcp_frames(m.group(1) or "asic0", m.group(3), int(m.group(2))), 124)
             elif cmd == "true":
                 res = self._res(cmd)
             elif cmd == "sonic-installer list":
@@ -871,8 +926,7 @@ class FakeSwitchTransport:
             elif m := re.fullmatch(r"docker exec afm-agent curl -s -m 5 localhost:(\d+)/api/runtime/requests", cmd):
                 slot = int(m.group(1)) - 13000
                 ok = sim.agent_up[i] and sim.slot_host(slot) == i and "no_agent_requests" not in st.f
-                res = self._res(cmd, json.dumps([{"id": f"req-{slot}", "created-at": now(), "status": "applied"}]) if ok else "",
-                                0 if ok else 7)
+                res = self._res(cmd, json.dumps(sim.agent_requests(slot)) if ok else "", 0 if ok else 7)
             elif m := re.fullmatch(r"config vlan (add|del) -n (asic\d+) (\d+)", cmd):
                 (sim.user_vlans.setdefault(i, set()).add if m.group(1) == "add" else sim.user_vlans.setdefault(i, set()).discard)(int(m.group(3)))
                 res = self._res(cmd)
@@ -969,7 +1023,8 @@ class FakeComputeTransport:
             up = self._port_up(g, pid)
             dis = pid not in sim.used and "mch_unused_enabled" not in self.st.f and not sim.layout_lost
             ll = up and not ((self.slot, g, pid) in sim.ifcp_stuck) and sim.mtu.get(k, 9100) >= IFCP_MTU and \
-                not ("ifcp_baseline_down" in self.st.f and (self.slot, g, pid) == (0, 0, min(sim.used)))
+                not ("ifcp_baseline_down" in self.st.f and (self.slot, g, pid) == (0, 0, min(sim.used))) and \
+                not sim.starved(self.slot) and not self._collateral_down(g, pid)
             mac = pid in sim.used or "mch_mac_on_unused" in self.st.f
             out.append({"id": str(pid), "spec": {"station_id": str(pid // 2 + (1 if "mch_station_ids_wrong" in self.st.f
                                                                                and pid == 7 else 0)),
@@ -987,6 +1042,16 @@ class FakeComputeTransport:
     @staticmethod
     def bdf(g):
         return f"000{g + 1}:01:00.1"
+
+    def _collateral_down(self, g, pid) -> bool:
+        """Fault ifcp_collateral_on_link_down: while a GPU port's switch link is down, the IFCP session of the same
+        GPU's port on the next switch (pid + 2) drops too."""
+        sim = self.st.sim
+        if "ifcp_collateral_on_link_down" not in self.st.f:
+            return False
+        q = (pid - 2) % (2 * sim.n_sw)
+        k = self._link(g, q)
+        return q != pid and k is not None and k in sim.links_down
 
     def _collateral(self, g):
         """Fault gpu_fault_collateral: faulting GPU g also kills the IFCP session of one port of the next GPU."""
@@ -1123,6 +1188,8 @@ class FakeComputeTransport:
                     live = sim.used if "mch_mask_static" in st.f else {p for p in sim.used if self._port_up(g, p)}
                     if "mch_wrong_strategy" in st.f:
                         live = {p for p in range(36) if (p // 2) % 2 == 0}      # 9x2 / 9x0
+                    if self.slot in sim.mask_reset:
+                        live = set(range(36))
                     out = "0x" + "".join("%x" % ((0x3 if 2 * k in live else 0) | (0xC if 2 * k + 1 in live else 0))
                                          for k in range(18)) + "\n"
             elif c == "lsmod | grep -q '^ifoe_mock '":

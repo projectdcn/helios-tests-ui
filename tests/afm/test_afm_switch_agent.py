@@ -1,5 +1,6 @@
 """Switch agent behaviour driven through AFM (DISRUPTIVE): VLAN ownership on decommission, data-fabric update on
-vPOD CRUD, switch state reporting, automatic data-fabric reconfigure on the policy timer.
+vPOD CRUD, switch state reporting, automatic data-fabric reconfigure on the policy timer, a port detail change
+reflected in AFM (TC-SWA-202, thresholds.afm.port_detail_wait_s, 60 s).
 
 The user VLAN for TC-SWA-037 is created with commands.switch.user_vlan_add / _del (placeholders {ns}, {nsflag} =
 ' -n asicN' or '', {vlan}; default: write / delete VLAN|Vlan<id> in the ASIC's CONFIG_DB with sonic-db-cli - this
@@ -159,3 +160,60 @@ def test_auto_reconfigure_on_policy_timer(ops, afm_ready, links, checks, record_
                           float(ops.th("plane_restore_s", 300)), 10), f"planes {ops.planes(sysv)} not back to {base}")
     checks.assert_all()
 
+
+
+def _afm_port(ops, sw, ns, port) -> dict | None:
+    """AFM's record of one inventory switch port (SwitchNode status.asic-info; asic 'id' N or 'name' -> asicN)."""
+    for sn in ops.afm.switches():
+        try:
+            if ops.ssh_switch(sn).name != sw.name:
+                continue
+        except Exception:  # noqa: BLE001 - a SwitchNode without an inventory switch
+            continue
+        for a in ((sn.get("status") or {}).get("asic-info") or {}).get("asics") or []:
+            a_ns = a.get("name") or (f"asic{a['id']}" if a.get("id") is not None else None)
+            for p in a.get("ports") or []:
+                if p.get("name") == port and (ns is None or a_ns == ns):
+                    return p
+    return None
+
+
+@pytest.mark.tc("TC-SWA-202")
+def test_switch_port_details_updated(ops, afm_ready, links, checks, record_property):
+    """A switch port detail changed on the switch is updated in AFM: one up GPU-facing port shut (SONiC Admin down,
+    Oper down) - AFM's record of it (SwitchNode status.asic-info) leaves PortReady and, where AFM lists admin-status,
+    reads down, within thresholds.afm.port_detail_wait_s (60 s); started again - PortReady (admin-status up) within
+    the same wait. The reversible change is the admin state: speed / FEC / duplex are not in AFM's port record and the
+    VLANs are AFM's own, so they are not changed. The record AFM keeps for the port is recorded before / during /
+    after with the SONiC row."""
+    name = ops.pick_compute()
+    sw, ns, port, _ = ops.gpu_links(ops.compute(name)["spec"]["slot-id"])[0]
+
+    def sonic() -> dict:
+        return next((r for r in sw.interfaces_status(ns) if r.get("Interface") == port), {})
+
+    def admin(p) -> str:
+        return str((p or {}).get("admin-status", "")).lower()
+    before = _afm_port(ops, sw, ns, port)
+    if before is None:
+        pytest.fail(f"AFM does not list {sw.name} {ns} {port} in its SwitchNode status.asic-info", pytrace=False)
+    has_admin = "admin-status" in before
+    record_property("fields", sorted(before))
+    t = float(ops.th("port_detail_wait_s", 60))
+    checks.check(before.get("oper-state") == "PortReady", f"{sw.name} {port}: AFM {before.get('oper-state')} before the test")
+    snap = {"before": {"afm": before, "sonic": sonic()}}
+    try:
+        links.shut(sw, ns, port)
+        checks.check(ops.wait_oper(sw, ns, port, "down", 60), f"{sw.name} {port}: still oper up on the switch after shutdown")
+        ok = ops.wait(lambda: (lambda p: p is not None and p.get("oper-state") != "PortReady"
+                               and (not has_admin or admin(p) == "down"))(_afm_port(ops, sw, ns, port)), t, 5)
+        snap["shut"] = {"afm": _afm_port(ops, sw, ns, port), "sonic": sonic()}
+        checks.check(ok, f"{sw.name} {port} shut: AFM still shows {snap['shut']['afm']} after {t:.0f}s")
+    finally:
+        links.restore(sw, ns, port, checks)
+    ok = ops.wait(lambda: (lambda p: p is not None and p.get("oper-state") == "PortReady"
+                           and (not has_admin or admin(p) == "up"))(_afm_port(ops, sw, ns, port)), t, 5)
+    snap["restored"] = {"afm": _afm_port(ops, sw, ns, port), "sonic": sonic()}
+    record_property("port", snap)
+    checks.check(ok, f"{sw.name} {port} started: AFM shows {snap['restored']['afm']} after {t:.0f}s")
+    checks.assert_all()

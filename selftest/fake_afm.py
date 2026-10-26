@@ -255,6 +255,10 @@ class Handler(BaseHTTPRequestHandler):
                     return self._send(200, obj("Version", "version", status={"build-version": st.version}))
                 up = st.sim.ctrl_up
                 down = "quorum_down" in st.f or sum(up.values()) * 2 <= len(up)
+                cns = list(st.objs["ComputeNode"].values())
+                if "mass_decom_quorum_loss" in st.f and cns and \
+                        all(c["status"]["admission-phase"] == "decommissioned" for c in cns):
+                    down = True    # the controller loses quorum while every compute is decommissioned
                 return self._send(200, obj("Cluster", "cluster", status={
                     "leader": st.sim.leader, "conditions": [{"type": "healthy", "status": "false" if down else "true"}],
                     "quorum-status": {"members": [{"name": ip, "status": "stopped" if ("quorum_down" in st.f or not up[k])

@@ -1,10 +1,17 @@
 """Sideband node-agent placement and control-path behaviour that is observable without AMD tooling
 (DISRUPTIVE unless noted): sb-node-agent distribution and redistribution across switches, process restarts,
-event trails, compute/switch removal and readmission, MTU changes, switch-agent start-up checks.
+event trails, compute/switch removal and readmission, MTU changes, switch-agent start-up checks, node-agent
+reconciliation after a pause (TC-SBM-019) and the control plane under data-path load (TC-SBM-113 / 117, not
+disruptive, behind the datapath pre-flight).
 
 Agent placement is read from each switch's afm-agent process list (one ``sb-node-agent -slot-id N`` per
 compute slot). "Balanced" means every switch hosting agents differs from the others by at most
 thresholds.afm.agent_balance_slack (1) agents.
+
+TC-SBM-019: thresholds.afm.pause_s (30), agent_recover_s (120), ifcp_recover_s (120). TC-SBM-113 / 117:
+cp_dp_watch_s (120), cp_sample_s (5), ifcp_capture_s (20), ifcp_capture_links (6), cp_capture_delay_s (10). IFCP on the
+wire (QFX5252 g02-g17, 26 Oct 2026): switch->compute 802.1Q VLAN 0 priority 7, ethertype 0x88b6; compute->switch
+0xeb87; one frame each way every 5 s on each GPU link.
 """
 from __future__ import annotations
 
@@ -15,6 +22,7 @@ from collections import Counter
 
 import pytest
 
+from helios import datapath
 from helios.afm import conditions_ok
 from helios.afm_ops import CN, SN, TERMINAL
 
@@ -671,6 +679,231 @@ def test_port_mtu_below_ifcp_mtu(ops, afm_ready, inventory, checks, record_prope
         sw.run(tmpl.format(ns=ns, port=port, mtu=orig), sudo=True, timeout=60)
     checks.check(ops.wait(lambda: base <= ops.ifcp_up(tray), 180, 10), f"IFCP sessions not all back after MTU {orig}")
     checks.check(conditions_ok(ops.compute(name)), f"{name} not healthy")
+    checks.assert_all()
+
+
+# ------------------------------------------------------------------ node-agent reconciliation after a pause
+
+def _requests(sw, slot) -> list[dict]:
+    r = sw.agent_api(13000 + slot, "/api/runtime/requests") if sw is not None else None
+    return r if isinstance(r, list) else []
+
+
+def _req_key(r: dict) -> tuple:
+    return r.get("id"), r.get("created-at")
+
+
+def _afm_switch_port(ops, sw, ns, port) -> str | None:
+    """oper-state AFM reports (SwitchNode status.asic-info) for one inventory switch port; None if not listed."""
+    for sn in ops.afm.switches():
+        try:
+            if ops.ssh_switch(sn).name != sw.name:
+                continue
+        except Exception:  # noqa: BLE001 - a SwitchNode without an inventory switch
+            continue
+        for a in ((sn.get("status") or {}).get("asic-info") or {}).get("asics") or []:
+            a_ns = a.get("name") or (f"asic{a['id']}" if a.get("id") is not None else None)
+            for p in a.get("ports") or []:
+                if p.get("name") == port and (ns is None or a_ns == ns):
+                    return p.get("oper-state")
+    return None
+
+
+@pytest.mark.disruptive
+@pytest.mark.tc("TC-SBM-019")
+def test_node_agent_reconciles_delta_after_resume(ops, afm_ready, links, checks, record_property):
+    """A compute's sb-node-agent paused (SIGSTOP, as TC-004) and one of that tray's switch links shut while it is
+    down; the agent resumed after thresholds.afm.pause_s (30 s). Reconciliation: AFM marks that GPU port PortFailed
+    (within the link-fail threshold + 120 s) and does not report its switch port PortReady; the agent's /api/health
+    is-connected and /api/runtime/requests lists a request that is new since before the pause, every new completed
+    one applied (config-status state 1) - both within thresholds.afm.agent_recover_s (120 s). Link restored: the port
+    is no longer PortFailed, the switch port PortReady again and the tray's IFCP sessions back (ifcp_recover_s)."""
+    _need_sideband(ops)
+    sysv = ops.system_vpod_name()
+    name = ops.pick_compute()
+    c = ops.compute(name)
+    slot = c["spec"]["slot-id"]
+    tray = ops.tray(name)
+    base = ops.ifcp_up(tray)
+    host, pid = ops.slot_host(slot)
+    if host is None:
+        pytest.fail(f"{ops.label(name)}: no sb-node-agent running for slot {slot}", pytrace=False)
+    sw, ns, port, cab = ops.gpu_links(slot)[0]
+    gidx = next((g.get("index") for g in ops.gpu_info(c).values() if str(g.get("acc-id")) == str(cab[2])), cab[1])
+    want = (name, gidx, cab[3])
+    before = {_req_key(r) for r in _requests(host, slot)}
+    record_property("target", {"compute": name, "slot": slot, "agent_on": host.name, "link": f"{sw.name} {ns} {port}",
+                               "gpu_port": list(want[1:]), "requests_before": len(before)})
+    t = float(ops.th("agent_recover_s", 120))
+
+    def host_now():
+        return ops.slot_host(slot)[0]
+
+    def new_requests():
+        return [r for r in _requests(host_now(), slot) if _req_key(r) not in before]
+    try:
+        try:
+            ops.signal_sb_agent(host, pid, "STOP")
+            links.shut(sw, ns, port)
+            time.sleep(float(ops.th("pause_s", 30)) * float(ops.th("time_scale", 1)))
+        finally:
+            h2, p2 = ops.slot_host(slot)
+            ops.signal_sb_agent(h2 or host, p2 or pid, "CONT")
+        failed = ops.wait(lambda: want in ops.failed_gpu_ports(), ops.link_fail_threshold(sysv) + 120, 10)
+        checks.check(failed, f"{ops.label(name)} GPU {want[1]} port {want[2]}: not PortFailed in AFM after the resume")
+        sp = _afm_switch_port(ops, sw, ns, port)
+        checks.check(sp != "PortReady", f"AFM reports {sw.name} {port} PortReady while it is shut")
+        h = host_now()
+        conn = ops.wait(lambda: ((h.agent_api(13000 + slot, "/api/health") if h else None) or {}).get("is-connected") is True,
+                        t, 5)
+        checks.check(conn, f"slot {slot}: node agent not is-connected {t:.0f}s after the resume")
+        done = ops.wait(lambda: any(r.get("completed-by-agent-at") for r in new_requests()), t, 5)
+        new = new_requests()
+        bad = [r for r in new if r.get("completed-by-agent-at") and (r.get("config-status") or {}).get("state") != 1]
+        record_property("after_resume", {"afm_switch_port": sp, "new_requests": [
+            (r.get("created-at"), r.get("config-status")) for r in new[:10]]})
+        checks.check(done, f"slot {slot}: no new completed config request {t:.0f}s after the resume (no reconciliation)")
+        checks.check(not bad, f"slot {slot}: {len(bad)} new request(s) not applied: {[r.get('config-status') for r in bad[:3]]}")
+        checks.check(ops.wait(lambda: conditions_ok(ops.compute(name)), 300, 10), f"{name} not healthy after the resume")
+    finally:
+        links.restore(sw, ns, port, checks)
+    checks.check(ops.wait(lambda: want not in ops.failed_gpu_ports(), 300, 10), f"{want} still PortFailed after the restore")
+    checks.check(ops.wait(lambda: _afm_switch_port(ops, sw, ns, port) in ("PortReady", None), 300, 10),
+                 f"AFM still reports {sw.name} {port} {_afm_switch_port(ops, sw, ns, port)} after the restore")
+    tr = float(ops.th("ifcp_recover_s", 120))
+    checks.check(ops.wait(lambda: base <= ops.ifcp_up(tray), tr, 5),
+                 f"{tray.name}: IFCP sessions not back {tr:.0f}s after the restore: {sorted(base - ops.ifcp_up(tray))[:6]}")
+    checks.assert_all()
+
+
+# ------------------------------------------------------------------ control plane under data-path load
+
+def _dp_trays(ops, computes) -> dict:
+    """{AFM name: tray} of the Ready computes whose trays passed the datapath pre-flight, highest slot first."""
+    names = {c.name: c for c in computes}
+    out = {}
+    for c in sorted(ops.active_computes(), key=lambda c: -(c.get("spec") or {}).get("slot-id", 0)):
+        n = c["meta"]["name"]
+        try:
+            t = ops.tray(n)
+        except RuntimeError:
+            continue
+        if t.name in names and ops.compute_ready(n):
+            out[n] = names[t.name]
+    return out
+
+
+def _keepalives(sw, ns, port, seconds: int) -> dict:
+    """IFCP frames per direction seen on one fabric port (SonicSwitch.ifcp_capture: tcpdump in the ASIC netns)."""
+    try:
+        frames = sw.ifcp_capture(port, ns, seconds)
+    except Exception as e:  # noqa: BLE001 - no tcpdump / no access: the IFCP-state samples still decide
+        return {"error": str(e)[:200]}
+    tx = [f for f in frames if f.get("dir") == "tx"]
+    rx = [f for f in frames if f.get("dir") == "rx"]
+    return {"tx": len(tx), "rx": len(rx), "tx_pcp": sorted({str(f.get("pcp")) for f in tx}),
+            "ethertypes": sorted({str(f.get("ethertype")) for f in frames})}
+
+
+def _cp_under_traffic(ops, trays: dict, run_traffic, checks, record_property):
+    """Run ``run_traffic(sub_checks)`` back to back in a thread for thresholds.afm.cp_dp_watch_s (120 s) and read
+    every tray's IFCP sessions (afmctl) and AFM compute health every cp_sample_s (5 s) meanwhile: no session up
+    before the traffic may drop at any read, no compute may turn unhealthy. Wire evidence where the switch class can
+    capture (SonicSwitch.ifcp_capture): one up link per switch (at most ifcp_capture_links, 6), captured for
+    ifcp_capture_s (20 s) starting cp_capture_delay_s (10 s) into the traffic; each must show >=
+    floor(ifcp_capture_s / 5) - 1 frames per direction (one keepalive each way every 5 s). A capture that cannot run
+    is recorded and the IFCP-state reads decide alone."""
+    k = float(ops.th("time_scale", 1))
+    base = {n: ops.ifcp_up(t) for n, t in trays.items()}
+    sel, seen = [], set()
+    for n in trays:
+        for sw, ns, port, _cab in ops.gpu_links(ops.compute(n)["spec"]["slot-id"]):
+            if sw.name not in seen and hasattr(sw, "ifcp_capture") and len(sel) < int(ops.th("ifcp_capture_links", 6)):
+                seen.add(sw.name)
+                sel.append((sw, ns, port))
+    secs = int(ops.th("ifcp_capture_s", 20))
+    stop, sub, runs, wire = threading.Event(), type(checks)(), [0], {}
+
+    def traffic():
+        while not stop.is_set():
+            run_traffic(sub)
+            runs[0] += 1
+            stop.wait(0.01)
+
+    def capture(sw, ns, port):
+        if not stop.wait(float(ops.th("cp_capture_delay_s", 10)) * k):
+            wire[f"{sw.name} {ns} {port}" if ns else f"{sw.name} {port}"] = _keepalives(sw, ns, port, secs)
+    th = threading.Thread(target=traffic, daemon=True)
+    caps = [threading.Thread(target=capture, args=x, daemon=True) for x in sel]
+    lost, unhealthy, samples = set(), set(), 0
+    end = time.monotonic() + float(ops.th("cp_dp_watch_s", 120)) * k
+    th.start()
+    for x in caps:
+        x.start()
+    try:
+        while True:
+            for n, t in trays.items():
+                try:
+                    lost |= {(n,) + s for s in base[n] - ops.ifcp_up(t)}
+                except Exception as e:  # noqa: BLE001 - an unreadable tray is a finding, not the end of the watch
+                    lost.add((n, f"unreadable: {str(e).split(';')[0][:80]}"))
+                if not conditions_ok(ops.compute(n)):
+                    unhealthy.add(n)
+            samples += 1
+            if time.monotonic() >= end and not any(x.is_alive() for x in caps):
+                break
+            time.sleep(min(float(ops.th("cp_sample_s", 5)) * k, max(0.05, end - time.monotonic())))
+    finally:
+        stop.set()
+        th.join()
+        for x in caps:
+            x.join()
+    need = max(0, secs // 5 - 1)
+    starved = {kk: v for kk, v in wire.items() if "error" not in v and (v["tx"] < need or v["rx"] < need)}
+    record_property("cp_under_traffic", {"samples": samples, "traffic_runs": runs[0],
+                                         "sessions": {n: len(b) for n, b in base.items()},
+                                         "sessions_lost": sorted(map(str, lost))[:20], "unhealthy": sorted(unhealthy)})
+    record_property("ifcp_wire", {"seconds": secs, "min_frames_per_direction": need, "links": wire} if sel
+                    else "no capture (switch class without ifcp_capture)")
+    checks.check(runs[0] > 0 and not sub.failures, f"traffic: {runs[0]} run(s), failures: {sub.failures[:3]}")
+    checks.check(samples >= 2, f"only {samples} IFCP read(s) during the traffic")
+    checks.check(not lost, f"{len(lost)} IFCP session(s) dropped during the data-path traffic: {sorted(map(str, lost))[:6]}")
+    checks.check(not unhealthy, f"computes unhealthy during the data-path traffic: {sorted(unhealthy)}")
+    checks.check(not starved, f"IFCP keepalives missing during the traffic (< {need} frames per direction in {secs}s): {starved}")
+
+
+@pytest.mark.datapath(tools=["transferbench"])
+@pytest.mark.tc("TC-SBM-113")
+def test_cp_not_starved_by_in_domain_traffic(ops, computes, inventory, datapath_ready, checks, record_property):
+    """CP vs DP priority: in-domain TransferBench on one tray (the highest Ready slot that passed the datapath
+    pre-flight) runs back to back while its IFCP sessions are read; none of them drops, the compute stays healthy and
+    the keepalives keep flowing on the wire (see _cp_under_traffic). Not disruptive."""
+    trays = _dp_trays(ops, computes)
+    if not trays:
+        pytest.fail(f"no Ready AFM compute among the trays that passed the datapath pre-flight: {[c.name for c in computes]}",
+                    pytrace=False)
+    name, tray = next(iter(trays.items()))
+    record_property("target", {"compute": name, "tray": tray.name})
+    _cp_under_traffic(ops, {name: tray}, lambda sub: datapath.transferbench_in_domain([tray], inventory, sub),
+                      checks, record_property)
+    checks.assert_all()
+
+
+@pytest.mark.datapath(tools=["transferbench"], min_computes=2)
+@pytest.mark.tc("TC-SBM-117")
+def test_cp_intact_with_all_links_loaded(ops, computes, inventory, datapath_ready, checks, record_property):
+    """Every link loaded with cross-domain TransferBench between all trays that passed the datapath pre-flight (ring
+    pairs, back to back): no IFCP session of any of them drops, every compute stays healthy (a control-plane move to a
+    standby switch is allowed: only the sessions and the health are judged) and the keepalives keep flowing on the
+    wire (see _cp_under_traffic). Not disruptive."""
+    datapath.require_transferbench_cross(inventory)
+    trays = _dp_trays(ops, computes)
+    if len(trays) < 2:
+        pytest.skip(f"cross-domain traffic needs 2 Ready computes that passed the pre-flight, have {len(trays)}")
+    ring = list(trays.values())
+    record_property("trays", [t.name for t in ring])
+    _cp_under_traffic(ops, trays, lambda sub: datapath.transferbench_cross_domain(ring, inventory, sub),
+                      checks, record_property)
     checks.assert_all()
 
 

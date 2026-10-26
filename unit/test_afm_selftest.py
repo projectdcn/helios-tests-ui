@@ -128,6 +128,8 @@ LIFECYCLE_FAULTS = [
     ("coupled_ports", {'TC-STR-013'}),
     ("configdone_stuck", {'TC-STR-005'}),
     ("configdone_stuck", {'TC-STR-020'}),
+    ("reconfigure_per_port", {"TC-STR-022"}),           # one vPOD reprogramming per failed port, not one per batch
+    ("mass_decom_quorum_loss", {"TC-STR-009"}),         # controller unhealthy while every compute is decommissioned
     ("no_respawn", {'TC-AR-001'}),
     # compute side / IFCP / switch agent / traffic + AFM (tranche 4)
     ("stats_frozen", {"TC-HW-010"}),
@@ -140,6 +142,10 @@ LIFECYCLE_FAULTS = [
     ("ifcp_no_recover", {"TC-TRG-006"}),
     ("ifcp_no_recover", {"TC-TRG-010"}),
     ("ifcp_baseline_down", {"TC-001"}),
+    ("ifcp_no_recover", {"TC-TRG-002"}),
+    ("ifcp_no_recover", {"TC-TRG-003"}),
+    ("ifcp_collateral_on_link_down", {"TC-TRG-002"}),    # a flapped link also drops another session of the GPU
+    ("ifcp_collateral_on_link_down", {"TC-TRG-003"}),
     ("station_map_stale", {"TC-AFM-058"}),
     ("stale_fwd_table", {"TC-E2E-099"}),
     ("fwd_table_incomplete", {"TC-NA-048"}),
@@ -156,6 +162,7 @@ LIFECYCLE_FAULTS = [
     ("decommission_wipes_user_vlans", {"TC-SWA-037"}),
     ("no_vlan_for_vpod", {"TC-SWA-180"}),
     ("agent_stop_ignored", {"TC-SWA-204"}),
+    ("afm_switch_port_stale", {"TC-SWA-202"}),          # AFM keeps a shut switch port PortReady / admin up
     ("auto_needs_manual", {"TC-SWA-214"}),
     ("cp_disrupted_by_fabric_change", {"TC-TRG-004"}),
     ("cp_disrupted_by_fabric_change", {"TC-TRG-005"}),
@@ -203,6 +210,8 @@ SIDEBAND_FAULTS = [
     ("stale_switch_events", {"TC-SBM-030"}),
     ("force_decom_admitted_rejected", {"TC-SBM-178"}),
     ("cp_lost_on_link_down", {"TC-SBM-097"}),
+    ("sb_no_reconcile", {"TC-SBM-019"}),                 # resumed node agent never re-syncs (no new request)
+    ("cp_starved_by_dp", {"TC-SBM-113", "TC-SBM-117"}),  # IFCP keepalives lost while TransferBench runs
     ("cp_lost_on_vpod_create", {"TC-SBM-114"}),
     ("vpod_fails_with_cp_switch_down", {"TC-SBM-111"}),
     ("mtu_sticky", {"TC-SBM-023"}),
@@ -221,6 +230,7 @@ SIDEBAND_FAULTS = [
     ("plane_mismatch", {"TC-SWA-173"}),
     ("log_unbounded", {"TC-STR-015"}),
     ("cert_mismatch", {"TC-CTL-129"}),
+    ("afm_gpu_port_state_wrong", {"TC-E2E-064"}),        # AFM shows an up GPU port PortDown
     ("agent_cert_expired", {"TC-CTL-136"}),
     # GPU fault (tests/afm/test_afm_ifcp.py): another GPU's session drops with the faulted one
     ("gpu_fault_collateral", {"TC-TRG-012"}),
@@ -260,6 +270,7 @@ MCH_FAULTS = [
     ("mch_layout_lost_on_ctrl_restart", {"TC-MCH-053"}),
     ("mch_layout_lost_on_agent_restart", {"TC-MCH-055"}),
     ("mch_flap_sticky", {"TC-MCH-026"}),
+    ("mch_mask_reset_on_readmit", {"TC-BUG-011"}),       # lane mask all-enabled after a compute readmission
     ("mch_tagged", {"TC-MCH-060"}, "inventory-mchmini.yaml"),
 ]
 # lab-equipment cases (tests/afm/test_afm_equipment.py) on inventory-equip.yaml
@@ -318,7 +329,7 @@ def test_healthy_fake_mch_all_pass(tmp_path, inventory, only):
     verdicts = _run(tmp_path, inventory=inventory, module="test_afm_mch.py")
     bad = {k: v for k, v in verdicts.items() if v != "PASS" and not (k == only and v == "SKIP")}
     assert not bad, bad
-    assert len(verdicts) == 37
+    assert len(verdicts) == 38
 
 
 def test_healthy_fake_equipment_all_pass(tmp_path):

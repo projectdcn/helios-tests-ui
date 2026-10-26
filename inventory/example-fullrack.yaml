@@ -248,3 +248,5 @@ thresholds:
   # MCH racks (tests/afm/test_afm_mch.py; detected from the pod rack-type, or force with enabled: true):
   # mch: {lane_mask: 000fff333000fff333, mask_order: msb_first, planes: 18, links_per_gpu: 18,
   #       switch_slots: [1, 2, 3], trunk_ports_per_asic: 144, tagging_mode: priority_tagged, min_gbps: null}
+  # TC-STR-009 decommissions every compute at once; it runs only with this opt-in (thresholds.afm.*):
+  # afm: {stress: {allow_mass_decommission: true}}

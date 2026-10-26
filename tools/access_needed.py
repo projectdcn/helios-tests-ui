@@ -49,6 +49,7 @@ FILE_ACCESS = {
     "tests/platform/test_node_platform.py": SW_CMP,
     "tests/sideband/test_sideband_bringup.py": SW_CMP,
     "tests/sideband/test_ifcp.py": SW_CMP,
+    "tests/sideband/test_ifcp_wire.py": SW + " (tcpdump)",
     "tests/scaleout/test_rdma_perftest.py": "Compute SSH + scale-out NICs",
 }
 ID_ACCESS = {

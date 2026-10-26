@@ -428,6 +428,20 @@ FAULTS = {
     "disk_slow": (lambda d: _edit(d / "dd.txt", r"167 MB/s", "4.2 MB/s"), {"TC-SWH-098"}),
     "syncd_restart_fails": (lambda d: _edit_rule(d, "restart\\ syncd@0", rc=1, stderr="Job failed"), {"TC-SWH-104"}),
     "techsupport_incomplete": (lambda d: _edit(d / "techsupport_list.txt", r"^.*/dump/\n.*/dump/docker\.ps\n", ""), {"TC-SWH-107"}),
+    # ---- IFCP on the wire (tests/sideband/test_ifcp_wire.py)
+    "ifcp_no_egress": (lambda d: [_edit(d / "ifcp_capture.txt", r"^\S+ 12:34:56:78:01:00 > .*\n\t0x0000:.*\n", "")
+                                 for _ in range(3)],
+                       {"TC-040", "TC-043", "TC-SBM-175"}),
+    "ifcp_no_ingress": (lambda d: [_edit(d / "ifcp_capture.txt", r"^\S+ 74:27:2c:09:72:a9 > (.*\n)(\t0x.*\n)+", "")
+                                  for _ in range(3)],
+                        {"TC-041", "TC-043"}),
+    "ifcp_wrong_priority": (lambda d: _edit(d / "ifcp_capture.txt", r"vlan 0, p 7,", "vlan 0, p 0,"), {"TC-SBM-175"}),
+    "ifcp_reply_from_stranger": (lambda d: _edit(d / "ifcp_capture.txt", r"^(\S+ )74:27:2c:09:72:a9 > ", r"\g<1>74:27:2c:00:00:01 > "),
+                                 {"TC-041"}),
+    "ifcp_keepalive_burst": (lambda d: _edit(d / "ifcp_capture.txt", r"^1793044805\.930709", "1793044800.990709"),
+                             {"TC-043"}),
+    "ifcp_second_peer": (lambda d: _edit(d / "ifcp_capture.txt", r"^(1793044810\.930709 12:34:56:78:01:00 > )74:27:2c:09:72:a9",
+                                         r"\g<1>74:27:2c:04:76:08"), {"TC-040"}),
 }
 
 

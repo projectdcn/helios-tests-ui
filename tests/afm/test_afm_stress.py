@@ -1,7 +1,12 @@
 """AFM stress cases (DISRUPTIVE + stress, needs --allow-disruptive): vPOD configuration time at scale, bulk vPOD
 operations, link event storm, vPOD create with ~5 % ports down, soak, policy attach without transient 0/0
-planes, Reconcile at scale. Sizes and durations come from thresholds.afm.* (defaults below are full-rack
-values; the soak defaults to 4 h).
+planes, Reconcile at scale, simultaneous port failures (TC-STR-022) and mass decommission (TC-STR-009). Sizes and
+durations come from thresholds.afm.* (defaults below are full-rack values; the soak defaults to 4 h).
+
+TC-STR-022: thresholds.afm.str022_computes (6), str022_settle_s (60), reconfigure_event_types
+([vpod_bandwidth_change]: the AFM event of one vPOD reprogramming, as TC-BUG-030 reads it).
+TC-STR-009 runs only with thresholds.afm.stress.allow_mass_decommission: true (it takes every compute out of
+service); str009_decommission_s (900), str009_watch_s (60), readmit_timeout_s.
 """
 from __future__ import annotations
 
@@ -9,9 +14,10 @@ import time
 
 import pytest
 
-from afm_helpers import _baseline, _restored
+from afm_helpers import _baseline, _degraded_port_ids, _restored
 from helios.afm import CLUSTER
-from helios.afm_ops import TERMINAL
+from helios.afm_ops import CN, TERMINAL
+from helios.rack import fan_out
 
 FP = f"{CLUSTER}/failoverpolicies"
 VP = f"{CLUSTER}/vpods"
@@ -231,4 +237,135 @@ def test_reconcile_at_scale(ops, afm_ready, checks, record_property):
     for s in ops.afm.switches():
         checks.check(ops.switch_ready(s["meta"]["name"]), f"{s['meta']['name']} not healthy")
     checks.check((ops.planes(sysv)[1] or 0) >= (base[1] or 0), f"planes {ops.planes(sysv)} below baseline {base}")
+    checks.assert_all()
+
+
+def _etype(e: dict):
+    return e.get("type") or (e.get("spec") or {}).get("event-type") or (e.get("spec") or {}).get("type")
+
+
+@pytest.mark.tc("TC-STR-022")
+def test_simultaneous_port_failures_single_reconfigure(ops, afm_ready, links, checks, record_property):
+    """One GPU link shut at the same moment on each of min(str022_computes, Ready computes) trays (a different GPU
+    port id per tray where possible, never one whose plane is already degraded) and held past the link-fail
+    threshold: every one of those GPU ports is PortFailed, the system vPOD's available planes drop, and AFM
+    reprograms the vPOD ONCE - exactly one reconfigure_event_types event naming the system vPOD from the shut until
+    str022_settle_s after the last port failed. Links restored: nothing left PortFailed, planes back to the baseline."""
+    sysv = ops.system_vpod_name()
+    base = _baseline(ops, sysv, record_property)
+    bad, used, sel, want = _degraded_port_ids(ops), set(), [], set()
+    for n in _ready(ops)[-int(ops.th("str022_computes", 6)):]:
+        c = ops.compute(n)
+        ls = ops.gpu_links(c["spec"]["slot-id"])
+        good = [x for x in ls if x[3][3] not in bad]
+        link = next((x for x in good if x[3][3] not in used), (good or ls or [None])[0])
+        if link is None:
+            continue
+        cab = link[3]
+        used.add(cab[3])
+        gidx = next((g.get("index") for g in ops.gpu_info(c).values() if str(g.get("acc-id")) == str(cab[2])), cab[1])
+        sel.append(link)
+        want.add((n, gidx, cab[3]))
+    if len(sel) < 2:
+        pytest.skip(f"needs up GPU links on 2 Ready computes, found {len(sel)}")
+    types = set(ops.th("reconfigure_event_types", ["vpod_bandwidth_change"]))
+    record_property("ports", [f"{sw.name} {ns} {port} -> Slot{cab[0]}/GPU{cab[1]}/Port{cab[3]}" for sw, ns, port, cab in sel])
+    since = ops.controller_now()
+    try:
+        for x, r, exc in fan_out(lambda x: links.shut(x[0], x[1], x[2]), sel, len(sel)):
+            checks.check(exc is None and r.ok, f"{x[0].name} {x[2]}: shutdown failed: {exc or r.tail()}")
+        failed = ops.wait(lambda: want <= ops.failed_gpu_ports(), ops.link_fail_threshold(sysv) + 120, 5)
+        checks.check(failed, f"shut GPU ports not all PortFailed: missing {sorted(want - ops.failed_gpu_ports())}")
+        time.sleep(float(ops.th("str022_settle_s", 60)) * float(ops.th("time_scale", 1)))
+        planes = ops.planes(sysv)
+        evs = [e for e in ops.events(None, since) if _etype(e) in types and ops.mentions(e, sysv)]
+        record_property("result", {"planes": planes, "baseline": base, "reconfigure_events": len(evs),
+                                   "events": [(_etype(e), (e.get("meta") or {}).get("creation-time"),
+                                               str(e.get("message", ""))[:120]) for e in evs[:10]]})
+        checks.check((planes[1] or 0) < (base[1] or 0), f"{sysv} available planes {planes} did not drop from {base}")
+        checks.check(len(evs) == 1, f"{sysv} reconfigured {len(evs)} times for {len(sel)} simultaneous port failures "
+                                    f"({sorted(types)} events), expected exactly 1")
+    finally:
+        for sw, ns, port, _ in sel:
+            links.restore(sw, ns, port, checks)
+    checks.check(ops.wait(lambda: not (want & ops.failed_gpu_ports()), 300, 10),
+                 f"still PortFailed after the restore: {sorted(want & ops.failed_gpu_ports())}")
+    _restored(ops, checks, sysv, base, "after the links came back")
+    checks.assert_all()
+
+
+def _controller_problems(ops) -> list[str]:
+    """Controller health right now: cluster condition, every quorum member started, the API answering a list."""
+    from helios.afm import conditions_ok
+
+    try:
+        cl = ops.afm.cluster()
+    except Exception as e:  # noqa: BLE001 - an API that does not answer is the finding
+        return [f"cluster read failed: {str(e)[:120]}"]
+    out = [] if conditions_ok(cl) else ["cluster not healthy"]
+    members = ((cl.get("status") or {}).get("quorum-status") or {}).get("members") or []
+    down = [m.get("name") for m in members if m.get("status") != "started"]
+    if down:
+        out.append(f"quorum members not started: {down}")
+    r = ops.afm.raw("GET", CN)
+    if r.status_code != 200:
+        out.append(f"GET computenodes -> HTTP {r.status_code}")
+    return out
+
+
+@pytest.mark.tc("TC-STR-009")
+def test_mass_decommission_controller_survives(ops, afm_ready, checks, record_property):
+    """Opt-in (thresholds.afm.stress.allow_mass_decommission: true): every Ready compute (18 on the full rack) taken
+    out of the system vPOD and decommissioned in parallel. While they decommission and for str009_watch_s after,
+    the controller stays healthy (cluster healthy, every quorum member started, the API answering). Then every
+    compute is deleted and readmitted (afm-agent restarted once on each switch hosting their node agents), Ready
+    within readmit_timeout_s and back in the system vPOD with the planes at the baseline."""
+    if not ops.th("stress.allow_mass_decommission", False):
+        pytest.skip("decommissions every compute: opt in with thresholds.afm.stress.allow_mass_decommission: true")
+    sysv = ops.system_vpod_name()
+    base = _baseline(ops, sysv, record_property)
+    names = _ready(ops)
+    hosts = {}
+    for n in names:
+        sw, _ = ops.slot_host(ops.compute(n)["spec"]["slot-id"])
+        if sw is not None:
+            hosts[sw.name] = sw
+    entries, problems = {}, []
+    record_property("computes", len(names))
+    try:
+        for n in names:
+            entries[n] = ops.remove_compute(sysv, n)
+        for n, r, exc in fan_out(lambda n: ops.afm.raw("POST", f"{CN}/{n}/Decommission", {}), names, len(names)):
+            checks.check(exc is None and r.status_code == 200,
+                         f"{n}: Decommission -> {exc or f'HTTP {r.status_code} {r.text[:150]}'}")
+
+        def all_decommissioned():
+            problems.extend(_controller_problems(ops))
+            return all(ops.compute_phase(n) == "decommissioned" for n in names)
+        ok = ops.wait(all_decommissioned, float(ops.th("str009_decommission_s", 900)), 10)
+        phases = {n: ops.compute_phase(n) for n in names}
+        checks.check(ok, f"not every compute decommissioned: {({n: p for n, p in phases.items() if p != 'decommissioned'})}")
+        k = float(ops.th("time_scale", 1))
+        end = time.monotonic() + float(ops.th("str009_watch_s", 60)) * k
+        while True:
+            problems.extend(_controller_problems(ops))
+            if time.monotonic() >= end:
+                break
+            time.sleep(min(10 * k, max(0.05, end - time.monotonic())))
+        record_property("controller_problems", sorted(set(problems))[:20])
+        checks.check(not problems, f"controller disturbed by the mass decommission: {sorted(set(problems))[:6]}")
+    finally:
+        for n in names:
+            if ops.compute_phase(n) not in ("admitted", "absent"):
+                ops.afm.raw("DELETE", f"{CN}/{n}")
+        ops.wait(lambda: all(ops.compute_phase(n) in ("admitted", "absent") for n in names), 120, 5)
+        for sw in hosts.values():
+            ops.afm_agent(sw, "restart")
+        back = [n for n in names if ops.wait_compute_ready(n)]
+        checks.check(len(back) == len(names), f"not readmitted: {sorted(set(names) - set(back))}")
+        ops.add_gpus(sysv, [e for n in back for e in entries.get(n, [])])
+    checks.check(ops.wait_vpod(sysv) in TERMINAL, f"{sysv} not online/degraded after the readmit")
+    for n in names:
+        checks.check(ops.wait(lambda n=n: ops.membership(n) == {sysv}, 300, 10), f"{n} not back in {sysv}")
+    _restored(ops, checks, sysv, base, "after readmitting every compute")
     checks.assert_all()

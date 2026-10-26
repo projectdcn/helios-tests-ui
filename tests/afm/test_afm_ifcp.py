@@ -5,6 +5,11 @@ A port's IFCP session is "up" when it is LINK_UP with ll_up=yes, peer enabled an
 compares the set of up sessions on every tray with the baseline taken before the trigger
 (thresholds.afm.ifcp_recover_s, 120 s, to get back). SPDM session / SelectedLink internals are not exposed by
 afmctl or the node-agent API, so cases that need them are not automated.
+
+TC-TRG-002 / TC-TRG-003 shut switch links (the ``links`` fixture restores them): a session must drop within
+thresholds.afm.ifcp_down_s (60 s), and the sessions that must stay up are read every 5 s for
+thresholds.afm.link_hold_s (15 s) while the links are down. A switch port is matched to its GPU port by the
+accelerator id in its description ('To ComputeTray Slot<s>/GPU<g>[acc]/Port<p>').
 """
 from __future__ import annotations
 
@@ -180,6 +185,104 @@ def test_all_links_down_up(ops, afm_ready, links, checks, record_property):
 
 
 # ------------------------------------------------------------------ ifcp-triggers
+
+def _bdf_by_acc(ops, tray) -> dict[str, str]:
+    """{accelerator id: bdf} of a tray's GPUs (afmctl accelerator_id = the [acc] of the switch port description)."""
+    return {str(d.accel_id): d.bdf for d in ops.afmctl(tray).devices()}
+
+
+def _lost_while(ops, tray, want: set, seconds: float) -> set:
+    """Sessions of ``want`` seen down at any read (every 5 s) during ``seconds`` (rack seconds, time-scaled)."""
+    k = float(ops.th("time_scale", 1))
+    lost, end = set(), time.monotonic() + seconds * k
+    while True:
+        lost |= want - ops.ifcp_up(tray)
+        if time.monotonic() >= end:
+            return lost
+        time.sleep(min(5 * k, max(0.05, end - time.monotonic())))
+
+
+@pytest.mark.l3
+@pytest.mark.disruptive
+@pytest.mark.tc("TC-TRG-002")
+def test_active_link_flap_cp_recovers(ops, afm_ready, links, checks, record_property):
+    """The switch link of one GPU port with an IFCP session up is shut, then brought back: that session drops
+    (within ifcp_down_s) and is back within ifcp_recover_s; no other IFCP session of the tray drops while the link is
+    down (read for link_hold_s) or after it is back; every tray is at its baseline afterwards."""
+    base = _baseline(ops)
+    name = ops.pick_compute()
+    tray = ops.tray(name)
+    accs = _bdf_by_acc(ops, tray)
+    link = next((x for x in ops.gpu_links(ops.compute(name)["spec"]["slot-id"])
+                 if (accs.get(str(x[3][2])), x[3][3]) in base[name]), None)
+    if link is None:
+        pytest.fail(f"{ops.label(name)}: no up switch link whose IFCP session is up", pytrace=False)
+    sw, ns, port, cab = link
+    key = (accs[str(cab[2])], cab[3])
+    others = base[name] - {key}
+    record_property("target", {"compute": name, "tray": tray.name, "switch": sw.name, "ns": ns, "port": port,
+                               "session": list(key), "other_sessions": len(others)})
+    lost = set()
+    try:
+        links.shut(sw, ns, port)
+        t_down = float(ops.th("ifcp_down_s", 60))
+        down = ops.wait(lambda: key not in ops.ifcp_up(tray), t_down, 2)
+        checks.check(down, f"{tray.name} {key}: IFCP session still up {t_down:.0f}s after {sw.name} {port} was shut")
+        lost |= _lost_while(ops, tray, others, float(ops.th("link_hold_s", 15)))
+    finally:
+        links.restore(sw, ns, port, checks)
+    t = float(ops.th("ifcp_recover_s", 120))
+    checks.check(ops.wait(lambda: key in ops.ifcp_up(tray), t, 5),
+                 f"{tray.name} {key}: IFCP session not back {t:.0f}s after {sw.name} {port} came back")
+    lost |= others - ops.ifcp_up(tray)
+    record_property("other_sessions_lost", sorted(lost)[:20])
+    checks.check(not lost, f"{tray.name}: {len(lost)} other IFCP session(s) dropped with the flap of {port}: {sorted(lost)[:6]}")
+    _recovered(ops, checks, base, "the link flap")
+    checks.assert_all()
+
+
+@pytest.mark.l3
+@pytest.mark.disruptive
+@pytest.mark.tc("TC-TRG-003")
+def test_gpu_links_to_one_switch_down_up(ops, afm_ready, links, checks, record_property):
+    """Every up link of one GPU to one switch tray shut (6 on the full rack, where a GPU has 6 links to each of the 6
+    switches; on a smaller rack however many there are, at least 2 - the count is recorded): those IFCP sessions all
+    drop while the GPU's sessions over the other switches stay up (read for link_hold_s); links restored: every
+    session of the tray is back within ifcp_recover_s. Skips without a GPU cabled to a second switch."""
+    base = _baseline(ops)
+    name = ops.pick_compute()
+    tray = ops.tray(name)
+    accs = _bdf_by_acc(ops, tray)
+    groups: dict[tuple, list] = {}      # (accelerator id, switch) -> links
+    for x in ops.gpu_links(ops.compute(name)["spec"]["slot-id"]):
+        groups.setdefault((str(x[3][2]), x[0].name), []).append(x)
+    cands = [(k, v) for k, v in groups.items() if len(v) >= 2 and accs.get(k[0])
+             and any(a == k[0] and s != k[1] for a, s in groups)]
+    if not cands:
+        pytest.skip(f"{ops.label(name)}: no GPU with >= 2 up links to one switch and links to another switch")
+    (acc, swname), sel = max(cands, key=lambda kv: len(kv[1]))
+    bdf = accs[acc]
+    mine = {(bdf, x[3][3]) for x in sel} & base[name]
+    other = {(bdf, x[3][3]) for (a, s), v in groups.items() if a == acc and s != swname for x in v} & base[name]
+    record_property("target", {"compute": name, "tray": tray.name, "bdf": bdf, "switch": swname,
+                               "links_shut": len(sel), "sessions_up_on_them": len(mine),
+                               "sessions_other_switches": len(other)})
+    checks.check(mine, f"{tray.name} {bdf}: none of its {len(sel)} links to {swname} had an IFCP session up")
+    try:
+        for sw, ns, port, _ in sel:
+            links.shut(sw, ns, port)
+        gone = ops.wait(lambda: not (mine & ops.ifcp_up(tray)), float(ops.th("ifcp_down_s", 60)), 5)
+        checks.check(gone, f"{tray.name} {bdf}: sessions still up with every link to {swname} shut: "
+                           f"{sorted(mine & ops.ifcp_up(tray))}")
+        lost = _lost_while(ops, tray, other, float(ops.th("link_hold_s", 15)))
+        record_property("other_switch_sessions_lost", sorted(lost))
+        checks.check(not lost, f"{tray.name} {bdf}: {len(lost)} session(s) over other switches dropped: {sorted(lost)[:6]}")
+    finally:
+        for sw, ns, port, _ in sel:
+            links.restore(sw, ns, port, checks)
+    _recovered(ops, checks, base, f"the links to {swname} came back", only={name})
+    checks.assert_all()
+
 
 def _watch_cp(ops, seconds: float, names) -> list[str]:
     """Sample compute health and agent connectivity for ``seconds``; return what went wrong."""

@@ -489,6 +489,38 @@ class SonicSwitch:
     def watchdog_status(self) -> str:
         return self.run("watchdogutil status", sudo=True, timeout=60).stdout.strip()
 
+    # -- IFCP on the wire (tests/sideband/test_ifcp_wire.py) --------------------
+    # QFX5252 / g02-g17 (26 Oct 2026): IFCP frames reach the switch CPU on the fabric port's netdev in its ASIC
+    # namespace. switch->compute: 802.1Q VLAN 0, PCP 7, inner ethertype 0x88b6; compute->switch: ethertype 0xeb87.
+    IFCP_TX_ETHERTYPE, IFCP_RX_ETHERTYPE = "0x88b6", "0xeb87"
+    IFCP_FILTER = "ether proto 0xeb87 or (vlan and ether proto 0x88b6)"
+    _FRAME_RE = re.compile(r"^(\d+\.\d+) (\S+) > (\S+), ethertype (.*?), length (\d+)")
+
+    def ifcp_capture(self, port: str, ns: str | None, seconds: float) -> list[dict]:
+        """IFCP frames seen on one fabric port for ``seconds`` (tcpdump, read-only): [{t, dir ('tx' = switch to
+        compute, 'rx'), src, dst, pcp (None when untagged), ethertype, length, payload (hex)}], in time order.
+        Raises RuntimeError when tcpdump is missing or cannot open the port."""
+        prefix = f"ip netns exec {ns} " if ns else ""
+        cmd = (f"{prefix}timeout {int(seconds)} tcpdump -i {shlex.quote(port)} -nn -e -tt -x "
+               f"{shlex.quote(self.IFCP_FILTER)}")
+        r = self.run(cmd, sudo=True, timeout=seconds + 60)
+        if r.rc not in (0, 124) and not r.stdout.strip():          # 124: stopped by timeout (normal)
+            raise RuntimeError(f"tcpdump on {port} failed rc={r.rc}: {r.tail()!r}")
+        frames: list[dict] = []
+        for line in r.stdout.splitlines():
+            m = self._FRAME_RE.match(line)
+            if m:
+                types = re.findall(r"\((0x[0-9a-f]{4})\)", line)
+                pcp = re.search(r"vlan \d+, p (\d)", line)
+                et = types[-1] if types else ""
+                frames.append({"t": float(m.group(1)), "src": m.group(2).lower(), "dst": m.group(3).rstrip(",").lower(),
+                               "pcp": int(pcp.group(1)) if pcp else None, "ethertype": et,
+                               "dir": "tx" if et == self.IFCP_TX_ETHERTYPE else "rx", "length": int(m.group(5)),
+                               "payload": ""})
+            elif frames and re.match(r"^\s+0x[0-9a-f]{4}:", line):
+                frames[-1]["payload"] += "".join(line.split()[1:])
+        return frames
+
     def ssd_health(self) -> dict[str, str]:
         out = self.run("ssdutil", sudo=True, timeout=120).stdout
         return {k.strip(): v.strip() for k, _, v in (ln.partition(":") for ln in out.splitlines()) if v}

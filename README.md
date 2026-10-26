@@ -62,7 +62,8 @@ tests/                  rack tests, each tagged @pytest.mark.tc("TC-...")
   telemetry/            AMD device-metrics-exporter (TC-CTL-139..150)
   platform/             NTP, DNS, log rotation, topo logs, OOB names across reboot
   ifoe/                 IFoE driver unload/reload (TC-AFM-LU-001, TC-HW-017)
-  sideband/             sideband bring-up + IFCP (TC-BU, TC-SEQ-006, TC-SBM-062, TC-E2E-062)
+  sideband/             sideband bring-up + IFCP (TC-BU, TC-SEQ-006, TC-SBM-062, TC-E2E-062); IFCP frames on the
+                        wire (test_ifcp_wire.py: TC-040/041/043, TC-SBM-175)
   afm/                  AFM controller API: auth, cluster/objects, policies, RBAC, audit, metrics,
                         techsupport, AggWatch, compute Reconfigure (TC-AFM-*, TC-CTL-*, TC-AFM-AGGW-*)
 unit/                   offline tests + fault-injection self-test (no rack needed)
@@ -464,6 +465,11 @@ and title.
     healthy, every config request applied.
   * **TC-BU-003 / TC-SBM-062 / TC-E2E-062 IFCP:** IFCP sessions up and bidirectional;
     each GPU port's IFCP-discovered switch peer matches the registered cabling.
+  * **TC-040 / TC-041 / TC-043 / TC-SBM-175 IFCP on the wire (`test_ifcp_wire.py`, read-only):** a 12 s tcpdump on
+    a few cabled, up fabric ports per switch (`thresholds.ifcp.*`). IFCP frames reach the switch CPU on the port's
+    netdev in its ASIC namespace: switch->compute 802.1Q VLAN 0 PCP 7 / ethertype 0x88b6, compute->switch 0xeb87,
+    one keepalive each way every 5 s on every link. Checks: egress frames to one peer, ingress from that peer,
+    keepalive period 5 +- 1 s each answered within 1 s, every switch frame at PCP 7.
 
 * **AFM controller API (`tests/afm`).**
   * **Auth.** Login, cookie flags (Secure, HttpOnly, SameSite=Strict), 401 without a session, invalid-request envelopes.
@@ -545,8 +551,10 @@ and title.
       005/006/010…017 (hard reset = AFM Reconfigure).
     * **Path-to-port map + TransferBench after link triggers (`test_afm_path_traffic.py`):** link down, flap,
       drain and activate, then in-domain (TC-AFM-L1-6) or cross-domain (TC-AFM-L1-7) TransferBench.
-    * **Not automated:** SPDM session, SelectedLink and IFCP packet-format cases. They need data
-      that neither afmctl nor the node-agent API exposes (AMD tooling or packet capture).
+    * **Not automated:** SPDM session, SelectedLink and session-statistics cases (TC-BU-004/008/010,
+      TC-SBM-003/004/010). Checked on g02-g17 (26 Oct 2026): afmctl shows only per-port IFCP state, the
+      sb-node-agent REST has only `/api/health` and `/api/runtime/requests`, and on the wire keepalives run on
+      all 6 links of a GPU-switch pair alike, so the selected link cannot be told apart. They need AMD tooling.
   * **Sideband agent placement and control path (23, `test_afm_sideband_more.py`).**
     * **Placement**, read from each switch's afm-agent process list: one sb-node-agent per slot, spread
       over the switches within `thresholds.afm.agent_balance_slack` (1) (SBM-135/136/050).

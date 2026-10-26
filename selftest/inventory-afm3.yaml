@@ -75,6 +75,7 @@ thresholds:
     soak_interval_s: 1
     str011_cycles: 3
     str013_flaps: 2
+    stress: {allow_mass_decommission: true}   # TC-STR-009 (opt-in on a rack)
     link_watch_s: 1
     retry_interval_s: 0.2
     agent_settle_s: 0

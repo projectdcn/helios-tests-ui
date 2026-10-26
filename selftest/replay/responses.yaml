@@ -915,6 +915,10 @@
   rc: 0
   host: ^sw
   file: techsupport_list.txt
+- cmd: '^ip netns exec asic\d timeout \d+ tcpdump -i Ethernet\d+ -nn -e -tt -x '
+  rc: 124
+  host: ^sw
+  file: ifcp_capture.txt
 - cmd: ^rdma\ link\ show$
   rc: 0
   file: rdma_link.txt

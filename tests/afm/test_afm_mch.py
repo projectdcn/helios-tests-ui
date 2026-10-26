@@ -5,7 +5,8 @@ Used ports come from the lane mask (thresholds.mch.lane_mask, default the plan's
 digit per station, read station 0 first (thresholds.mch.mask_order: msb_first | lsb_first - VERIFY);
 lanes 0-1 (0x3) = port 2s, lanes 2-3 (0xC) = port 2s+1, so f = both ports, 3 = one port, 0 = none
 -> 6 two-port, 6 one-port and 6 empty stations = 18 used ports. The mask is read on the tray with
-commands.mch.lane_mask_cmd ({bdf}; default the UALink sysfs station_lane_en_bitmap - VERIFY).
+commands.mch.lane_mask_cmd ({bdf}; default the UALink sysfs station_lane_en_bitmap - VERIFY). TC-BUG-011 (lane mask
+after a compute readmission) reads it the same way and waits thresholds.mch.mask_settle_s (120 s) for it.
 """
 from __future__ import annotations
 
@@ -635,6 +636,45 @@ def test_lifecycle_unchanged(ops, afm_ready, mch, checks, record_property):
         finally:
             ops.afm.raw("POST", f"{SN}/{n}/ReactivateSwitchNode", {})
         checks.check(ops.wait(lambda: ops.switch_ready(n), 600, 15), f"{n} not back")
+    checks.assert_all()
+
+
+@pytest.mark.disruptive
+@pytest.mark.tc("TC-BUG-011")
+def test_lane_mask_after_readmission(ops, afm_ready, mch, checks, record_property):
+    """The lane bitmask is set correctly on node readmission: a compute decommissioned, deleted and readmitted (afm-agent
+    restarted on the switch hosting its node agent) and put back in the system vPOD; within
+    thresholds.mch.mask_settle_s (120 s) the station lane-enable bitmask of every GPU of the tray equals
+    thresholds.mch.lane_mask, the value read before the decommission."""
+    sysv = ops.system_vpod_name()
+    name, tray = _trays(ops)[0]
+    slot = ops.compute(name)["spec"]["slot-id"]
+    want = _mask(ops)
+    before = {bdf: _lane_mask(ops, tray, bdf) for bdf in _bdfs(ops, tray)}
+    entries = ops.remove_compute(sysv, name)
+    host, _ = ops.slot_host(slot)
+    try:
+        ops.afm.post(f"{CN}/{name}/Decommission", {})
+        checks.check(ops.wait(lambda: ops.compute_phase(name) == "decommissioned", 300, 10), "not decommissioned")
+        ops.afm.raw("DELETE", f"{CN}/{name}")
+        ops.wait(lambda: ops.compute_phase(name) == "absent", 60, 5)
+        if host is not None:
+            ops.afm_agent(host, "restart")
+        checks.check(ops.wait_compute_ready(name), f"{name} not readmitted")
+    finally:
+        if ops.compute_phase(name) == "admitted":
+            ops.add_gpus(sysv, entries)
+    after = {}
+
+    def settled():
+        after.update({bdf: _lane_mask(ops, tray, bdf) for bdf in _bdfs(ops, tray)})
+        return bool(after) and all(m == want for m in after.values())
+    ops.wait(settled, float(ops.inv.th("mch.mask_settle_s", 120)), 5)
+    record_property("lane_masks", {"expected": want, "before": before, "after": after})
+    for bdf, m in sorted(after.items()):
+        checks.check(m == want, f"{tray.name}/{bdf}: lane mask {m!r} after readmission, expected {want}")
+        checks.check(m == before.get(bdf), f"{tray.name}/{bdf}: lane mask {m!r} after readmission, {before.get(bdf)!r} before")
+    checks.check(after, f"{tray.name}: no GPU lane mask read after readmission")
     checks.assert_all()
 
 

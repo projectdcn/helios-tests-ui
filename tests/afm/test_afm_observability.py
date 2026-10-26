@@ -313,6 +313,89 @@ def test_port_oper_status_matches_link(ops, checks, record_property):
     checks.assert_all()
 
 
+# AFM switch-port record key -> 'show interfaces status' column, compared when AFM lists the key
+_SW_DETAIL = {"admin-status": "Admin", "speed": "Speed", "fec": "FEC", "mtu": "MTU"}
+_AN_KEYS = ("autoneg", "auto-negotiation", "auto-neg")
+
+
+def _norm(v) -> str:
+    """'400G' / '400000' -> '400000'; anything else lower-cased."""
+    s = str(v).strip().lower()
+    m = re.fullmatch(r"(\d+(?:\.\d+)?)\s*g", s)
+    return str(int(float(m.group(1)) * 1000)) if m else s
+
+
+def _port_status_mismatches(ops, seen: dict) -> list[str]:
+    out = []
+    for sn in _switch_nodes(ops):
+        sw = _ssh(ops, sn)
+        if sw is None:
+            continue
+        rows = {(ns, r.get("Interface")): r for ns in sw.namespaces() for r in sw.interfaces_status(ns)}
+        for ns, p in _ports(sn):
+            r = rows.get((ns, p.get("name")))
+            if r is None:
+                continue
+            seen["switch"] |= set(p)
+            if (p.get("oper-state") == "PortReady") != (str(r.get("Oper", "")).lower() == "up"):
+                out.append(f"{sw.name} {ns} {p.get('name')}: AFM {p.get('oper-state')}, switch Oper {r.get('Oper')}")
+            for key, col in _SW_DETAIL.items():
+                if key in p and col in r and _norm(p[key]) != _norm(r[col]):
+                    out.append(f"{sw.name} {ns} {p.get('name')}: AFM {key} {p[key]}, switch {col} {r[col]}")
+    for c in _computes(ops):
+        name = c["meta"]["name"]
+        try:
+            tray = ops.tray(name)
+            a = ops.afmctl(tray)
+            devs = a.devices()
+        except Exception as e:  # noqa: BLE001 - a tray that cannot be read is one finding
+            out.append(f"{name}: cannot read afmctl: {str(e).split(';')[0][:120]}")
+            continue
+        by_acc = {str(g.get("acc-id")): g for g in ops.gpu_info(c).values()}
+        for d in devs:
+            g = by_acc.get(str(d.accel_id))
+            if g is None:
+                out.append(f"{tray.name} {d.bdf}: accelerator {d.accel_id} not in AFM gpu-info")
+                continue
+            afm = {int(p.get("id", i)): p for i, p in enumerate(g.get("ports") or [])}
+            for p in a.ports_raw(d.bdf):
+                ap = afm.get(int(p.get("id")))
+                if ap is None:
+                    continue
+                seen["gpu"] |= set(ap)
+                link, st = (p.get("status") or {}).get("link_status"), ap.get("oper-state")
+                ok = st == "PortDisabled" if link == "LINK_DISABLED" else (st == "PortReady") == (link == "LINK_UP")
+                if not ok:
+                    out.append(f"{tray.name} {d.bdf} port {p.get('id')}: AFM {st}, afmctl {link}")
+    return out
+
+
+@pytest.mark.tc("TC-E2E-064")
+def test_port_status_matches_switch_and_gpu(ops, checks, record_property):
+    """AFM shows the right status of the switch and GPU ports. Switch ports (SwitchNode status.asic-info) against SONiC
+    'show interfaces status': oper-state PortReady <-> Oper up, and each detail AFM lists compared with its column
+    (admin-status/Admin, speed/Speed, fec/FEC, mtu/MTU). GPU ports (ComputeNode gpu-info, GPU matched by accelerator id)
+    against afmctl show port: PortReady <-> LINK_UP, PortDisabled <-> LINK_DISABLED. A mismatch is read again after
+    thresholds.afm.oper_recheck_s (15 s) before it counts. The fields AFM exposes are recorded: speed, FEC and
+    auto-negotiation are compared only if AFM lists them (no AFM port record the repo has seen carries them)."""
+    _need_switches(ops)
+    seen = {"switch": set(), "gpu": set()}
+    first = _port_status_mismatches(ops, seen)
+    if first:
+        time.sleep(float(ops.th("oper_recheck_s", 15)) * float(ops.th("time_scale", 1)))
+        first = [m for m in _port_status_mismatches(ops, seen) if m in first]
+    compared = ["oper-state"] + [k for k in _SW_DETAIL if k in seen["switch"]]
+    an = sorted(k for k in _AN_KEYS if k in seen["switch"] | seen["gpu"])
+    record_property("afm_fields", {"switch_port": sorted(seen["switch"]), "gpu_port": sorted(seen["gpu"]),
+                                   "compared_with_sonic": compared, "auto_negotiation_keys": an,
+                                   "not_exposed": [k for k in ("speed", "fec", "mtu") if k not in seen["switch"]]})
+    record_property("mismatches", first[:30])
+    checks.check(seen["switch"], "no AFM switch port matched a SONiC interface")
+    checks.check(seen["gpu"], "no AFM GPU port matched an afmctl port")
+    checks.check(not first, f"{len(first)} port(s) where AFM and the switch / GPU disagree: {first[:6]}")
+    checks.assert_all()
+
+
 @pytest.mark.tc("TC-SWA-208")
 def test_switch_configuration_maintained(ops, checks, record_property):
     """The Switch Manager keeps the switches configured: every switch port AFM reports PortReady towards a GPU is a
