@@ -108,6 +108,9 @@ def merge_notes(new: str, old, label: str) -> str:
 
 
 def find_row(ws, tc: str) -> int | None:
+    for r in range(3, ws.max_row + 1):                 # the code ID itself (a merged plan writes TC-AFM-035A / ...)
+        if cell_tid(ws.cell(r, 1).value) == tc:
+            return r
     tid, frag = ROW_ALIASES.get(tc, (tc, None))
     for r in range(3, ws.max_row + 1):
         a = cell_tid(ws.cell(r, 1).value)
