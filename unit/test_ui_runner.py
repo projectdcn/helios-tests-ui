@@ -40,6 +40,8 @@ class FakeExecutor:
         self.calls: list[tuple[list[str], bytes | None]] = []
         self.popens: list[tuple[list[str], FakeProc]] = []
         self.new_run, self.base_on_remote, self.ls_count = new_run, base_on_remote, 0
+        self.run_rc, self.attachable = 0, True
+        self.tails: list[FakeProc] = []        # successive log-follow connections (rc 255 = dropped)
 
     def run(self, argv, input=None, timeout=None, cwd=None):
         self.calls.append((list(argv), input))
@@ -50,7 +52,15 @@ class FakeExecutor:
             cmd = argv[-1]
             if "ls -1" in cmd:
                 self.ls_count += 1
-                out = b"g02-g17-20261014-101010\n" + (f"{self.new_run}\n".encode() if self.ls_count > 1 else b"")
+                out = f"g02-g17-20261014-101010\n{self.new_run}\n".encode()
+            elif cmd.endswith("/before 2>/dev/null"):
+                out = b"g02-g17-20261014-101010\n"
+            elif cmd.endswith("/rc 2>/dev/null"):
+                out = f"{self.run_rc}\n".encode()
+            elif cmd.startswith("test -f"):
+                rc = 0 if self.attachable else 1
+            elif "kill -0" in cmd and "tail" not in cmd:          # the detached run's process: gone
+                rc = 1
             elif "tar -czf" in cmd:
                 buf = io.BytesIO()
                 with tarfile.open(fileobj=buf, mode="w:gz") as t:
@@ -65,7 +75,12 @@ class FakeExecutor:
         return subprocess.CompletedProcess(argv, rc, out, b"")
 
     def popen(self, argv, env=None, cwd=None, stdin=False):
-        p = FakeProc([b"collecting ...\n", b"RACK HEALTH: GO   (results/x)\n"])
+        if "setsid nohup" in argv[-1]:
+            p = FakeProc([b"started\n"])
+        elif self.tails:
+            p = self.tails.pop(0)
+        else:
+            p = FakeProc([b"collecting ...\n", b"RACK HEALTH: GO   (results/x)\n"])
         self.popens.append((list(argv), p))
         return p
 
@@ -105,11 +120,17 @@ def test_ssh_health_run_mirrors_the_manual_procedure(tmp_path):
     assert '"$HOME"/helios/fullrack-jump-afm.yaml.bak-$(date' in push[0][-1]          # dated copy when it changes
     run_argv, proc = ex.popens[0]
     cmd = run_argv[-1]
+    d = '"$HOME"/helios/.helios-ui-runs/g02-g17-20261015-115959-abcd'
+    inner = ('echo $$ > "$HOME"/helios/.helios-ui-g02-g17-20261015-115959-abcd.pid; '
+             '"$HOME"/helios/venv/bin/python tools/rack_health.py --inventory "$HOME"/helios/fullrack-jump-afm.yaml '
+             f'--results-dir results --known testplan/health-known.yaml --no-html; echo $? > {d}/rc')
+    # started detached (setsid nohup): it survives this machine sleeping or the SSH connection dropping
     assert cmd == ('cd "$HOME"/helios/helios-tests && export PYTHONUNBUFFERED=1 && '
                    'IFS= read -r HELIOS_AFM_PASSWORD && export HELIOS_AFM_PASSWORD && '
-                   'echo $$ > "$HOME"/helios/.helios-ui-g02-g17-20261015-115959-abcd.pid && '
-                   'exec "$HOME"/helios/venv/bin/python tools/rack_health.py --inventory "$HOME"/helios/fullrack-jump-afm.yaml '
-                   '--results-dir results --known testplan/health-known.yaml --no-html')
+                   f'mkdir -p {d} results && ls -1 results > {d}/before && '
+                   f"{{ setsid nohup sh -c '{inner}' > {d}/log 2>&1 < /dev/null & }} && echo started")
+    follow = ex.popens[1][0][-1]
+    assert f"tail -c +1 -F --pid=\"$p\" {d}/log" in follow and "BatchMode=yes" in ex.popens[1][0]
     # the password goes to the remote shell's stdin only: never on a command line or in the log
     assert proc.stdin.getvalue() == (PW + "\n").encode()
     assert not any(PW in " ".join(a) for a, _ in ex.calls + ex.popens)
@@ -117,7 +138,8 @@ def test_ssh_health_run_mirrors_the_manual_procedure(tmp_path):
     # results copied back (tar from the remote results folder) and unpacked here
     assert any(c.startswith('cd "$HOME"/helios/helios-tests/results && tar -czf - -- g02-g17-20261015-120000') for c in cmds)
     assert (tmp_path / "results" / "g02-g17-20261015-120000" / "health.json").exists()
-    assert any("rm -f" in c and ".helios-ui-g02-g17-20261015-115959-abcd.pid" in c for c in cmds)
+    assert any("rm -f" in c and ".helios-ui-g02-g17-20261015-115959-abcd.pid" in c and f"rm -rf {d}" in c for c in cmds)
+    assert "RACK HEALTH: GO   (results/x)" in lines
 
 
 def test_ssh_without_password_and_pytest_selection(tmp_path):
@@ -128,8 +150,8 @@ def test_ssh_without_password_and_pytest_selection(tmp_path):
     r.execute("rid1", job, None, lambda s: None)
     cmd = ex.popens[0][0][-1]
     assert "read -r" not in cmd
-    assert cmd.endswith('exec "$HOME"/helios/venv/bin/python -m pytest tests/l1 --inventory "$HOME"/helios/fullrack-jump-afm.yaml '
-                        "--results-dir results -p no:cacheprovider --tc TC-SWH-002,TC-SWH-030 --computes ct01,ct03")
+    assert ('"$HOME"/helios/venv/bin/python -m pytest tests/l1 --inventory "$HOME"/helios/fullrack-jump-afm.yaml '
+            "--results-dir results -p no:cacheprovider --tc TC-SWH-002,TC-SWH-030 --computes ct01,ct03; echo $? >") in cmd
     assert ex.popens[0][1].stdin.getvalue() == b""
 
 
@@ -210,3 +232,55 @@ def test_ssh_stop_during_sync_does_not_start_the_run(tmp_path):
     with pytest.raises(JobError, match="stopped before"):
         r.execute("rid5", Job.from_request({"kind": "health"}), PW, lambda s: None)
     assert ex.popens == []
+
+
+def test_ssh_run_survives_a_dropped_connection(tmp_path, monkeypatch):
+    """The SSH connection drops mid-run (laptop asleep): the run goes on on the jump host; the UI re-attaches from the
+    byte where it stopped, keeps the whole log once, then reads the exit code and copies the results back."""
+    import ui.runner as runner_mod
+    monkeypatch.setattr(runner_mod, "RECONNECT_EVERY_S", 0)
+    ex = FakeExecutor("g02-g17-20261015-120000")
+    first = [b"collecting ...\n", b"test_a PASSED\n"]
+    ex.tails = [FakeProc(first, rc=255), FakeProc([], rc=255), FakeProc([b"test_b FAILED\n"], rc=0)]
+    ex.run_rc = 1
+    lines = []
+    rc, new = SshRunner(_profile(tmp_path), ex).execute("rid9", Job.from_request({"kind": "health"}), None, lines.append)
+    assert rc == 1 and new == ["g02-g17-20261015-120000"]
+    tails = [a[-1] for a, _ in ex.popens if "tail -c" in a[-1]]
+    n = sum(len(x) for x in first)
+    assert [t.split("tail -c +")[1].split()[0] for t in tails] == ["1", str(n + 1), str(n + 1)]
+    log = "\n".join(lines)
+    assert "connection to tenant-hpe@165.204.38.103 lost" in log and "re-attached" in log
+    assert [x for x in lines if x.startswith("test_")] == ["test_a PASSED", "test_b FAILED"]
+    assert (tmp_path / "results" / "g02-g17-20261015-120000" / "health.json").exists()
+
+
+def test_ui_restart_re_attaches_to_a_running_jump_host_run(tmp_path, monkeypatch):
+    """The UI process was restarted (log off, reboot) while a jump-host run went on: on start it re-attaches,
+    streams the run's log, copies the results back and finishes the run; one without remote state stays 'lost'."""
+    import json as _json
+    from ui.runs import RunManager
+    p = _profile(tmp_path)
+    d = p.results_dir / "ui-runs"
+    d.mkdir(parents=True)
+    for rid in ("g02-g17-20261015-115959-abcd", "g02-g17-20261015-110000-zzzz"):
+        (d / f"{rid}.json").write_text(_json.dumps({"id": rid, "rack": "g02-g17", "status": "running",
+                                                   "job": {"kind": "health"}, "created": "2026-10-15 11:59:59",
+                                                   "started": "2026-10-15 11:59:59"}))
+        (d / f"{rid}.log").write_text("# old log\n")
+    ex = FakeExecutor("g02-g17-20261015-120000")
+    real_run = ex.run
+
+    def run(argv, input=None, timeout=None, cwd=None):           # only the first run is still on the jump host
+        if argv[0] == "ssh" and argv[-1].startswith("test -f") and "zzzz" in argv[-1]:
+            return subprocess.CompletedProcess(argv, 1, b"", b"")
+        return real_run(argv, input, timeout, cwd)
+    ex.run = run
+    m = RunManager({"g02-g17": p}, ex)
+    for w in list(m.workers.values()):
+        w.join(timeout=30)
+    a = m.runs["g02-g17-20261015-115959-abcd"]
+    assert a.status == "finished" and a.results == ["g02-g17-20261015-120000"] and a.rc == 0
+    assert "RACK HEALTH: GO   (results/x)" in (d / f"{a.id}.log").read_text()
+    b = m.runs["g02-g17-20261015-110000-zzzz"]
+    assert b.status == "lost" and "# old log" in (d / f"{b.id}.log").read_text()

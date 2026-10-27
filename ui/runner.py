@@ -200,15 +200,20 @@ def _result_dirs(results_dir: Path, rack: str) -> set[str]:
 
 
 PARTIAL_AFTER_S = 1.0     # text without a line ending yet (pytest's "path::test " before PASSED) is shown after this
+RECONNECT_EVERY_S = 30.0               # jump-host runs: re-attach this often after the SSH connection dropped
+RECONNECT_FOR_S = 3 * 24 * 3600.0      # ... and give up (the run itself goes on there) after this long
 
 
-def _stream(proc, log, partial_after: float = PARTIAL_AFTER_S) -> int:
+def _stream(proc, log, partial_after: float = PARTIAL_AFTER_S, counter: list | None = None) -> int:
     """Hand the process output to ``log`` line by line; a partial line still waiting for its end is handed over
-    after ``partial_after`` s, so a running test is visible (the rest of that line follows as its own line)."""
+    after ``partial_after`` s, so a running test is visible (the rest of that line follows as its own line).
+    ``counter``: [bytes read so far], increased as output arrives (a re-attach resumes the remote log there)."""
     try:
         fd = proc.stdout.fileno()
     except (AttributeError, OSError, ValueError):       # fakes / iterables: line by line
         for raw in proc.stdout:
+            if counter is not None:
+                counter[0] += len(raw)
             log(raw.decode("utf-8", "replace").rstrip("\n"))
         return proc.wait()
     import select
@@ -219,6 +224,8 @@ def _stream(proc, log, partial_after: float = PARTIAL_AFTER_S) -> int:
             chunk = os.read(fd, 65536)
             if not chunk:
                 break
+            if counter is not None:
+                counter[0] += len(chunk)
             buf += chunk
             last = time.monotonic()
             *lines, buf = buf.split(b"\n")
@@ -429,6 +436,9 @@ class SshRunner(Runner):
         self._remote(f"mkdir -p {self.results()} && tar -xzf - -C {self.results()}", input=buf.getvalue())
 
     def command(self, run_id: str, job: Job, with_password: bool, secret_names: list[str] | None = None) -> str:
+        """Start the run DETACHED on the jump host (setsid nohup) and return at once: it keeps going when this
+        machine sleeps or the SSH connection drops. Its output, pid, exit code and the results folders that existed
+        before it are kept in rundir(); follow() streams the log from there and re-attaches after a disconnect."""
         s = self.profile.ssh
         args = build_args(job, s.inventory, "results", self.profile.known, no_html=not s.remote_html)
         parts = [f"cd {rq(s.code_dir)}", "export PYTHONUNBUFFERED=1"]
@@ -441,9 +451,16 @@ class SshRunner(Runner):
             if not ENV_RX.match(var):
                 raise JobError(f"bad environment variable name {var!r}")
             parts.append(f"IFS= read -r {var} && export {var}")
-        parts.append(f"echo $$ > {self.pidfile(run_id)}")
-        parts.append("exec " + " ".join(rq(a) for a in [s.python, *args]))
+        d = self.rundir(run_id)
+        parts.append(f"mkdir -p {d} results && ls -1 results > {d}/before")
+        inner = (f"echo $$ > {self.pidfile(run_id)}; " + " ".join(rq(a) for a in [s.python, *args]) +
+                 f"; echo $? > {d}/rc")
+        parts.append(f"{{ setsid nohup sh -c {shlex.quote(inner)} > {d}/log 2>&1 < /dev/null & }}")
+        parts.append("echo started")
         return " && ".join(parts)
+
+    def rundir(self, run_id: str) -> str:
+        return rq(posixpath.join(self._parent_base[0], ".helios-ui-runs", run_id))
 
     def fetch(self, names: list[str], log) -> None:
         if not names:
@@ -467,7 +484,6 @@ class SshRunner(Runner):
         self.sync_inventory(log)
         if job.kind == "rerun":
             self.ensure_base_run(job.base_run, log)
-        before = self._ls()
         cmd = self.command(run_id, job, bool(password), list(secrets))
         log(f"$ ssh {p.ssh.target} '{cmd}'")
         proc = self._start(run_id, lambda: self.ex.popen(self.ssh() + [cmd], stdin=True))
@@ -479,16 +495,93 @@ class SshRunner(Runner):
             proc.stdin.close()
         except (BrokenPipeError, OSError):
             pass
-        try:
-            rc = _stream(proc, log)
-        finally:
-            with self._lock:
-                self._procs.pop(run_id, None)
-        self._remote(f"rm -f {self.pidfile(run_id)}", check=False)
-        rack = inventory_rack_name(p.inventory)
+        out: list[str] = []
+        rc = _stream(proc, out.append)
+        with self._lock:
+            self._procs.pop(run_id, None)
+        if rc != 0 or "started" not in out:
+            raise JobError(f"could not start the run on {p.ssh.target} (rc={rc}): {' | '.join(out)[-400:]}")
+        log("== started on the jump host, detached: it keeps running if this machine sleeps, logs off or loses the "
+            "connection; this UI re-attaches and copies the results back")
+        return self.finish(run_id, log)
+
+    def attachable(self, run_id: str) -> bool:
+        """The jump host still has this run's detached state (a run of this UI, restarted since): finish() can
+        re-attach to it. Retries while the jump host is out of reach."""
+        r = self._retry(lambda: self._remote(f"test -f {self.rundir(run_id)}/log", check=False, timeout=120), None)
+        return r.returncode == 0
+
+    def finish(self, run_id: str, log) -> tuple[int, list[str]]:
+        rc = self.follow(run_id, log)
+        d = self.rundir(run_id)
+        before = set(self._retry(lambda: self._remote(f"cat {d}/before 2>/dev/null", check=False), log)
+                     .stdout.decode("utf-8", "replace").split())
+        rack = inventory_rack_name(self.profile.inventory)
         new = sorted(n for n in self._ls() - before if n.startswith(f"{rack}-"))
         self.fetch(new, log)
+        self._remote(f"rm -f {self.pidfile(run_id)} && rm -rf {d}", check=False)
         return rc, new
+
+    def _retry(self, fn, log):
+        """fn() (one ssh call) until it gets through: the jump host may be out of reach for a while (sleep, VPN)."""
+        lost = None
+        while True:
+            r = fn()
+            if r.returncode != 255:
+                return r
+            lost = lost or time.monotonic()
+            if time.monotonic() - lost > RECONNECT_FOR_S:
+                raise JobError(f"{self.profile.ssh.target} unreachable for {RECONNECT_FOR_S / 3600:.0f} h")
+            time.sleep(RECONNECT_EVERY_S)
+
+    def follow(self, run_id: str, log) -> int:
+        """Stream the detached run's log until the run ends; re-attach (from the byte where it stopped) whenever the
+        SSH connection drops. Returns the run's exit code."""
+        d, pf = self.rundir(run_id), self.pidfile(run_id)
+        offset, lost = 0, None
+        while True:
+            cmd = (f'p=$(cat {pf} 2>/dev/null); if [ -n "$p" ] && kill -0 "$p" 2>/dev/null; '
+                   f'then tail -c +{offset + 1} -F --pid="$p" {d}/log 2>/dev/null; '
+                   f'else tail -c +{offset + 1} {d}/log 2>/dev/null; fi; true')
+            with self._lock:
+                proc = self.ex.popen(self.ssh() + [cmd])
+                self._procs[run_id] = proc
+            got, back = [0], [lost is not None]
+
+            def out(line):
+                if back[0]:                          # first output after a reconnect
+                    back[0] = False
+                    log(f"== re-attached ({time.strftime('%H:%M:%S')}); the run went on meanwhile, its log continues")
+                log(line)
+            rc = _stream(proc, out, counter=got)
+            with self._lock:
+                self._procs.pop(run_id, None)
+            offset += got[0]
+            if got[0]:
+                lost = None
+            if rc != 255:                            # the tail ended: over, unless only our end of it was killed
+                with self._lock:
+                    stopped = run_id in self._stopped
+                alive = self._remote(f'p=$(cat {pf} 2>/dev/null); [ -n "$p" ] && kill -0 "$p" 2>/dev/null',
+                                     check=False, timeout=60).returncode
+                if stopped or alive not in (0, 255):
+                    break
+            if lost is None:
+                lost = time.monotonic()
+                log(f"== connection to {self.profile.ssh.target} lost ({time.strftime('%H:%M:%S')}): the run "
+                    f"continues there; re-attaching every {RECONNECT_EVERY_S:.0f} s")
+            elif time.monotonic() - lost > RECONNECT_FOR_S:
+                raise JobError(f"{self.profile.ssh.target} unreachable for {RECONNECT_FOR_S / 3600:.0f} h; the run "
+                               f"may still be going there (results in {self.results()})")
+            time.sleep(RECONNECT_EVERY_S)
+        out = self._retry(lambda: self._remote(f"cat {d}/rc 2>/dev/null", check=False), log)
+        text = out.stdout.decode("utf-8", "replace").strip()
+        if text.lstrip("-").isdigit():
+            return int(text)
+        with self._lock:
+            stopped = run_id in self._stopped
+        log("== the run ended without an exit code" + (" (stopped)" if stopped else " (killed on the jump host?)"))
+        return 143 if stopped else 1
 
     def stop(self, run_id):
         self._mark_stopped(run_id)

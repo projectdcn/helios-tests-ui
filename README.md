@@ -362,7 +362,11 @@ and title.
   the jump host: each run copies the committed code (`git archive HEAD`, workbooks left out) to
   `~/helios/helios-tests`, pushes `inventory/fullrack-jump-afm.local.yaml` to `~/helios/fullrack-jump-afm.yaml`
   (the jump host's previous copy is kept as `.bak-<date>` when it changes), runs there with `~/helios/venv`, streams the
-  output and copies the new results folders back into `results/`. Fetch the inventory copy once with
+  output and copies the new results folders back into `results/`. The jump-host run is started **detached**
+  (`setsid nohup`; log, pid, exit code and the results folders before it in `~/helios/.helios-ui-runs/<run id>/`):
+  it keeps going when the UI's machine sleeps, loses the network or logs off. The UI re-attaches by itself (every 30 s,
+  for up to 3 days), continues the live log where it stopped, then copies the results back; a UI restarted during a run
+  re-attaches to it on start (its log is re-read from the jump host). Fetch the inventory copy once with
   `scp -P 8059 tenant-hpe@165.204.38.103:helios/fullrack-jump-afm.yaml inventory/fullrack-jump-afm.local.yaml`.
   **selftest** runs against the simulated rack.
 - Run tab: health check (with `--known` from the profile) or selected cases (TC ids, a marker expression such as

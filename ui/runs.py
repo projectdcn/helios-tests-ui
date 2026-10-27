@@ -100,6 +100,32 @@ class RunManager:
         self.active: dict[str, Run | None] = {n: None for n in profiles}
         self.workers: dict[str, threading.Thread] = {}
         self.lock = threading.Lock()
+        self._adopt()
+
+    def _adopt(self) -> None:
+        """Runs this UI started on a jump host and was restarted during (still 'running' in ui-runs/*.json): they go
+        on there, detached (SshRunner); queue them first so the rack's worker re-attaches and copies results back."""
+        for n, p in self.profiles.items():
+            d = p.results_dir / "ui-runs"
+            if not hasattr(self.runners[n], "attachable") or not d.is_dir():
+                continue
+            for f in sorted(d.glob("*.json")):
+                try:
+                    m = json.loads(f.read_text())
+                except (OSError, ValueError):
+                    continue
+                if m.get("rack") != n or m.get("status") != "running" or not NAME_RX.match(m.get("id") or ""):
+                    continue
+                job = Job(**{k: v for k, v in (m.get("job") or {}).items() if k in Job.__dataclass_fields__})
+                run = Run(m["id"], n, job, None, d, m.get("filters"), started_by=m.get("started_by"))
+                run.created, run.started, run.session = m.get("created") or run.created, m.get("started"), m.get("session")
+                run.status, run.adopted = "running", True
+                self.runs[run.id] = run
+                self.queues[n].append(run)
+            if self.queues[n]:
+                w = threading.Thread(target=self._worker, args=(n,), name=f"ui-runs-{n}", daemon=True)
+                self.workers[n] = w
+                w.start()
 
     # ------------------------------------------------------------- queue
     def submit(self, rack: str, req: dict, password: str | None = None, password_source: str | None = None,
@@ -147,6 +173,8 @@ class RunManager:
             try:
                 if run.status == "queued":
                     self._execute(run)
+                elif run.status == "running" and getattr(run, "adopted", False):
+                    self._execute(run, resume=True)
             finally:
                 with self.lock:
                     self.active[rack] = None
@@ -163,21 +191,34 @@ class RunManager:
             run.lines.append(line)
             run.cond.notify_all()
 
-    def _execute(self, run: Run) -> None:
-        run.status, run.started = "running", _now()
-        run.save()
+    def _execute(self, run: Run, resume: bool = False) -> None:
         runner = self.runners[run.rack]
+        if resume and not runner.attachable(run.id):
+            run.status, run.ended = "lost", _now()
+            run.error = "the UI was restarted while it ran and the jump host has no record of it"
+            with open(run.log_path, "a") as fh:
+                fh.write(f"# {run.error}\n")
+            run.save()
+            return
+        if not resume:
+            run.status, run.started = "running", _now()
+        run.save()
         run.log_path.parent.mkdir(parents=True, exist_ok=True)
         with open(run.log_path, "w") as fh:
             log = lambda line: self._log(run, fh, line)   # noqa: E731
             try:
-                pw = {"typed": "given (memory only)", "keychain": f"from the {self.store_label} (memory only)"}
-                log(f"# run {run.id} on {run.rack} ({self.profiles[run.rack].runner}); "
-                    f"AFM password {pw.get(run.password_source, 'not given')}; BMC password "
-                    f"{'from the ' + self.store_label + ' (memory only)' if run.has_bmc_password else 'not given'}")
-                for note in run.notes:
-                    log(f"# {note}")
-                rc, new = runner.execute(run.id, run.job, run._password, log, secrets=run._secrets)
+                if resume:
+                    log(f"# run {run.id} on {run.rack}: the UI was restarted while it ran; re-attaching to the "
+                        f"jump host (its full log follows)")
+                    rc, new = runner.finish(run.id, log)
+                else:
+                    pw = {"typed": "given (memory only)", "keychain": f"from the {self.store_label} (memory only)"}
+                    log(f"# run {run.id} on {run.rack} ({self.profiles[run.rack].runner}); "
+                        f"AFM password {pw.get(run.password_source, 'not given')}; BMC password "
+                        f"{'from the ' + self.store_label + ' (memory only)' if run.has_bmc_password else 'not given'}")
+                    for note in run.notes:
+                        log(f"# {note}")
+                    rc, new = runner.execute(run.id, run.job, run._password, log, secrets=run._secrets)
                 run.rc, run.results = rc, new
                 self._post(run, log)
                 run.status = "stopped" if run.stop_requested else "finished"
