@@ -41,6 +41,13 @@ ROW_ALIASES = {
     "TC-AFM-048": ("TC-AFM-048", "Techsupport"),
     "TC-AFM-035A": (None, "Not allowed in Minirack"),
 }
+
+
+def cell_tid(v) -> str | None:
+    """The test-case ID of a workbook TID cell. A merged plan writes 'TC-AFM-001 / TC-AFM-L1-1' (the ID the tests use,
+    then the ScaleUp tracking-sheet ID); only the part before ' / ' is the ID."""
+    s = str(v).split(" / ", 1)[0].strip() if v is not None else ""
+    return s or None
 COL_STATUS, COL_VERSION, COL_NOTES, COL_ACCESS, COL_SCOPE = 6, 7, 8, 9, 10
 
 # failures that say "the test could not run here", not "the product is broken"
@@ -103,8 +110,7 @@ def merge_notes(new: str, old, label: str) -> str:
 def find_row(ws, tc: str) -> int | None:
     tid, frag = ROW_ALIASES.get(tc, (tc, None))
     for r in range(3, ws.max_row + 1):
-        a = ws.cell(r, 1).value
-        a = a.strip() if isinstance(a, str) else a
+        a = cell_tid(ws.cell(r, 1).value)
         if a != tid:
             continue
         if frag is None or frag.lower() in str(ws.cell(r, 3).value or "").lower():

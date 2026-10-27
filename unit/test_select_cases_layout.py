@@ -37,3 +37,12 @@ def test_other_layout_is_refused(tmp_path):
     wb = _wb(tmp_path / "other.xlsx", HEADER[:6], [r[:6] for r in ROWS])
     with pytest.raises(WorkbookLayoutError, match="column 10: expected 'scope'"):
         select(wb, "all", scope="Compute")
+
+
+def test_merged_plan_tid_with_tracking_id():
+    """A merged plan's TID 'TC-AFM-001 / TC-AFM-L1-1' is the case TC-AFM-001 (the tracking-sheet ID after ' / ')."""
+    from update_testplan import cell_tid
+    assert cell_tid("TC-AFM-001 / TC-AFM-L1-1") == "TC-AFM-001"
+    assert cell_tid(" TC-SWH-037T / TC-SWH-037 ") == "TC-SWH-037T"
+    assert cell_tid("TC-AFM-005 / TC-AFM-L1-5, TC-AFM-L2-1") == "TC-AFM-005"
+    assert cell_tid("HC-001") == "HC-001" and cell_tid(None) is None and cell_tid("  ") is None

@@ -27,7 +27,7 @@ from openpyxl.styles import Alignment
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from plan_cases import load_cases  # noqa: E402
-from update_testplan import ROW_ALIASES  # noqa: E402
+from update_testplan import ROW_ALIASES, cell_tid  # noqa: E402
 
 AFM = "AFM API"
 AFM_SW = "AFM API + switch SSH"
@@ -278,8 +278,7 @@ def write(wb_path: Path, access: dict[str, str], dry: bool, automation: dict[str
         ws.cell(2, dcol)._style = copy.copy(ws.cell(2, hdr_ref)._style)
         ws.column_dimensions[openpyxl.utils.get_column_letter(dcol)].width = 22
         for r in range(3, ws.max_row + 1):
-            tid = ws.cell(r, 1).value
-            tid = tid.strip() if isinstance(tid, str) else tid
+            tid = cell_tid(ws.cell(r, 1).value)
             title = str(ws.cell(r, 3 if sheet == "Testcases" else 7).value or "")
             if not tid and sheet == "Testcases" and "Not allowed in Minirack" in title:
                 tid = "TC-AFM-035A"

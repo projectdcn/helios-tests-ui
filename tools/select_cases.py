@@ -21,7 +21,7 @@ import openpyxl
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from access_needed import automated  # noqa: E402
-from update_testplan import ROW_ALIASES  # noqa: E402
+from update_testplan import ROW_ALIASES, cell_tid  # noqa: E402
 
 COLS = {"level": 2, "status": 6, "scope": 10, "origin": 11, "disruptive": 12, "health": 13}
 # header (row 2 of the Testcases sheet) each column must start with - full_rack_testplan.xlsx layout
@@ -90,7 +90,7 @@ def plan_rows(wb_path: Path) -> list[dict]:
         named = [(i, " ".join(str(h).split())) for i, h in enumerate(hdr) if h is not None and str(h).strip()]
         out = []
         for row in ws.iter_rows(min_row=3, values_only=True):
-            tid = row[0] if row else None
+            tid = cell_tid(row[0]) if row else None
             title = str((row[2] if len(row) > 2 else None) or "").strip()
             if tid and str(tid).startswith(("TC-", "HC-")):
                 code = _code_id(tid, title)

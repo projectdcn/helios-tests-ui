@@ -164,11 +164,13 @@ def workbook_status(wb_path, ids) -> dict[str, tuple[str, str, str]]:
 def workbook_all_rows(wb_path) -> list[dict]:
     """Every case row of the workbook's Testcases sheet (the whole test plan), as recorded there."""
     import openpyxl
-    from update_testplan import ROW_ALIASES
+    from update_testplan import ROW_ALIASES, cell_tid
 
     ws = openpyxl.load_workbook(wb_path, read_only=True)["Testcases"]
     out = []
     for r in ws.iter_rows(min_row=3, values_only=True):
+        if r and r[0]:
+            r = (cell_tid(r[0]),) + tuple(r[1:])      # 'TC-AFM-001 / TC-AFM-L1-1' (merged plan) -> TC-AFM-001
         if r and not r[0] and "not allowed in minirack" in str(r[2] or "").lower():
             r = ("TC-AFM-035A",) + tuple(r[1:])      # the TC-AFM-035A row has no TID in the workbook
         if not r or not r[0] or not str(r[0]).strip().startswith(("TC-", "HC-")):
