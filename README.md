@@ -419,6 +419,9 @@ and title.
   auto-control, image cleanup/remove/set-default, syncd/swss/service restarts (disruptive) and techsupport.
   Thresholds: `thresholds.switch.*`, listed in the module docstring. TC-SWH-100/101 delete SONiC images and run
   only with `switch.allow_image_cleanup` / `switch.removable_image`.
+  TC-SWH-095 (`config reload`) and TC-SWH-097 (`config save`) run only with `switch.allow_config_reload` /
+  `switch.allow_config_save`: on an AFM-managed rack a reload drops AFM's runtime switch config (trunk/VLAN ports,
+  sideband node agents; restart afm-agent afterwards) and a save writes that runtime config into the startup config.
 * **TC-AFM-001…004 and 005A, datapath.** L2 ping (within each tray, plus
   cross-tray in both directions), TransferBench in-domain and cross-domain,
   and the five RCCL collectives in-domain and cross-domain. RCCL results are

@@ -34,6 +34,7 @@ Thresholds (inventory ``thresholds.switch``; a ``null`` disables that comparison
   fan_target_tolerance_pct (20)    099
   allow_image_cleanup (false), removable_image   100 / 101
   recover_timeout_s (300) / reload_timeout_s (900), poll_interval_s (10)   094..097, 104..106
+  allow_config_reload (false), allow_config_save (false)   095 / 097 run only when true (they change AFM's switch config)
   restart_check_service (lldp)     105
   techsupport_timeout_s (1800), techsupport_since ('1 hour ago'), techsupport_required   107
 ``thresholds.platform.dns_names`` (064) and ``commands.switch.dsc_dump`` (058, e.g. a bcmcmd lane dump per
@@ -1101,7 +1102,12 @@ def test_config_load_no_restart(switch, inventory, checks):
 @pytest.mark.tc("TC-SWH-095")
 def test_config_reload_recovers(switch, inventory, checks):
     """'config reload -y' (forwarding-disruptive): swss/syncd and every previously up port recover within
-    switch.reload_timeout_s (900) and the running config is unchanged."""
+    switch.reload_timeout_s (900) and the running config is unchanged. Opt-in (switch.allow_config_reload): on an
+    AFM-managed rack the reload drops AFM's unsaved runtime config (trunk/VLAN ports, node agents) - g02-g17,
+    27 Oct 2026: 48 GPU links lost their VLANs and every sb-node-agent stopped until afm-agent was restarted."""
+    if not inventory.th("switch.allow_config_reload", False):
+        pytest.skip(f"{switch.name}: config reload drops AFM's runtime switch config; set "
+                    "thresholds.switch.allow_config_reload (and restart afm-agent afterwards)")
     up = _oper_up(switch)
     cfg_before = {ns: _running_config(switch, ns).get("PORT") for ns in switch.namespaces()}
     r = switch.run("config reload -y", sudo=True, timeout=float(inventory.th("switch.reload_timeout_s", 900)))
@@ -1141,8 +1147,12 @@ def test_config_restore_sha_guarded(switch, checks):
 @pytest.mark.l2
 @pytest.mark.disruptive
 @pytest.mark.tc("TC-SWH-097")
-def test_config_save_idempotent(switch, checks):
-    """'config save -y' succeeds twice and the saved files are identical after both saves."""
+def test_config_save_idempotent(switch, inventory, checks):
+    """'config save -y' succeeds twice and the saved files are identical after both saves. Opt-in
+    (switch.allow_config_save): it writes AFM's runtime config into the switch's startup config."""
+    if not inventory.th("switch.allow_config_save", False):
+        pytest.skip(f"{switch.name}: config save writes AFM's runtime config into the startup config; set "
+                    "thresholds.switch.allow_config_save")
     files = _saved_files(switch)
     sums = []
     for i in range(2):

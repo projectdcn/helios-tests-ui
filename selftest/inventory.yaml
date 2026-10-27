@@ -119,6 +119,8 @@ thresholds:
     expected_lldp_neighbors: 8
     recover_timeout_s: 1
     reload_timeout_s: 1      # TC-SWH-095 (default 900 s)
+    allow_config_reload: true   # TC-SWH-095 / 097 are opt-in on a real rack
+    allow_config_save: true
     poll_interval_s: 0
   ras: {settle_s: 0, down_wait_s: 0, boot_timeout_s: 1, poll_interval_s: 0}
   platform: {down_wait_s: 0, boot_timeout_s: 1, poll_interval_s: 0, topo_log_max_age_h: 24}
