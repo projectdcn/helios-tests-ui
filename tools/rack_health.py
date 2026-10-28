@@ -5,7 +5,9 @@
     python tools/rack_health.py --inventory ... --known testplan/health-known.yaml --baseline results/runs/<rack>/<run>/health.json
     python tools/rack_health.py --run results/runs/<rack>/<run>          # judge an existing run again (no rack access)
 
-Read-only (no case in the check is disruptive). Export HELIOS_AFM_PASSWORD first for the AFM part; without it those
+Read-only (no case in the check is disruptive) - unless --datapath-reset: then HC-013 first runs
+'afmctl reset device --datapath' on every tray (amdgpu loaded first where a reboot left it out) and waits for every
+GPU to be ACTIVE again; it briefly disturbs traffic, every other check then sees the reset rack. Export HELIOS_AFM_PASSWORD first for the AFM part; without it those
 blocker cases SKIP and the verdict is INCOMPLETE.
 
 Verdict: NO-GO when a blocker case fails, is blocked or only partially passes (unless accepted in --known);
@@ -184,6 +186,8 @@ def main(argv=None) -> int:
     ap.add_argument("--results-dir", type=Path, default=None,
                     help="where new runs go (default results/runs/<rack>; a merge goes next to the runs it merges)")
     ap.add_argument("--no-html", action="store_true")
+    ap.add_argument("--datapath-reset", action="store_true",
+                    help="first reset every tray's datapath (HC-013: afmctl reset device --datapath, GPUs ACTIVE again)")
     ap.add_argument("pytest_args", nargs="*", help="extra pytest arguments after --, e.g. -- --computes ct01,ct03")
     a = ap.parse_args(argv)
 
@@ -210,7 +214,10 @@ def main(argv=None) -> int:
             print(f"nothing to re-run: every health check passed in {a.rerun_failed}")
             return 0
         print(f"re-running {len(tcs)} case(s) that did not pass in {a.rerun_failed.name}: {', '.join(tcs)}")
-        new = run_pytest(inv, a.results_dir, ["--tc", ",".join(tcs), *a.pytest_args], run_started(a.rerun_failed))
+        reset = ["--datapath-reset"] if a.datapath_reset else []
+        if reset and "HC-013" not in tcs:
+            tcs = ["HC-013", *tcs]
+        new = run_pytest(inv, a.results_dir, ["--tc", ",".join(tcs), *reset, *a.pytest_args], run_started(a.rerun_failed))
         run_dir = a.run = merge_runs([a.rerun_failed, new], a.results_dir)
         if not a.baseline and (a.rerun_failed / "health.json").exists():
             a.baseline = a.rerun_failed / "health.json"
@@ -228,7 +235,7 @@ def main(argv=None) -> int:
                 since = run_started(Path(json.loads(a.baseline.read_text())["run"]))
             except (OSError, KeyError, ValueError):
                 since = None
-        run_dir = run_pytest(inv, a.results_dir, a.pytest_args, since)
+        run_dir = run_pytest(inv, a.results_dir, [*(["--datapath-reset"] if a.datapath_reset else []), *a.pytest_args], since)
 
     verdicts, messages, snapshot = read_run(run_dir)
     # re-judging an existing run: only the cases that run collected are expected (a case added to the check later

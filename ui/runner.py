@@ -84,6 +84,7 @@ class Job:
     computes: str | None = None
     allow_disruptive: bool = False
     known: bool = True                  # health / rerun: pass the profile's --known file
+    datapath_reset: bool = False        # health / rerun: HC-013 resets every tray's datapath first (--datapath-reset)
     base_run: str | None = None         # rerun: the results folder whose failed checks are re-run
     pytest_args: list[str] = field(default_factory=list)
 
@@ -125,6 +126,7 @@ class Job:
         return cls(kind=kind, paths=list(paths), tc=list(tc), marker=marker,
                    switches=(d.get("switches") or "").strip() or None, computes=(d.get("computes") or "").strip() or None,
                    allow_disruptive=bool(d.get("allow_disruptive")), known=bool(d.get("known", True)),
+                   datapath_reset=bool(d.get("datapath_reset")) and kind in ("health", "rerun"),
                    base_run=base, pytest_args=list(extra))
 
     def as_dict(self) -> dict:
@@ -158,6 +160,8 @@ def build_args(job: Job, inventory: str, results_dir: str, known: str | None, no
     a += ["--inventory", inventory, "--results-dir", results_dir]
     if job.known and known:
         a += ["--known", known]
+    if job.datapath_reset:
+        a.append("--datapath-reset")
     if no_html:
         a.append("--no-html")
     sel = job.selection_args()

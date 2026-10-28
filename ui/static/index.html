@@ -141,6 +141,7 @@
     <fieldset id="health-opts">
       <legend>Health check options</legend>
       <label id="known-row"><input type="checkbox" name="known" checked> pass <code id="known-file"></code> as <code>--known</code></label>
+      <label><input type="checkbox" name="datapath_reset"> Reset the datapath first (HC-013: <code>afmctl reset device --datapath</code> on every tray, amdgpu loaded where missing, wait for every GPU ACTIVE; briefly disturbs traffic)</label>
       <label>Limit to cases (optional, re-runs part of the check) <input name="health_tc" placeholder="HC-001,TC-BU-009"></label>
     </fieldset>
     <fieldset id="case-opts" hidden>

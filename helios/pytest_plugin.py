@@ -41,6 +41,8 @@ def pytest_addoption(parser):
     g.addoption("--computes", default=None, help="comma-separated subset of compute names")
     g.addoption("--allow-disruptive", action="store_true", help="run tests marked disruptive")
     g.addoption("--run-manual", action="store_true", help="run tests marked manual")
+    g.addoption("--datapath-reset", action="store_true",
+                help="health check: reset every tray's datapath (afmctl reset device --datapath) first (HC-013)")
     g.addoption("--results-dir", default=None,
                 help="folder that gets this run's <rack>-<timestamp>/ results folder (default results/runs/<rack>)")
 
@@ -92,6 +94,8 @@ def pytest_collection_modifyitems(config, items):
         if tc in CASES and not item.get_closest_marker("healthcheck"):
             item.add_marker(pytest.mark.healthcheck(CASES[tc][0]))
     _filter_items(config, items)
+    # HC-013 (datapath reset of every tray) runs before every other case: the checks then see the reset rack
+    items.sort(key=lambda i: 0 if tc_id(i) == "HC-013" else 1)
 
 
 def _filter_items(config, items):

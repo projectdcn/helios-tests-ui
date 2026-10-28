@@ -405,6 +405,8 @@ add("ib_write_bw --help 2>&1", "Usage:\n  ib_write_bw            start a server 
     "      --ipv6 Use IPv6 GID. Default is IPv4\n", name="perftest_help.txt")
 add(r"^ib_(write|send|read)_bw ", PERF, name="perftest.txt", regex=True)
 add(r"^afmctl reset device --datapath", "datapath reset: ok\n", regex=True)
+add("lsmod | grep -q '^amdgpu '", "")                     # HC-013: amdgpu loaded (rc 1 = not loaded -> modprobe)
+add("modprobe amdgpu", "")
 add(r"^nohup sh -c 'sleep 2; systemctl reboot'", "", regex=True)
 add("true", "")
 add(r"^(ras-partial-stations|pdu-ctl|ipmitool) ", "", regex=True)

@@ -246,3 +246,42 @@ def test_merge_keeps_what_an_earlier_merge_brought_in(tmp_path):
         got = {r["tc_id"]: r["verdict"] for r in _csv.DictReader(open(out / "tc_summary.csv"))}
         assert got == {"HC-001": "PASS", "HC-003": "PASS", "HC-004": "PASS"}, (given.name, got)
         assert (out / "merged-from.txt").read_text().split() == [a.name, b.name, c.name]
+
+
+def _hc013(tmp_path, *extra, mutate=None):
+    import csv
+    import shutil
+    work = tmp_path / "selftest"
+    shutil.copytree(ROOT / "selftest", work)
+    if mutate:
+        mutate(work / "replay")
+    res = tmp_path / "results"
+    p = subprocess.run([sys.executable, "-m", "pytest", str(ROOT / "tests" / "health"), "--inventory",
+                        str(work / "inventory.yaml"), "--results-dir", str(res), "-q", "-p", "no:cacheprovider",
+                        "--tc", "HC-013,HC-003", *extra], cwd=ROOT, capture_output=True, text=True, timeout=300)
+    rows = list(csv.DictReader(open(next(res.glob("*/tc_results.csv")))))
+    return [(r["tc_id"], r["outcome"]) for r in rows], p.stdout
+
+
+def test_hc013_datapath_reset_only_on_request_and_first(tmp_path):
+    """HC-013 skips unless --datapath-reset; with it, it runs before every other case and passes on the healthy fake."""
+    order, _ = _hc013(tmp_path / "a")
+    assert dict(order)["HC-013"] == "skipped"
+    order, out = _hc013(tmp_path / "b", "--datapath-reset")
+    assert order[0] == ("HC-013", "passed"), out[-2000:]
+    assert dict(order)["HC-003"] == "passed"
+
+
+def test_hc013_loads_amdgpu_and_fails_when_a_gpu_stays_inactive(tmp_path):
+    import yaml
+
+    def not_loaded_then_inactive(replay):
+        rules = yaml.safe_load((replay / "responses.yaml").read_text())
+        for r in rules:
+            if "lsmod" in r["cmd"]:
+                r["rc"] = 1
+        (replay / "responses.yaml").write_text(yaml.safe_dump(rules, sort_keys=False, width=200))
+        f = replay / "afmctl_device_c2.json"
+        f.write_text(f.read_text().replace('"config_phase": "ACTIVE"', '"config_phase": "PROVIDER"', 1))
+    order, out = _hc013(tmp_path, "--datapath-reset", mutate=not_loaded_then_inactive)
+    assert dict(order)["HC-013"] == "failed" and "GPUs not all within" in out, out[-2000:]

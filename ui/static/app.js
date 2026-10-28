@@ -509,7 +509,7 @@ $("#sess-new").addEventListener("click", async () => {
 const form = $("#runform");
 const FILTERS = ["level", "scope", "disruptive", "health", "origin", "status", "suite", "cols"];
 // THE original state of the Run form (what a fresh page shows; "Reset to default" goes back to it). fullState() shape.
-const ORIGINAL_FORM = Object.freeze({ kind: "health", known: true, health_tc: "", tc: "", marker: "", paths: "tests",
+const ORIGINAL_FORM = Object.freeze({ kind: "health", known: true, datapath_reset: false, health_tc: "", tc: "", marker: "", paths: "tests",
   switches: "", computes: "", allow_disruptive: false, pytest_args: "", filters: Object.freeze({}) });
 function kindChanged() {
   const kind = form.kind.value;
@@ -530,6 +530,7 @@ function formState() {
   const s = { kind, pytest_args: form.pytest_args.value };
   if (kind === "health") {
     s.known = form.known.checked;
+    if (form.datapath_reset.checked) s.datapath_reset = true;
     if (form.health_tc.value.trim()) s.tc = form.health_tc.value;
   } else {
     Object.assign(s, { tc: form.tc.value, marker: form.marker.value, paths: form.paths.value,
@@ -540,7 +541,8 @@ function formState() {
 }
 // every field of the form (for the browser's last-used memory; never the password)
 function fullState() {
-  return { kind: form.kind.value, known: form.known.checked, health_tc: form.health_tc.value, tc: form.tc.value,
+  return { kind: form.kind.value, known: form.known.checked, datapath_reset: form.datapath_reset.checked,
+    health_tc: form.health_tc.value, tc: form.tc.value,
     marker: form.marker.value, paths: form.paths.value, switches: form.switches.value, computes: form.computes.value,
     allow_disruptive: form.allow_disruptive.checked, pytest_args: form.pytest_args.value, filters: filterState() };
 }
@@ -552,6 +554,7 @@ function fillForm(s) {
   const full = "health_tc" in s;
   form.kind.value = kind;
   form.known.checked = s.known !== false;
+  form.datapath_reset.checked = s.datapath_reset === true;
   form.health_tc.value = full ? str(s.health_tc) : (kind === "health" ? str(s.tc) : "");
   form.tc.value = full || kind === "pytest" ? str(s.tc) : "";
   form.marker.value = s.marker || "";

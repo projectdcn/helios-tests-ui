@@ -933,6 +933,12 @@
   stdout: 'datapath reset: ok
 
     '
+- cmd: ^lsmod\ \|\ grep\ \-q\ '\^amdgpu\ '$
+  rc: 0
+  stdout: ''
+- cmd: ^modprobe\ amdgpu$
+  rc: 0
+  stdout: ''
 - cmd: ^nohup sh -c 'sleep 2; systemctl reboot'
   rc: 0
   stdout: ''

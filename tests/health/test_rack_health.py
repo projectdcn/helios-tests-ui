@@ -1,6 +1,6 @@
-"""HC-001..HC-006 - health-only checks of the full-rack health check (helios/healthcheck.py, tools/rack_health.py).
+"""HC-001..HC-006, HC-013 - health-only checks of the full-rack health check (helios/healthcheck.py, tools/rack_health.py).
 
-Read-only, SSH only (plus the optional BMC power query from the runner). Thresholds under ``thresholds.health``.
+Read-only (HC-013, the optional datapath reset, only with --datapath-reset), SSH only (plus the optional BMC power query from the runner). Thresholds under ``thresholds.health``.
 """
 from __future__ import annotations
 
@@ -14,8 +14,61 @@ from helios.compute import bmc_cmd, render
 from helios.datapath import use_sudo
 from helios.preflight import _gpu_users
 from helios.rack import fan_out
+from helios.wait import wait_until
 
 pytestmark = pytest.mark.l1
+
+DATAPATH_RESET = "afmctl reset device --datapath"
+
+
+@pytest.mark.healthcheck("blocker")
+@pytest.mark.tc("HC-013")
+def test_datapath_reset_every_tray(computes, inventory, checks, record_property, pytestconfig):
+    """Optional first step of the health check (``--datapath-reset``, the GUI's "Reset the datapath first"): on every
+    tray load amdgpu when it is not loaded (a rebooted tray: amdgpu is blacklisted at boot) - thresholds
+    ``health.datapath_reset.load_amdgpu`` (true) - then ``commands.ras.datapath_reset`` (afmctl reset device --datapath)
+    and wait until every GPU is ACTIVE again (``health.datapath_reset.active_timeout_s``, 300 s). Briefly disturbs
+    traffic; every other health check then runs on the reset rack."""
+    if not pytestconfig.getoption("--datapath-reset"):
+        pytest.skip("datapath reset not requested (rack_health.py --datapath-reset / GUI 'Reset the datapath first')")
+    load = inventory.th("health.datapath_reset.load_amdgpu", True)
+    timeout = float(inventory.th("health.datapath_reset.active_timeout_s", 300))
+    interval = float(inventory.th("health.datapath_reset.poll_interval_s", 10))
+    cmd = inventory.cmd("ras.datapath_reset", DATAPATH_RESET)
+
+    def one(c):
+        out = {}
+        if load and not c.run("lsmod | grep -q '^amdgpu '", timeout=30).ok:
+            r = c.run("modprobe amdgpu", sudo=True, timeout=300)
+            out["amdgpu"] = "loaded" if r.ok else f"modprobe failed rc={r.rc} {r.tail()!r}"
+            if not r.ok:
+                return out
+        r = c.run(render(cmd, name=c.name), sudo=True, timeout=300)
+        out["reset"] = "ok" if r.ok else f"rc={r.rc} {r.tail()!r}"
+        if not r.ok:
+            return out
+
+        def active():
+            devs = Afmctl(c, timeout=60).devices()
+            return devs if devs and len(devs) >= (c.gpus or 1) and all(d.config_phase == "ACTIVE" for d in devs) else None
+        ok, devs = wait_until(active, timeout, interval, what=f"{c.name} GPUs ACTIVE after the datapath reset")
+        out["active"] = "all" if ok else "not all within %.0fs" % timeout
+        return out
+
+    res = {}
+    for c, out, exc in fan_out(one, computes):
+        if exc:
+            checks.fail(f"{c.name}: datapath reset failed: {type(exc).__name__}: {str(exc)[:160]}")
+            continue
+        res[c.name] = out
+        if str(out.get("amdgpu", "loaded")) != "loaded":
+            checks.fail(f"{c.name}: amdgpu not loaded: {out['amdgpu']}")
+        elif out.get("reset") != "ok":
+            checks.fail(f"{c.name}: {cmd}: {out.get('reset')}")
+        else:
+            checks.check(out.get("active") == "all", f"{c.name}: GPUs {out.get('active')} ACTIVE after the reset")
+    record_property("datapath_reset", res)
+    checks.assert_all()
 
 
 @pytest.mark.healthcheck("blocker")

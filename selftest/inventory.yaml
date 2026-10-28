@@ -74,6 +74,7 @@ commands:
 
 thresholds:
   health:               # the fake controllers restart and raise critical events in the disruptive tests
+    datapath_reset: {active_timeout_s: 1, poll_interval_s: 0}   # HC-013
     controller_min_uptime_min: 0
     event_window_min: 0
   afm:                  # short timings for the fake controller

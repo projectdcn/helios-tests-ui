@@ -284,3 +284,11 @@ def test_ui_restart_re_attaches_to_a_running_jump_host_run(tmp_path, monkeypatch
     assert "RACK HEALTH: GO   (results/x)" in (d / f"{a.id}.log").read_text()
     b = m.runs["g02-g17-20261015-110000-zzzz"]
     assert b.status == "lost" and "# old log" in (d / f"{b.id}.log").read_text()
+
+
+def test_health_with_datapath_reset(tmp_path):
+    """The health form's 'Reset the datapath first' becomes rack_health.py --datapath-reset (health and rerun only)."""
+    job = Job.from_request({"kind": "health", "datapath_reset": True})
+    assert "--datapath-reset" in build_args(job, "inv.yaml", "results", None, no_html=True)
+    assert "--datapath-reset" not in build_args(Job.from_request({"kind": "health"}), "inv.yaml", "results", None, True)
+    assert not Job.from_request({"kind": "pytest", "tc": "TC-AFM-001", "datapath_reset": True}).datapath_reset
