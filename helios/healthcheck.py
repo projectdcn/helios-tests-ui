@@ -81,8 +81,8 @@ HEALTH_ONLY: dict[str, tuple[str, str]] = {
     "HC-010": (WARN, "same driver / ROCm / IFoE / afmctl / GPU firmware versions on every tray"),
     "HC-011": (WARN, "hardware inventory + usage (CPU, memory, disks, GPUs, compute<->switch links up / down)"),
     "HC-012": (WARN, "link scan: no down / degraded GPU link, root cause per link (helios-debug link_check)"),
-    "HC-013": (BLOCKER, "optional first step (--datapath-reset): afmctl datapath reset of every tray, amdgpu loaded, "
-                        "every GPU ACTIVE again"),
+    "HC-013": (BLOCKER, "datapath reset before the L2 ping / traffic cases: afmctl reset device --datapath on every "
+                        "tray, amdgpu loaded, every GPU ACTIVE again"),
 }
 
 

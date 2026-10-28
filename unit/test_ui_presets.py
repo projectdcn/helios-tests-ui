@@ -188,8 +188,8 @@ def test_preset_module_direct(tmp_path):
     presets.save(p, "x", {"kind": "health", "Password": PW, "api_key": PW})
     raw = (tmp_path / "res" / "ui-presets.json").read_text()
     assert PW not in raw and set(json.loads(raw)["racks"]["r"]["x"]["settings"]) == \
-        {"kind", "paths", "tc", "marker", "switches", "computes", "allow_disruptive", "known", "base_run",
-         "pytest_args", "filters"}
+        {"kind", "paths", "tc", "marker", "switches", "computes", "allow_disruptive", "known", "datapath_reset",
+         "base_run", "pytest_args", "filters"}
     (tmp_path / "res" / "ui-presets.json").write_text("{broken")
     with pytest.raises(JobError, match="not valid JSON"):
         presets.list_presets(p)

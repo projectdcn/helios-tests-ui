@@ -200,7 +200,8 @@ def test_rerun_failed_reruns_merges_and_judges(tmp_path):
     assert "re-running 2 case(s)" in r.stdout and "HC-001, HC-003" in r.stdout, r.stdout[-1500:]
     merged = next(tmp_path.glob("*-merged"))
     doc = json.loads((merged / "health.json").read_text())
-    assert doc["verdict"] == "GO" and sorted(doc["passed"]) == ["HC-001", "HC-003", "HC-004"]
+    # the re-run resets the datapath too (HC-013, default on) before re-checking
+    assert doc["verdict"] == "GO" and sorted(doc["passed"]) == ["HC-001", "HC-003", "HC-004", "HC-013"]
 
 
 def test_hc000_records_slot_to_tray_map(tmp_path):
@@ -248,7 +249,7 @@ def test_merge_keeps_what_an_earlier_merge_brought_in(tmp_path):
         assert (out / "merged-from.txt").read_text().split() == [a.name, b.name, c.name]
 
 
-def _hc013(tmp_path, *extra, mutate=None):
+def _hc013(tmp_path, *extra, mutate=None, tc="HC-013,HC-003"):
     import csv
     import shutil
     work = tmp_path / "selftest"
@@ -256,9 +257,9 @@ def _hc013(tmp_path, *extra, mutate=None):
     if mutate:
         mutate(work / "replay")
     res = tmp_path / "results"
-    p = subprocess.run([sys.executable, "-m", "pytest", str(ROOT / "tests" / "health"), "--inventory",
+    p = subprocess.run([sys.executable, "-m", "pytest", str(ROOT / "tests" / "health"), str(ROOT / "tests" / "l1"), "--inventory",
                         str(work / "inventory.yaml"), "--results-dir", str(res), "-q", "-p", "no:cacheprovider",
-                        "--tc", "HC-013,HC-003", *extra], cwd=ROOT, capture_output=True, text=True, timeout=300)
+                        "--tc", tc, *extra], cwd=ROOT, capture_output=True, text=True, timeout=300)
     rows = list(csv.DictReader(open(next(res.glob("*/tc_results.csv")))))
     return [(r["tc_id"], r["outcome"]) for r in rows], p.stdout
 
@@ -285,3 +286,11 @@ def test_hc013_loads_amdgpu_and_fails_when_a_gpu_stays_inactive(tmp_path):
         f.write_text(f.read_text().replace('"config_phase": "ACTIVE"', '"config_phase": "PROVIDER"', 1))
     order, out = _hc013(tmp_path, "--datapath-reset", mutate=not_loaded_then_inactive)
     assert dict(order)["HC-013"] == "failed" and "GPUs not all within" in out, out[-2000:]
+
+
+def test_hc013_runs_right_before_the_l2_ping(tmp_path):
+    """The reset sits right before the first datapath case (TC-AFM-001 L2 ping): the checks before it see the rack as
+    it was, the datapath pre-flight and the ping see the reset rack."""
+    order, out = _hc013(tmp_path, "--datapath-reset", tc="HC-013,HC-003,TC-AFM-001")
+    ids = [t for t, _ in order]
+    assert ids.index("HC-003") < ids.index("HC-013") == ids.index("TC-AFM-001") - 1, (ids, out[-1500:])

@@ -220,7 +220,7 @@ cases:
   origin: added 2026-10-19
 - id: HC-013
   level: L1
-  title: 'Health check (optional first step, --datapath-reset): afmctl reset device --datapath on every tray, amdgpu loaded where a reboot left it out, every GPU ACTIVE again'
+  title: 'Health check: datapath reset right before the L2 ping (on by default, --no-datapath-reset to skip): afmctl reset device --datapath on every tray, amdgpu loaded where a reboot left it out, every GPU ACTIVE again'
   category: health
   origin: added 2026-10-27
 # BMC of every switch / compute tray over Redfish, read-only (tests/bmc/test_bmc.py) - added 20 Oct 2026

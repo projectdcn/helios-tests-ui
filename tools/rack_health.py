@@ -5,9 +5,9 @@
     python tools/rack_health.py --inventory ... --known testplan/health-known.yaml --baseline results/runs/<rack>/<run>/health.json
     python tools/rack_health.py --run results/runs/<rack>/<run>          # judge an existing run again (no rack access)
 
-Read-only (no case in the check is disruptive) - unless --datapath-reset: then HC-013 first runs
-'afmctl reset device --datapath' on every tray (amdgpu loaded first where a reboot left it out) and waits for every
-GPU to be ACTIVE again; it briefly disturbs traffic, every other check then sees the reset rack. Export HELIOS_AFM_PASSWORD first for the AFM part; without it those
+Read-only, except HC-013: right before the L2 ping / traffic cases it runs 'afmctl reset device --datapath' on every
+tray (amdgpu loaded first where a reboot left it out) and waits for every GPU to be ACTIVE again - briefly disturbs
+traffic. --no-datapath-reset leaves it out (the check is then fully read-only). Export HELIOS_AFM_PASSWORD first for the AFM part; without it those
 blocker cases SKIP and the verdict is INCOMPLETE.
 
 Verdict: NO-GO when a blocker case fails, is blocked or only partially passes (unless accepted in --known);
@@ -186,8 +186,9 @@ def main(argv=None) -> int:
     ap.add_argument("--results-dir", type=Path, default=None,
                     help="where new runs go (default results/runs/<rack>; a merge goes next to the runs it merges)")
     ap.add_argument("--no-html", action="store_true")
-    ap.add_argument("--datapath-reset", action="store_true",
-                    help="first reset every tray's datapath (HC-013: afmctl reset device --datapath, GPUs ACTIVE again)")
+    ap.add_argument("--datapath-reset", action=argparse.BooleanOptionalAction, default=True,
+                    help="HC-013: reset every tray's datapath right before the L2 ping / traffic cases (default on; "
+                         "--no-datapath-reset for a fully read-only check)")
     ap.add_argument("pytest_args", nargs="*", help="extra pytest arguments after --, e.g. -- --computes ct01,ct03")
     a = ap.parse_args(argv)
 

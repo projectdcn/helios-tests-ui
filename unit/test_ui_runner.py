@@ -123,7 +123,7 @@ def test_ssh_health_run_mirrors_the_manual_procedure(tmp_path):
     d = '"$HOME"/helios/.helios-ui-runs/g02-g17-20261015-115959-abcd'
     inner = ('echo $$ > "$HOME"/helios/.helios-ui-g02-g17-20261015-115959-abcd.pid; '
              '"$HOME"/helios/venv/bin/python tools/rack_health.py --inventory "$HOME"/helios/fullrack-jump-afm.yaml '
-             f'--results-dir results --known testplan/health-known.yaml --no-html; echo $? > {d}/rc')
+             f'--results-dir results --known testplan/health-known.yaml --datapath-reset --no-html; echo $? > {d}/rc')
     # started detached (setsid nohup): it survives this machine sleeping or the SSH connection dropping
     assert cmd == ('cd "$HOME"/helios/helios-tests && export PYTHONUNBUFFERED=1 && '
                    'IFS= read -r HELIOS_AFM_PASSWORD && export HELIOS_AFM_PASSWORD && '
@@ -200,7 +200,7 @@ def test_job_validation():
     j = Job.from_request({"kind": "health", "tc": "HC-001", "pytest_args": "--ignore tests/afm"})
     assert build_args(j, "inv.yaml", "res", "k.yaml", no_html=False) == [
         "tools/rack_health.py", "--inventory", "inv.yaml", "--results-dir", "res", "--known", "k.yaml",
-        "--", "--tc", "HC-001", "--ignore", "tests/afm"]
+        "--datapath-reset", "--", "--tc", "HC-001", "--ignore", "tests/afm"]
     j = Job.from_request({"kind": "pytest", "marker": "healthcheck and not disruptive", "allow_disruptive": True})
     assert build_args(j, "i", "r", None, no_html=False)[-3:] == ["-m", "healthcheck and not disruptive",
                                                                "--allow-disruptive"]
@@ -211,7 +211,7 @@ def test_local_command(tmp_path):
                     results_dir=tmp_path / "res")
     argv = LocalRunner(p).command(Job.from_request({"kind": "health", "known": True}))
     assert argv[1:] == ["tools/rack_health.py", "--inventory", str(tmp_path / "mr3.yaml"), "--results-dir",
-                        str(tmp_path / "res")]
+                        str(tmp_path / "res"), "--datapath-reset"]
 
 
 def test_rack_profiles(tmp_path):
@@ -287,8 +287,8 @@ def test_ui_restart_re_attaches_to_a_running_jump_host_run(tmp_path, monkeypatch
 
 
 def test_health_with_datapath_reset(tmp_path):
-    """The health form's 'Reset the datapath first' becomes rack_health.py --datapath-reset (health and rerun only)."""
-    job = Job.from_request({"kind": "health", "datapath_reset": True})
-    assert "--datapath-reset" in build_args(job, "inv.yaml", "results", None, no_html=True)
-    assert "--datapath-reset" not in build_args(Job.from_request({"kind": "health"}), "inv.yaml", "results", None, True)
+    """Health / rerun reset the datapath before the L2 ping by default; the form's box unticked -> --no-datapath-reset."""
+    assert "--datapath-reset" in build_args(Job.from_request({"kind": "health"}), "inv.yaml", "results", None, no_html=True)
+    off = Job.from_request({"kind": "health", "datapath_reset": False})
+    assert "--no-datapath-reset" in build_args(off, "inv.yaml", "results", None, no_html=True)
     assert not Job.from_request({"kind": "pytest", "tc": "TC-AFM-001", "datapath_reset": True}).datapath_reset

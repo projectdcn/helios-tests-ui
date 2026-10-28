@@ -24,13 +24,15 @@ DATAPATH_RESET = "afmctl reset device --datapath"
 @pytest.mark.healthcheck("blocker")
 @pytest.mark.tc("HC-013")
 def test_datapath_reset_every_tray(computes, inventory, checks, record_property, pytestconfig):
-    """Optional first step of the health check (``--datapath-reset``, the GUI's "Reset the datapath first"): on every
+    """Datapath reset before the L2 ping / traffic cases of the health check (rack_health.py does it unless
+    ``--no-datapath-reset``; the GUI's "Reset the datapath before L2 ping / traffic", ticked by default): on every
     tray load amdgpu when it is not loaded (a rebooted tray: amdgpu is blacklisted at boot) - thresholds
     ``health.datapath_reset.load_amdgpu`` (true) - then ``commands.ras.datapath_reset`` (afmctl reset device --datapath)
     and wait until every GPU is ACTIVE again (``health.datapath_reset.active_timeout_s``, 300 s). Briefly disturbs
-    traffic; every other health check then runs on the reset rack."""
+    traffic. Runs right before the first datapath case (helios/pytest_plugin.py), so the datapath pre-flight, L2 ping
+    and traffic see the reset rack and the checks before it the rack as it was."""
     if not pytestconfig.getoption("--datapath-reset"):
-        pytest.skip("datapath reset not requested (rack_health.py --datapath-reset / GUI 'Reset the datapath first')")
+        pytest.skip("datapath reset not requested (pytest --datapath-reset; rack_health.py does it unless --no-datapath-reset)")
     load = inventory.th("health.datapath_reset.load_amdgpu", True)
     timeout = float(inventory.th("health.datapath_reset.active_timeout_s", 300))
     interval = float(inventory.th("health.datapath_reset.poll_interval_s", 10))

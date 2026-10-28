@@ -42,7 +42,8 @@ def pytest_addoption(parser):
     g.addoption("--allow-disruptive", action="store_true", help="run tests marked disruptive")
     g.addoption("--run-manual", action="store_true", help="run tests marked manual")
     g.addoption("--datapath-reset", action="store_true",
-                help="health check: reset every tray's datapath (afmctl reset device --datapath) first (HC-013)")
+                help="health check: reset every tray's datapath (afmctl reset device --datapath) right before the "
+                     "L2 ping / traffic cases (HC-013); tools/rack_health.py passes it unless --no-datapath-reset")
     g.addoption("--results-dir", default=None,
                 help="folder that gets this run's <rack>-<timestamp>/ results folder (default results/runs/<rack>)")
 
@@ -94,8 +95,19 @@ def pytest_collection_modifyitems(config, items):
         if tc in CASES and not item.get_closest_marker("healthcheck"):
             item.add_marker(pytest.mark.healthcheck(CASES[tc][0]))
     _filter_items(config, items)
-    # HC-013 (datapath reset of every tray) runs before every other case: the checks then see the reset rack
-    items.sort(key=lambda i: 0 if tc_id(i) == "HC-013" else 1)
+    _place_datapath_reset(items)
+
+
+def _place_datapath_reset(items):
+    """HC-013 (datapath reset of every tray) runs right before the first datapath case (L2 ping, TransferBench, RCCL:
+    the tests behind the datapath pre-flight), so those see a freshly reset rack while every check before them sees
+    the rack as it was; first when no datapath case is selected."""
+    reset = [i for i in items if tc_id(i) == "HC-013"]
+    if not reset:
+        return
+    rest = [i for i in items if tc_id(i) != "HC-013"]
+    at = next((n for n, i in enumerate(rest) if "datapath_ready" in getattr(i, "fixturenames", ())), 0)
+    items[:] = rest[:at] + reset + rest[at:]
 
 
 def _filter_items(config, items):
