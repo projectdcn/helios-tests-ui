@@ -32,7 +32,7 @@ FAMILIES = {
     "pcie_speed": r"pcie\w*speed",
     "pcie_width": r"pcie\w*width",
     "pcie_errors": r"pcie\w*(error|replay|nak|nack|recover)\w*",
-    "xgmi_throughput": r"xgmi\w*(throughput|bandwidth)",
+    "xgmi_throughput": r"xgmi\w*(throughput|thrput|bandwidth)",
     "xgmi_beats": r"xgmi\w*beats?",
     "nic_frames": r"^(nic|eth)_\w*(frames|pkts|packets)\w*",
     "nic_bytes": r"^(nic|eth)_\w*bytes\w*",
