@@ -22,7 +22,7 @@ from .rack import Checks, fan_out
 
 def use_sudo(inventory) -> bool:
     """commands.datapath.sudo: run the traffic tools (TransferBench, RCCL) with sudo - for an account that is not in
-    the 'render' group and so cannot open /dev/kfd (g02-g17 tenant-hpe: 'no ROCm-capable device is detected')."""
+    the 'render' group and so cannot open /dev/kfd (g02-g17 login user: 'no ROCm-capable device is detected')."""
     return bool(inventory.cmd("datapath.sudo", False))
 
 

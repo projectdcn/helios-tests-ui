@@ -333,7 +333,7 @@ Read-only gate to run before every disruptive batch, after each one, and wheneve
   and judges; `--merge A B` merges by hand. Cases failing only on an unreachable node are grouped under one
   ROOT CAUSE line; failure messages start with a per-node count; AFM nodes are named with their tray; older merged
   results are flagged; HC-008 looks back to the previous run; known entries take `{reason, match, until}`.
-- On g02-g17: run it on the jump host (`ssh -t -p 8059 tenant-hpe@165.204.38.103 'bash ~/helios/run-health.sh'`,
+- On g02-g17: run it on the jump host (`ssh -t -p <port> <user>@<jump-host> 'bash ~/helios/run-health.sh'`,
   password typed there, ~30 min), copy the run folder back, and add it to the overall report with `--health-run`.
 
 #### Link check: moved to the helios-debug repo
@@ -351,7 +351,7 @@ compute trays (`inventory/example-fullrack.yaml` there), SSH and no AFM password
   logs in `queue/logs/`, results in `~/helios/results/queue/`; `touch ~/helios/queue/STOP` ends it after the current
   job. The password stays in that shell only.
 
-      ssh -t -p 8059 tenant-hpe@165.204.38.103 'tmux new -A -s helios-queue ~/helios/queue-runner.sh'
+      ssh -t -p <port> <user>@<jump-host> 'tmux new -A -s helios-queue ~/helios/queue-runner.sh'
 
 - Sync code to the jump host only while `queue/state` says idle (`git archive HEAD | ssh ... tar -x`), copy result
   folders back to `results/runs/g02-g17/`.
@@ -398,7 +398,7 @@ and title.
   `~/helios/helios-tests`, pushes `inventory/fullrack-jump-afm.local.yaml` to `~/helios/fullrack-jump-afm.yaml`
   (the jump host's previous copy is kept as `.bak-<date>` when it changes), runs there with `~/helios/venv`, streams the
   output and copies the new results folders back into `results/`. Fetch the inventory copy once with
-  `scp -P 8059 tenant-hpe@165.204.38.103:helios/fullrack-jump-afm.yaml inventory/fullrack-jump-afm.local.yaml`.
+  `scp -P <port> <user>@<jump-host>:helios/fullrack-jump-afm.yaml inventory/fullrack-jump-afm.local.yaml`.
   **selftest** runs against the simulated rack.
 - Run tab: health check (with `--known` from the profile) or selected cases (TC ids, a marker expression such as
   `healthcheck`, or a pick from the test plan via `tools/select_cases.py`), node subsets, `--allow-disruptive`.

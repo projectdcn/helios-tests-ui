@@ -10,7 +10,7 @@ run is blocked only when fewer than the test's minimum trays remain (``exclude_u
   * answers SSH within ``datapath.preflight.ssh_timeout_s`` (20 s)
   * every GPU on it is config_phase ACTIVE (afmctl)
   * the GPUs can be opened and are all visible (``amd-smi list --json``, run like the workloads: with sudo when
-    commands.datapath.sudo is set). g02-g17, 14 Oct: tenant-hpe is not in 'render' -> /dev/kfd permission denied ->
+    commands.datapath.sudo is set). g02-g17, 14 Oct: the login user is not in 'render' -> /dev/kfd permission denied ->
     RCCL 'no ROCm-capable device is detected'
   * no other process is using the GPUs (``amd-smi process --json``; ``busy_check``)
   * the tools the test declares are installed (``@pytest.mark.datapath(tools=[...])``: transferbench,

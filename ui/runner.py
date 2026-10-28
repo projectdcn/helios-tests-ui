@@ -355,7 +355,7 @@ def rq(p: str) -> str:
 
 class SshRunner(Runner):
     """The full rack behind the jump host, mirroring the manual procedure (docs/how-to-run.html, section 4):
-    ``git archive <ref> | ssh -p 8059 tenant-hpe@165.204.38.103 'tar -xf -'`` into ~/helios/helios-tests, the
+    ``git archive <ref> | ssh -p <port> <user>@<jump-host> 'tar -xf -'`` into ~/helios/helios-tests, the
     inventory copied next to it, tools/rack_health.py / pytest run there with the venv, and the new results folders
     copied back with tar. One multiplexed SSH connection (the jump host throttles rapid logins)."""
 

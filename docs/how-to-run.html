@@ -186,7 +186,7 @@
   <p class="muted">Scope any run with <code>-m "not disruptive"</code> / <code>-m l1</code>, <code>--tc &lt;IDs&gt;</code> (one at a time for disruptive work), a suite path (<code>tests/afm</code>, <code>tests/l1</code>, ...), or <code>--switches</code> / <code>--computes</code> to try a subset first.</p>
 
   <h3>Mini rack (MR3): everything from your Mac</h3>
-  <p>SSH to the trays uses your key; AFM is at <code>https://10.153.80.83</code>; inventory <code>inventory/mr3.local.yaml</code>. Details in <a href="#mini">section 3</a>.</p>
+  <p>SSH to the trays uses your key; AFM is at <code>https://10.0.80.83</code>; inventory <code>inventory/mr3.local.yaml</code>. Details in <a href="#mini">section 3</a>.</p>
   <div class="cmd"><pre>cd ~/dev/helios-tests</pre></div>
   <p><strong>1. Health checks</strong> (read-only, no AFM needed):</p>
   <div class="cmd"><pre>.venv/bin/pytest tests --ignore=tests/afm --inventory inventory/mr3.local.yaml -m &quot;not stress&quot; -v --log-file=results/console-logs/mr3-health.log</pre></div>
@@ -199,9 +199,9 @@
   <div class="cmd"><pre>.venv/bin/pytest tests --inventory inventory/mr3.local.yaml --allow-disruptive --tc TC-AFM-035A -v</pre></div>
 
   <h3>Full rack (g02-g17): through the jump host</h3>
-  <p>Everything goes through the jump host <code>tenant-hpe@165.204.38.103</code> (port 8059), which reaches the rack network 10.255.4.0/24. Your SSH key logs you in there; the jump host's own key (<code>~/.ssh/id_cluster</code>, set up in its <code>~/.ssh/config</code>) logs in to the trays: switches as <code>tenant_hpe</code>, computes as <code>tenant-hpe</code>, both with passwordless sudo. No passwords are needed for SSH.</p>
+  <p>Everything goes through the jump host <code>&lt;user&gt;@&lt;jump-host&gt;</code> (its SSH port), which reaches the rack network 10.0.4.0/24 (here and below the addresses are examples; the real jump host, port and user are in the g02-g17 profile of <code>ui/racks.yaml</code>). Your SSH key logs you in there; the jump host's own key (<code>~/.ssh/id_cluster</code>, set up in its <code>~/.ssh/config</code>) logs in to the trays: switches as <code>tenant_hpe</code>, computes as <code>the jump-host user</code>, both with passwordless sudo. No passwords are needed for SSH.</p>
   <p><strong>AFM API from your Mac:</strong> keep the tunnel open in its own terminal (the browser UI uses it too), inventory <code>inventory/fullrack-afm.local.yaml</code>:</p>
-  <div class="cmd"><pre>ssh -p 8059 -N -L 8443:10.255.4.71:443 tenant-hpe@165.204.38.103</pre></div>
+  <div class="cmd"><pre>ssh -p &lt;port&gt; -N -L 8443:10.0.4.71:443 &lt;user&gt;@&lt;jump-host&gt;</pre></div>
   <div class="cmd"><pre>read -s HELIOS_AFM_PASSWORD &amp;&amp; export HELIOS_AFM_PASSWORD</pre></div>
   <div class="cmd"><pre>.venv/bin/pytest tests/afm --inventory inventory/fullrack-afm.local.yaml --deselect tests/afm/test_afm_rbac_audit.py::test_techsupport -v --log-file=results/console-logs/fullrack-afm.log</pre></div>
   <p><strong>All non-disruptive switch / AFM-API cases</strong> (72 AFM + 52 SSH on 14 Oct): build the lists with <code>tools/select_cases.py</code> and run them as shown in <a href="#select">section 6</a>. The AFM part from your Mac:</p>
@@ -212,7 +212,7 @@
   <div class="cmd"><pre>cd ~/helios/helios-tests &amp;&amp; tmux new -s helios-l1</pre></div>
   <div class="cmd"><pre>../venv/bin/python -m pytest tests --inventory ../fullrack-jump.yaml --tc TC-AFM-001,TC-AFM-002,TC-AFM-003,TC-AFM-004,TC-AFM-005A,SMOKE-RCCL-1N,SMOKE-RCCL-MN -v</pre></div>
   <p>Disruptive cases in batches you approve, one <code>--tc</code> at a time (the full rack is shared lab hardware), with <code>--allow-disruptive</code>. Copy the results back to your Mac:</p>
-  <div class="cmd"><pre>ssh -p 8059 tenant-hpe@165.204.38.103 &#x27;cd ~/helios/helios-tests/results &amp;&amp; tar -czf - &lt;run&gt;&#x27; | tar -C results -xzf -</pre></div>
+  <div class="cmd"><pre>ssh -p &lt;port&gt; &lt;user&gt;@&lt;jump-host&gt; &#x27;cd ~/helios/helios-tests/results &amp;&amp; tar -czf - &lt;run&gt;&#x27; | tar -C results -xzf -</pre></div>
 
   <h3>After any run (both racks)</h3>
   <p>HTML report (<a href="#report">section 8</a>):</p>
@@ -225,7 +225,7 @@
       <li><strong>MR3 c2 is down</strong> (no ping or SSH, sb-node-agent gone), and <strong>MR3 switching plane 9</strong> drops traffic.</li>
       <li><strong>g02-g17 CT02 and CT05 are down</strong> (no ping, BMC reachable); their switch ports show routed/down (TC-SWH-030/037).</li>
       <li><strong>g02-g17 TransferBench</strong> (<code>/usr/sbin/TransferBench</code>) segfaults even on its own smoketest, and is missing on CT08, CT09, CT11–CT16; <strong>rccl-tests</strong> is not installed. TC-AFM-002…005 stay Pending until these are fixed.</li>
-      <li><strong>g02-g17 GPU access:</strong> <code>tenant-hpe</code> is not in the <code>render</code> group, so GPU tools run with sudo (<code>commands.datapath.sudo: true</code>).</li>
+      <li><strong>g02-g17 GPU access:</strong> the rack login user is not in the <code>render</code> group, so GPU tools run with sudo (<code>commands.datapath.sudo: true</code>).</li>
       <li><strong>g02-g17 is shared:</strong> other teams run GPU jobs on the trays (CT01 on 14 Oct); the pre-flight leaves such trays out.</li>
     </ul>
   </div>
@@ -308,7 +308,7 @@
 
   <div class="stage">
     <h3>Stage 4: AFM controller API (REST + AggWatch)</h3>
-    <p>See <a href="#afm">AFM controller API</a> for the curl connectivity check. The AFM controller runs on the switch tray (<code>https://10.153.80.83</code>, API guide at <code>/docs/</code>). The <code>afm:</code> section of the inventory names the admin user; the password comes from <code>HELIOS_AFM_PASSWORD</code>, which you export yourself in the same terminal. Without it, only the unauthenticated cases run (RC-021, CTL-089, AGGW-003/004, CTL-004) and the rest SKIP.</p>
+    <p>See <a href="#afm">AFM controller API</a> for the curl connectivity check. The AFM controller runs on the switch tray (<code>https://10.0.80.83</code>, API guide at <code>/docs/</code>). The <code>afm:</code> section of the inventory names the admin user; the password comes from <code>HELIOS_AFM_PASSWORD</code>, which you export yourself in the same terminal. Without it, only the unauthenticated cases run (RC-021, CTL-089, AGGW-003/004, CTL-004) and the rest SKIP.</p>
     <div class="cmd"><pre>read -s HELIOS_AFM_PASSWORD &amp;&amp; export HELIOS_AFM_PASSWORD
 .venv/bin/pytest tests/afm --inventory inventory/mr3.local.yaml -v --log-file=results/console-logs/mr3-afm.log</pre></div>
     <p>Non-disruptive: reads, plus throw-away objects named <code>helios-&lt;tc&gt;-*</code> (failover policies, alert policies, test users / roles / role-bindings, empty vPODs). These are deleted after every test, even a failing one. No GPU, link or vPOD membership is touched. The run takes about 10 minutes; the AggWatch idle, no-options and burst cases are the slow ones.</p>
@@ -330,24 +330,24 @@
 
 <section id="full">
   <h2><span class="num">4</span>Full rack (6 switches, 18 computes)</h2>
-  <div class="note"><strong>g02-g17 access:</strong> the trays are on 10.255.4.0/24 behind the jump host <code>tenant-hpe@165.204.38.103:8059</code>; host names are in the jump host's <code>/etc/hosts</code> (switches <code>helios-sw-hp-rck-g02-g17-0N.enclave-d</code> = .71–.76, computes <code>ctheliosr-rck-g02-g17-NN.enclave-d</code> = .47–.64, BMCs <code>bmc-…</code>).</div>
+  <div class="note"><strong>g02-g17 access:</strong> the trays are on 10.0.4.0/24 behind the jump host <code>&lt;user&gt;@&lt;jump-host&gt;:&lt;port&gt;</code>; host names are in the jump host's <code>/etc/hosts</code> (switches <code>helios-sw-hp-rck-g02-g17-0N.enclave-d</code> = .71–.76, computes <code>ctheliosr-rck-g02-g17-NN.enclave-d</code> = .47–.64, BMCs <code>bmc-…</code>).</div>
   <ol class="steps">
     <li>
       <strong>Inventory for your Mac</strong> (<code>inventory/fullrack.local.yaml</code>, git-ignored; small read-only runs). Host names as above, plus:
       <div class="cmd"><pre>transport:
   kind: ssh
-  jump: {host: 165.204.38.103, port: 8059, user: tenant-hpe, via: exec}
+  jump: {host: &lt;jump-host&gt;, port: &lt;port&gt;, user: &lt;user&gt;, via: exec}
 defaults:
   switch: {user: tenant_hpe}
-  compute: {user: tenant-hpe, gpus: 4}</pre></div>
+  compute: {user: &lt;user&gt;, gpus: 4}</pre></div>
       <p class="muted"><code>via: exec</code> runs each command on the jump host as <code>ssh &lt;rack host&gt; …</code>, so the rack key never leaves it. The jump host allows 2 sessions per connection; commands queue behind that limit.</p>
     </li>
     <li>
       <strong>Set up the jump host once</strong> (it has Python 3.12 but no pip). On your Mac, download the wheels for Linux / Python 3.12:
       <div class="cmd"><pre>.venv/bin/python -m pip download -d wheelhouse --platform manylinux2014_x86_64 --platform manylinux_2_28_x86_64 --python-version 3.12 --implementation cp --only-binary=:all: pytest paramiko PyYAML requests websocket-client pip</pre></div>
       <p>Copy the committed code and the wheels (no results, logs or workbooks):</p>
-      <div class="cmd"><pre>git archive --format=tar --prefix=helios-tests/ HEAD | ssh -p 8059 tenant-hpe@165.204.38.103 &#x27;mkdir -p ~/helios &amp;&amp; cd ~/helios &amp;&amp; tar -xf -&#x27;</pre></div>
-      <div class="cmd"><pre>tar -czf - wheelhouse | ssh -p 8059 tenant-hpe@165.204.38.103 &#x27;cd ~/helios &amp;&amp; tar -xzf -&#x27;</pre></div>
+      <div class="cmd"><pre>git archive --format=tar --prefix=helios-tests/ HEAD | ssh -p &lt;port&gt; &lt;user&gt;@&lt;jump-host&gt; &#x27;mkdir -p ~/helios &amp;&amp; cd ~/helios &amp;&amp; tar -xf -&#x27;</pre></div>
+      <div class="cmd"><pre>tar -czf - wheelhouse | ssh -p &lt;port&gt; &lt;user&gt;@&lt;jump-host&gt; &#x27;cd ~/helios &amp;&amp; tar -xzf -&#x27;</pre></div>
       <p>Then on the jump host, build the venv offline:</p>
       <div class="cmd"><pre>cd ~/helios &amp;&amp; python3 -m venv --without-pip venv &amp;&amp; venv/bin/python $(ls wheelhouse/pip-*.whl)/pip install --no-index --find-links wheelhouse pip &amp;&amp; venv/bin/pip install --no-index --find-links wheelhouse -e helios-tests</pre></div>
       <p>Its inventory <code>~/helios/fullrack-jump.yaml</code> is the same file without <code>jump:</code>, with <code>key_file: ~/.ssh/id_cluster</code> under both defaults, and <code>commands.datapath.sudo: true</code>. To update the code later, repeat the <code>git archive</code> copy.</p>
@@ -389,19 +389,19 @@ defaults:
   <table>
     <thead><tr><th>Rack</th><th>Controller URL</th><th>Inventory (git-ignored)</th></tr></thead>
     <tbody>
-      <tr><td>MR3</td><td><code>https://10.153.80.83</code> (afm_controller on st1, reachable directly)</td><td><code>inventory/mr3.local.yaml</code></td></tr>
-      <tr><td>g02-g17 full rack</td><td><code>https://localhost:8443</code> through an SSH tunnel via the jump host to a controller (10.255.4.71 port 443)</td><td><code>inventory/fullrack-afm.local.yaml</code> (AFM only: 3 controllers, 6 switches, 18 computes expected)</td></tr>
+      <tr><td>MR3</td><td><code>https://10.0.80.83</code> (afm_controller on st1, reachable directly)</td><td><code>inventory/mr3.local.yaml</code></td></tr>
+      <tr><td>g02-g17 full rack</td><td><code>https://localhost:8443</code> through an SSH tunnel via the jump host to a controller (10.0.4.71 port 443)</td><td><code>inventory/fullrack-afm.local.yaml</code> (AFM only: 3 controllers, 6 switches, 18 computes expected)</td></tr>
     </tbody>
   </table>
   </div>
 
   <h3>1. Full rack only: open the tunnel</h3>
   <p>Keep this running in its own terminal. The browser UI at <code>https://localhost:8443/#/login</code> uses the same tunnel.</p>
-  <div class="cmd"><pre>ssh -p 8059 -N -L 8443:10.255.4.71:443 tenant-hpe@165.204.38.103</pre></div>
+  <div class="cmd"><pre>ssh -p &lt;port&gt; -N -L 8443:10.0.4.71:443 &lt;user&gt;@&lt;jump-host&gt;</pre></div>
 
   <h3>2. Check that curl reaches the API</h3>
   <p>Set the controller URL for the rack you're checking. MR3:</p>
-  <div class="cmd"><pre>AFM=https://10.153.80.83</pre></div>
+  <div class="cmd"><pre>AFM=https://10.0.80.83</pre></div>
   <p>Full rack:</p>
   <div class="cmd"><pre>AFM=https://localhost:8443</pre></div>
   <p>Without credentials, the API must answer <strong>401</strong>. <strong>000</strong> means there's no connection: the tunnel is down or the port is wrong.</p>
@@ -414,8 +414,8 @@ defaults:
   <div class="cmd"><pre>rm -f /tmp/afm.jar</pre></div>
 
   <h3>Alternative for the full rack: run the AFM suite on the jump host</h3>
-  <p>The jump host reaches the controller directly (<code>https://10.255.4.71</code>, no tunnel) and the trays without the 2-session limit, so AFM cases that also SSH to trays (TC-001, TC-SEQ-010, TC-E2E-009, the disruptive cases) are much faster there. Its inventory <code>~/helios/fullrack-jump-afm.yaml</code> is <code>fullrack-jump-ip.yaml</code> with <code>afm.url: https://10.255.4.71</code> (<code>verify_tls: false</code>). Put the pytest command in a small script on the jump host that starts with <code>read -s -p &quot;AFM admin password: &quot; HELIOS_AFM_PASSWORD &amp;&amp; export HELIOS_AFM_PASSWORD</code> and ends with <code>unset HELIOS_AFM_PASSWORD</code>, then run it from a terminal and type the password there:</p>
-  <div class="cmd"><pre>ssh -t -p 8059 tenant-hpe@165.204.38.103 &#x27;bash ~/helios/run-afm-rerun.sh&#x27;</pre></div>
+  <p>The jump host reaches the controller directly (<code>https://10.0.4.71</code>, no tunnel) and the trays without the 2-session limit, so AFM cases that also SSH to trays (TC-001, TC-SEQ-010, TC-E2E-009, the disruptive cases) are much faster there. Its inventory <code>~/helios/fullrack-jump-afm.yaml</code> is <code>fullrack-jump-ip.yaml</code> with <code>afm.url: https://10.0.4.71</code> (<code>verify_tls: false</code>). Put the pytest command in a small script on the jump host that starts with <code>read -s -p &quot;AFM admin password: &quot; HELIOS_AFM_PASSWORD &amp;&amp; export HELIOS_AFM_PASSWORD</code> and ends with <code>unset HELIOS_AFM_PASSWORD</code>, then run it from a terminal and type the password there:</p>
+  <div class="cmd"><pre>ssh -t -p &lt;port&gt; &lt;user&gt;@&lt;jump-host&gt; &#x27;bash ~/helios/run-afm-rerun.sh&#x27;</pre></div>
   <p class="muted">Quote the remote path: unquoted, <code>~</code> expands on your Mac. The jump host throttles rapid SSH logins ("Connection timed out during banner exchange"); wait a minute and retry. The 14 Oct techsupport run (TC-AFM-048) passed from the Mac through the tunnel as well.</p>
 
   <h3>3. Run the suite</h3>
@@ -611,12 +611,12 @@ Not run: RAS power-cycle tests (disruptive)</pre></div>
   <p>Run it before every disruptive batch, after each one (to confirm the rack recovered) and whenever the rack state is unclear. It is read-only: 48 cases, none disruptive, about 30 minutes on g02-g17 from the jump host. Blocker cases decide the verdict; warnings are listed but never block.</p>
   <div class="cmd"><pre>.venv/bin/python tools/rack_health.py --inventory ~/helios/fullrack-jump-afm.yaml --known testplan/health-known.yaml</pre></div>
   <p class="muted">On g02-g17 run it on the jump host (about 30 minutes: the switch checks run per switch). <code>~/helios/run-health.sh</code> there asks for the AFM password with <code>read -s</code>, runs the command above with <code>--no-html</code> and unsets the password; start it from your Mac and type the password in that terminal:</p>
-  <div class="cmd"><pre>ssh -t -p 8059 tenant-hpe@165.204.38.103 &#x27;bash ~/helios/run-health.sh&#x27;</pre></div>
+  <div class="cmd"><pre>ssh -t -p &lt;port&gt; &lt;user&gt;@&lt;jump-host&gt; &#x27;bash ~/helios/run-health.sh&#x27;</pre></div>
   <p class="muted">Copy the run folder back (<code>results/runs/g02-g17/g02-g17-&lt;timestamp&gt;</code>), then re-judge it on the Mac to write <code>health.html</code>, and add it to the overall report with <code>--health-run</code> (<a href="#report">section 8</a>):</p>
   <div class="cmd"><pre>.venv/bin/python tools/rack_health.py --run results/runs/&lt;rack&gt;/&lt;health-run&gt; --known testplan/health-known.yaml</pre></div>
   <p class="muted">Export <code>HELIOS_AFM_PASSWORD</code> in the same terminal first (on the jump host: the <code>read -s</code> script pattern from <a href="#afm">section 5</a>); without it the AFM blockers skip and the verdict is INCOMPLETE. After a disruptive batch, compare with the run before it:</p>
   <div class="cmd"><pre>.venv/bin/python tools/rack_health.py --inventory ... --baseline results/runs/&lt;rack&gt;/&lt;run-before&gt;/health.json</pre></div>
-  <p class="muted">Re-run only what did not pass in a run (FAIL / PARTIAL / BLOCKED), merge it with that run (latest result per case) and judge the merged result; that run's <code>health.json</code> is the baseline. On g02-g17: <code>ssh -t -p 8059 tenant-hpe@165.204.38.103 &#x27;bash ~/helios/run-health.sh --rerun-failed results/runs/&lt;rack&gt;/&lt;run&gt;&#x27;</code>. To merge runs by hand: <code>--merge results/runs/&lt;rack&gt;/&lt;full-run&gt; results/runs/&lt;rack&gt;/&lt;re-run&gt;</code>.</p>
+  <p class="muted">Re-run only what did not pass in a run (FAIL / PARTIAL / BLOCKED), merge it with that run (latest result per case) and judge the merged result; that run's <code>health.json</code> is the baseline. On g02-g17: <code>ssh -t -p &lt;port&gt; &lt;user&gt;@&lt;jump-host&gt; &#x27;bash ~/helios/run-health.sh --rerun-failed results/runs/&lt;rack&gt;/&lt;run&gt;&#x27;</code>. To merge runs by hand: <code>--merge results/runs/&lt;rack&gt;/&lt;full-run&gt; results/runs/&lt;rack&gt;/&lt;re-run&gt;</code>.</p>
   <div class="cmd"><pre>.venv/bin/python tools/rack_health.py --inventory ... --rerun-failed results/runs/&lt;rack&gt;/&lt;run&gt;</pre></div>
   <p class="muted">Reading the verdict: cases that fail <em>only</em> on a node HC-001 found unreachable are grouped under one <strong>ROOT CAUSE &lt;node&gt; unreachable</strong> line (the node is matched by its name, its AFM name, its slot and the cabling descriptions, from the slot&harr;tray map HC-000 records); the remaining blockers are listed one by one. Grouping never changes the verdict. Failure messages start with a count per node ("by node: st1 24, ct05 3") and every failing case records its full failure list. AFM nodes are named with their tray ("pod-1-4-ComputeTray (ct05)"). In a merged run, results more than 12 h older than the newest are flagged as older, with the time each case ran. HC-008 looks for critical AFM events since the previous run started when a baseline is given (else the last hour). HC-002 shows as "not configured" until <code>commands.health.bmc_power</code> is set.</p>
   <div class="table-wrap">
@@ -644,7 +644,7 @@ Not run: RAS power-cycle tests (disruptive)</pre></div>
 <section id="quarantine">
   <h2><span class="num">9a</span>Quarantine a switch or compute tray</h2>
   <p>A node that is known to be down or broken (reported, waiting for repair) can be quarantined in the inventory so it stops failing every check. Add <code>quarantine:</code> to its entry; for a compute tray also its AFM slot-id (<code>slot:</code>), so the AFM-side and fabric checks can drop its AFM node, node-agent slot and switch ports:</p>
-  <div class="cmd"><pre>  - {name: ct05, host: 10.255.4.51, slot: 4, quarantine: {reason: 'CT05 down since 13 Oct, reported to AMD 14 Oct', since: '2026-10-13', until: '2026-10-31'}}</pre></div>
+  <div class="cmd"><pre>  - {name: ct05, host: 10.0.4.51, slot: 4, quarantine: {reason: 'CT05 down since 13 Oct, reported to AMD 14 Oct', since: '2026-10-13', until: '2026-10-31'}}</pre></div>
   <ul>
     <li>Every test leaves the node out; a passing test is reported <strong>PARTIAL</strong> with "passed without the quarantined node(s): …", never plain PASS. Covered on the AFM side: HC-000, TC-CTL-090 / 089 node counts, TC-001, TC-SBM-135 / 136, TC-BU-009, and the switch ports cabled to the tray (TC-SWH-030 / 037, HC-011 link counts).</li>
     <li>The health check treats a case that is PARTIAL only because of quarantine as passed: the verdict can be <strong>GO (with quarantine: ct05)</strong>, and the quarantine list is printed and reported. A pre-flight exclusion for another reason (busy GPUs, black-holed port) still blocks.</li>
@@ -653,7 +653,7 @@ Not run: RAS power-cycle tests (disruptive)</pre></div>
   </ul>
   <h3>Re-run only the failed health checks and merge</h3>
   <p>Pass the cases after <code>--</code>; the verdict is judged on the cases that ran. Then merge the full run and the re-run (latest result per case) for the report:</p>
-  <div class="cmd"><pre>ssh -t -p 8059 tenant-hpe@165.204.38.103 &#x27;bash ~/helios/run-health.sh -- --tc HC-001,TC-BU-009,...&#x27;</pre></div>
+  <div class="cmd"><pre>ssh -t -p &lt;port&gt; &lt;user&gt;@&lt;jump-host&gt; &#x27;bash ~/helios/run-health.sh -- --tc HC-001,TC-BU-009,...&#x27;</pre></div>
   <div class="cmd"><pre>.venv/bin/python tools/rack_health.py --merge results/&lt;full-run&gt; results/&lt;re-run&gt; --known testplan/health-known.yaml</pre></div>
 </section>
 
@@ -665,8 +665,8 @@ Not run: RAS power-cycle tests (disruptive)</pre></div>
   <h3>1. One-time setup</h3>
   <p class="muted">The inventories are git-ignored, so the UI checkout needs its own copies. MR3: copy it from the main checkout. g02-g17: fetch the jump host's copy (the UI edits this local copy and pushes it back at each run).</p>
   <div class="cmd"><pre>cp ~/dev/helios-tests/inventory/mr3.local.yaml ~/dev/helios-tests-ui/inventory/</pre></div>
-  <div class="cmd"><pre>scp -P 8059 tenant-hpe@165.204.38.103:helios/fullrack-jump-afm.yaml ~/dev/helios-tests-ui/inventory/fullrack-jump-afm.local.yaml</pre></div>
-  <p class="muted">Your SSH key must log in to the jump host without a password prompt (<code>ssh -p 8059 tenant-hpe@165.204.38.103 true</code>). Until the inventory files exist, the rack shows its inventory as MISSING.</p>
+  <div class="cmd"><pre>scp -P &lt;port&gt; &lt;user&gt;@&lt;jump-host&gt;:helios/fullrack-jump-afm.yaml ~/dev/helios-tests-ui/inventory/fullrack-jump-afm.local.yaml</pre></div>
+  <p class="muted">Your SSH key must log in to the jump host without a password prompt (<code>ssh -p &lt;port&gt; &lt;user&gt;@&lt;jump-host&gt; true</code>). Until the inventory files exist, the rack shows its inventory as MISSING.</p>
 
   <h3>2. Start and stop</h3>
   <div class="cmd"><pre>cd ~/dev/helios-tests-ui &amp;&amp; ~/dev/helios-tests/.venv/bin/python -m ui</pre></div>
@@ -730,7 +730,7 @@ Not run: RAS power-cycle tests (disruptive)</pre></div>
     <thead><tr><th>Symptom</th><th>Cause / fix</th></tr></thead>
     <tbody>
       <tr><td>Inventory MISSING</td><td>Step 1 not done for that rack</td></tr>
-      <tr><td>g02-g17 run stops at the sync / "Connection closed"</td><td>The jump host throttles logins after many connections: wait a minute and start again; check <code>ssh -p 8059 tenant-hpe@165.204.38.103 true</code> works without a prompt</td></tr>
+      <tr><td>g02-g17 run stops at the sync / "Connection closed"</td><td>The jump host throttles logins after many connections: wait a minute and start again; check <code>ssh -p &lt;port&gt; &lt;user&gt;@&lt;jump-host&gt; true</code> works without a prompt</td></tr>
       <tr><td>Run waits as "queued"</td><td>Another run on the same rack is still going (Runs tab)</td></tr>
       <tr><td>Page does not load</td><td>The UI terminal was closed or the port is taken: start it again, or with <code>--port</code></td></tr>
       <tr><td>Results of a manual run are missing</td><td>The Results tab lists the local <code>results/</code> of the UI checkout: copy the run folder there (or build its report in the main checkout)</td></tr>
@@ -751,7 +751,7 @@ tar -xzf helios-ui-&lt;version&gt;.tar.gz &amp;&amp; helios-ui-&lt;version&gt;/i
   <p><strong>Copy what the racks need</strong> (the installer copies no secrets and creates no keys):</p>
   <ul>
     <li><code>~/helios-ui/data/inventories/mr3.local.yaml</code> and <code>fullrack-jump-afm.local.yaml</code> (the jump host's <code>~/helios/fullrack-jump-afm.yaml</code>), <code>~/helios-ui/data/testplan/full_rack_testplan.xlsx</code>.</li>
-    <li>SSH keys in <code>~/.ssh</code> of the server user: one the jump host accepts (<code>ssh -p 8059 tenant-hpe@165.204.38.103 true</code> must work with no prompt) and the MR3 keys. The service has no ssh-agent: the key must be usable without a passphrase prompt.</li>
+    <li>SSH keys in <code>~/.ssh</code> of the server user: one the jump host accepts (<code>ssh -p &lt;port&gt; &lt;user&gt;@&lt;jump-host&gt; true</code> must work with no prompt) and the MR3 keys. The service has no ssh-agent: the key must be usable without a passphrase prompt.</li>
     <li>No macOS Keychain on Linux: the page says <em>macOS Keychain not available on this system</em>, the <em>Remember</em> box is disabled; type the AFM password in the Run form for each run.</li>
   </ul>
   <p><strong>Open it</strong>: <code>http://&lt;server&gt;:8765/</code> (install.sh prints the exact URL and the server's addresses). <code>python -m ui --host ADDR</code> (or <code>HELIOS_UI_HOST</code>) sets the address; on the Mac it stays <code>127.0.0.1</code>.</p>

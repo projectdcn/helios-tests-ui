@@ -125,7 +125,7 @@ def _api_answers(afm, inventory, when: str) -> None:
 def _settled_health(afm, inventory, skip, give_wait: bool) -> list[str]:
     """rack_health, and when it reports problems, wait up to thresholds.afm.preflight_settle_s (600 s) for them to
     clear: right after a controller restart AFM reports the cluster "not healthy" for a while (g02-g17 17 Oct 13:21:
-    TC-AR-003 passed, its post-check saw 'node 10.255.4.7x is not healthy' on all three controllers and the next 12
+    TC-AR-003 passed, its post-check saw 'node 10.0.4.7x is not healthy' on all three controllers and the next 12
     AFM tests were BLOCKED in the same second). ``give_wait`` False: no wait (the previous gate already waited the
     full time and the rack did not recover - do not spend 10 min per test on a broken rack)."""
     from helios.afm import wait_for

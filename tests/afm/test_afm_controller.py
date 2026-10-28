@@ -60,7 +60,7 @@ def _write_after_started(ops, name, record_property):
     """POST the alert policy, retrying while the API refuses it, from the moment every controller reported
     'started'. Returns the write outage in seconds (0 = first try worked), None when no write worked within
     _WRITE_GIVE_UP_S. g02-g17 17 Oct: right after a leader restart reported 'started', the POST got HTTP 503
-    'dial tcp 10.255.4.72:9003: connect: connection refused' - this measures how long that lasts."""
+    'dial tcp 10.0.4.72:9003: connect: connection refused' - this measures how long that lasts."""
     t0, errors = time.monotonic(), []
     k = float(ops.th("time_scale", 1))
     while True:
@@ -219,7 +219,7 @@ def test_watch_survives_nonleader_restart(ops, afm_ready, uniq, cleanup, checks,
     w.subscribe("monitoring/AlertPolicy")
     w.collect(min(wait, 5))
     # a non-leader that does not serve afm.url: restarting the one we talk to closes the stream by itself (g02-g17
-    # 17 Oct: st1 = 10.255.4.71 = afm.url was picked, the API went away for ~60 s and the next tests errored)
+    # 17 Oct: st1 = 10.0.4.71 = afm.url was picked, the API went away for ~60 s and the next tests errored)
     leader, api = ops.leader_ip(), _api_ip(ops)
     victim = next((m for m in ops.quorum_ips() if m not in (leader, api)), None)
     record_property("leader_api_victim", {"leader": leader, "api": api, "victim": victim})
