@@ -51,6 +51,9 @@ def cell_tid(v) -> str | None:
 COL_STATUS, COL_VERSION, COL_NOTES, COL_ACCESS, COL_SCOPE = 6, 7, 8, 9, 10
 
 # failures that say "the test could not run here", not "the product is broken"
+# a failure line with one of these is a product result even when it also names an environment pattern (a traffic
+# rank that found corrupted data makes the other rank be "killed after the rank on ..." failed)
+PRODUCT_PATTERNS = ("mismatch at destination", "mismatched bytes", "#wrong")
 ENV_PATTERNS = ("command not found", "not installed", "permission denied", "no rocm-capable device",
                 "name or service not known", "unreachable", "connect failed", "unable to open channel",
                 "no such file or directory", "rankaborted", "killed after the rank on")
@@ -95,6 +98,8 @@ def _env_only(r: dict) -> bool:
     """Every failure line of this item is an environment problem (see ENV_PATTERNS)."""
     lines = [ln.strip(" -").lower() for ln in (r.get("message") or "").splitlines()
              if ln.strip() and "check(s) failed" not in ln]
+    if any(p in ln for ln in lines for p in PRODUCT_PATTERNS):   # e.g. TransferBench data mismatch: a real failure
+        return False
     return bool(lines) and all(any(p in ln for p in ENV_PATTERNS) for ln in lines)
 
 
