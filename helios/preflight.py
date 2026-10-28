@@ -17,7 +17,8 @@ run is blocked only when fewer than the test's minimum trays remain (``exclude_u
     rccl_tests, rccl_smoke). g02-g17, 14 Oct: TransferBench missing on 7 trays
   * ping probe (below) - a tray with a black-holed port is excluded
 Rack-wide (always blocking):
-  * no switch fabric port is dropping faster than ``max_rate_pps`` (100/s) over ``window_s`` (5 s)
+  * no switch fabric port is dropping faster than ``max_rate_pps`` (100/s) over ``window_s`` (5 s);
+    ``switch_check: false`` skips it (compute-only run while the switches cannot be reached over SSH)
 Ping probe (``ping_probe``, default on): one afmctl L2 ping per GPU to the next GPU on the same tray over
     every LINK_UP port, so every switching plane carries a frame before RCCL/TransferBench does. Needed
     because a broken plane only starts dropping once traffic is sent on it - an idle fabric shows no drops.
@@ -171,7 +172,8 @@ def assess(rack, computes, inventory, tools=(), min_computes: int = 1) -> Assess
             out.excluded.setdefault(name, msg)
 
     window, max_rate = float(th("window_s", 5)), float(th("max_rate_pps", 100))
-    for sw, rates, exc in fan_out(lambda s: _drop_rates(s, window), list(rack.switches.values())):
+    switches = list(rack.switches.values()) if th("switch_check", True) else []
+    for sw, rates, exc in fan_out(lambda s: _drop_rates(s, window), switches):
         if exc:
             out.problems.append(f"{sw.name}: cannot read counters: {exc}")
             continue
