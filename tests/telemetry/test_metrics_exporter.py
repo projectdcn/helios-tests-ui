@@ -114,17 +114,26 @@ def _require_families(names, computes, inventory, checks):
 
 
 def _container_up(c, inventory) -> bool:
+    """Exporter up and its port listening. ``commands.metrics_exporter.running_check`` (exits 0 when running;
+    {container} placeholder) replaces the docker check for an exporter that is not a docker container - g02-g17
+    28 Oct: the lab's fleet-observability stack runs it as a kubelet pod (amd-device-metrics-exporter-gpu, port
+    12347)."""
     name = _cfg(inventory, "container", "device-metrics-exporter")
     port = _cfg(inventory, "port", 5000)
-    running = c.run(f"docker ps --filter name=^{name}$ --format '{{{{.Names}}}}'", sudo=True)
+    check_tmpl = _cfg(inventory, "running_check", None)
     listening = c.run(f"ss -ltnH 'sport = :{port}'")
-    return running.ok and name in running.stdout.split() and listening.ok and bool(listening.stdout.strip())
+    if not (listening.ok and listening.stdout.strip()):
+        return False
+    if check_tmpl:
+        return c.run(check_tmpl.format(container=name), sudo=True, timeout=60).ok
+    running = c.run(f"docker ps --filter name=^{name}$ --format '{{{{.Names}}}}'", sudo=True)
+    return running.ok and name in running.stdout.split()
 
 
 @pytest.mark.tc("TC-CTL-139")
 def test_exporter_container_running_port_bound(computes, inventory, checks):
     """Start the exporter with ``commands.metrics_exporter.run`` where it isn't running, then
-    require the container up and port 5000 listening on every compute."""
+    require the exporter up (docker container, or ``running_check``) and its port listening on every compute."""
     run_tmpl = _cfg(inventory, "run", None)
 
     def ensure(c):

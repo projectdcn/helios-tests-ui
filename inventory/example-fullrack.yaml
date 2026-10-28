@@ -138,6 +138,9 @@ commands:
   metrics_exporter:      # TC-CTL-139..150 (scraped with curl on each compute)
     container: device-metrics-exporter
     port: 5000
+    running_check: null  # instead of 'docker ps', a command that exits 0 while the exporter runs ({container}), e.g. for
+                         # a kubelet pod: "/opt/fleet-observability/runtime/bin/crictl --runtime-endpoint
+                         #   unix:///run/fleet-observability-containerd/containerd.sock ps -q --name '^{container}$' --state Running | grep -q ."
     run: null            # VERIFY: started only where not running, e.g.
                          # "docker run -d --name device-metrics-exporter --device=/dev/dri --device=/dev/kfd -p 5000:5000 rocm/device-metrics-exporter:<tag>"
     upgrade: null        # TC-CTL-150, placeholders {image} {container}
