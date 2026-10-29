@@ -109,6 +109,8 @@ commands:
     max_bytes: 1G
     iters: 20
     in_domain: "{rccl_tests_dir}/build/{collective}_perf -b {min_bytes} -e {max_bytes} -f 2 -g {gpus} -n {iters}"
+    # or RcclSmokeTest (pass/fail per collective and size, no bandwidth; {coll} = collective without '_'):
+    # in_domain: "NCCL_IB_DISABLE=1 NCCL_CUMEM_ENABLE=0 /opt/helicop/utils/RcclSmokeTest/build/RcclSmokeTest --coll {coll}"
     # VERIFY: MPI flags / RCCL env for IFoE cross-domain
     cross_domain: null   # placeholders: {np} {hostlist} {nodes} {collective} {rccl_tests_dir} {min_bytes} {max_bytes} {iters}
     timeout_s: 900

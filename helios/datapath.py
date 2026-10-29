@@ -16,7 +16,7 @@ from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor, wait
 import pytest
 
 from .compute import render
-from .parsers import parse_bandwidth, parse_rccl, parse_size
+from .parsers import parse_bandwidth, parse_rccl, parse_size, parse_smoketest
 from .rack import Checks, fan_out
 
 
@@ -353,9 +353,22 @@ def _rccl_kw(inventory) -> dict:
     )
 
 
+def _check_smoke(tag: str, r, collective: str, checks: Checks) -> None:
+    """RcclSmokeTest output (pass/fail per collective and size, no bandwidth): every cell P and RESULT passed."""
+    res = parse_smoketest(r.stdout)
+    if not checks.check(res.rows, f"{tag}: {collective} RcclSmokeTest printed no result table"):
+        return
+    bad = [c for code in ("F", "S", "-") for c in res.cells(code)]
+    checks.check(not bad, f"{tag}: {collective} not passed: {bad[:6]}")
+    checks.check(res.passed, f"{tag}: {collective} RcclSmokeTest RESULT not 'ALL TESTS PASSED'")
+
+
 def check_rccl(tag: str, r, collective: str, inventory, checks: Checks, section: str) -> float | None:
     if not r.ok:
         checks.fail(f"{tag}: {collective} rc={r.rc} {r.tail()!r}")
+        return None
+    if "RcclSmokeTest" in r.stdout:      # rccl.in_domain may run RcclSmokeTest --coll {coll} instead of rccl-tests
+        _check_smoke(tag, r, collective, checks)
         return None
     res = parse_rccl(r.stdout)
     max_bytes = parse_size(inventory.cmd("rccl.max_bytes", "1G"))
@@ -378,7 +391,8 @@ def rccl_in_domain(computes, inventory, checks: Checks, collective: str) -> dict
     kw = _rccl_kw(inventory)
 
     def run(c):
-        return run_on(c, render(tmpl, collective=collective, gpus=c.gpus, name=c.name, **kw), inventory, timeout)
+        return run_on(c, render(tmpl, collective=collective, coll=collective.replace("_", ""), gpus=c.gpus,
+                                name=c.name, **kw), inventory, timeout)
 
     busbw = {}
     for c, r, exc in fan_out(run, computes, _workers(inventory, "parallel_computes", len(computes), True)):
