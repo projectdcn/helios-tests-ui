@@ -1,4 +1,5 @@
-"""BMC of every switch / compute tray over Redfish (HTTPS, read-only GETs): TC-BMC-001..006 (tests/bmc/).
+"""BMC of every switch / compute tray over Redfish (HTTPS): TC-BMC-001..006 (tests/bmc/, read-only GETs) and the
+DC power cycle of TC-RAS-reset-008A (tests/ras/test_dc_cycle_all.py: ComputerSystem.Reset, the only write).
 
 Each node's BMC is reached at its OWN address (inventory ``bmc:``, not the node's host), as its ``bmc_user:``, with
 its own password ($HELIOS_BMC_PASSWORD_<NODE>, see helios.compute.bmc_env) or the rack default
@@ -36,7 +37,7 @@ def credentials(host, environ=None) -> tuple[str, str, str, str | None]:
 
 
 class Redfish:
-    """Read-only Redfish client of one BMC (basic auth over HTTPS)."""
+    """Redfish client of one BMC (basic auth over HTTPS); writes only through reset() below."""
 
     def __init__(self, address: str, user: str, password: str, timeout: float = 15, verify: bool = False,
                  base: str | None = None):
@@ -282,4 +283,69 @@ def discover(rf: Redfish) -> dict:
     out = {"root": root, "manager": mgr, "managers": managers, "chassis": chassis, "main_chassis": main or (chassis[0] if chassis else None),
            "system": systems[0] if systems else None, "systems": systems, "log_service": logsvc}
     rf._discovered = out
+    return out
+
+
+# ------------------------------------------------------------------ power control (the only writes: ComputerSystem.Reset)
+def system_path(rf: Redfish) -> str:
+    """The first ComputerSystem of the BMC (OpenBMC: /redfish/v1/Systems/system)."""
+    systems = rf.members("/redfish/v1/Systems")
+    if not systems:
+        raise BmcError(f"{rf.address}: no ComputerSystem under /redfish/v1/Systems")
+    return systems[0]
+
+
+def power_state(rf: Redfish, system: str) -> str:
+    return str(rf.get(system).get("PowerState") or "")
+
+
+def reset(rf: Redfish, system: str, reset_type: str) -> None:
+    """POST ComputerSystem.Reset. A refused login raises at once: the BMC locks the account after a few bad logins
+    (g02-g17 ct10, 29 Oct: AccountLockoutThreshold 5, 300 s), so nothing here retries on 401 / 403."""
+    status, _, text = rf.request("POST", f"{system}/Actions/ComputerSystem.Reset", json={"ResetType": reset_type})
+    log.debug("[bmc %s] ComputerSystem.Reset %s -> %s", rf.address, reset_type, status)
+    if status in (401, 403):
+        raise BmcError(f"{rf.address}: login refused (HTTP {status}) - check bmc_user / the BMC password")
+    if status not in (200, 202, 204):
+        raise BmcError(f"{rf.address}: {reset_type} -> HTTP {status} {text[:160]!r}")
+
+
+def dc_cycle(rf: Redfish, system: str, *, off_timeout: float = 120, off_hold: float = 40, on_timeout: float = 90,
+             on_attempts: int = 3, poll: float = 5, sleep=None, clock=None) -> dict:
+    """DC power cycle: ForceOff, wait until PowerState is Off, hold ``off_hold`` s, then On until PowerState is On.
+    An On sent while the host is still powering down is accepted (204) but ignored (g02-g17 ct04, 28 Oct), hence
+    the wait for Off, the hold and up to ``on_attempts`` On requests. Returns timings; raises BmcError."""
+    import time
+    from .wait import wait_until
+    sleep, clock = sleep or time.sleep, clock or time.monotonic
+    t0 = clock()
+    before = power_state(rf, system)
+    reset(rf, system, "ForceOff")
+    ok, _ = wait_until(lambda: power_state(rf, system) == "Off", off_timeout, poll, what=f"{rf.address} PowerState Off")
+    if not ok:
+        raise BmcError(f"{rf.address}: PowerState still {power_state(rf, system)!r} {off_timeout:.0f}s after ForceOff")
+    off_at = clock() - t0
+    sleep(off_hold)
+    for attempt in range(1, on_attempts + 1):
+        reset(rf, system, "On")
+        ok, _ = wait_until(lambda: power_state(rf, system) == "On", on_timeout, poll, what=f"{rf.address} PowerState On")
+        if ok:
+            return {"before": before, "off_after_s": round(off_at, 1), "on_attempts": attempt,
+                    "on_after_s": round(clock() - t0, 1)}
+    raise BmcError(f"{rf.address}: PowerState not On after {on_attempts} On request(s)")
+
+
+def power_events(rf: Redfish, system: str, after: str = "") -> list[dict]:
+    """System EventLog entries about host DC power ('Host system DC power is off / on') newer than ``after``
+    (an entry's Created; '' = all), oldest first."""
+    try:
+        data = rf.get(f"{system}/LogServices/EventLog/Entries")
+    except BmcError:
+        return []
+    out = [{"created": str(e.get("Created") or ""), "message": str(e.get("Message") or "")}
+           for e in data.get("Members") or [] if isinstance(e, dict) and "DC power" in str(e.get("Message") or "")]
+    out.sort(key=lambda e: _when(e["created"]) or datetime.min.replace(tzinfo=timezone.utc))
+    if after:
+        t = _when(after)
+        out = [e for e in out if t is None or (_when(e["created"]) or t) > t]
     return out

@@ -243,6 +243,16 @@ thresholds:
     down_wait_s: 60
     boot_timeout_s: 900
     poll_interval_s: 10
+    dc_cycle_all:          # TC-RAS-reset-008A: DC power cycle every compute over Redfish (BMC creds as tests/bmc)
+      batch_size: 6        # trays powered off/on together; a batch finishes before the next starts (18 = all at once)
+      off_timeout_s: 120   # PowerState Off after ForceOff
+      off_hold_s: 40       # stay off before On (an On while the host still powers down is ignored)
+      on_timeout_s: 90     # PowerState On after one On request
+      on_attempts: 3       # On requests before giving up
+      boot_timeout_s: 1200 # SSH back after power on
+      poll_interval_s: 10
+      load_amdgpu: true    # modprobe amdgpu after boot (blacklisted at boot on g02-g17)
+      active_timeout_s: 300  # every GPU ACTIVE after the datapath reset
   datapath:
     parallel_computes: true                 # in-domain jobs on all trays at once
     parallel_pairs: false                   # cross-domain pairs one at a time

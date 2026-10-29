@@ -11,14 +11,11 @@ import pytest
 
 from helios.afmctl import Afmctl
 from helios.compute import bmc_cmd, render
-from helios.datapath import use_sudo
+from helios.datapath import DATAPATH_RESET, reset_tray, reset_tray_problem, use_sudo
 from helios.preflight import _gpu_users
 from helios.rack import fan_out
-from helios.wait import wait_until
 
 pytestmark = pytest.mark.l1
-
-DATAPATH_RESET = "afmctl reset device --datapath"
 
 
 @pytest.mark.healthcheck("blocker")
@@ -38,37 +35,14 @@ def test_datapath_reset_every_tray(computes, inventory, checks, record_property,
     interval = float(inventory.th("health.datapath_reset.poll_interval_s", 10))
     cmd = inventory.cmd("ras.datapath_reset", DATAPATH_RESET)
 
-    def one(c):
-        out = {}
-        if load and not c.run("lsmod | grep -q '^amdgpu '", timeout=30).ok:
-            r = c.run("modprobe amdgpu", sudo=True, timeout=300)
-            out["amdgpu"] = "loaded" if r.ok else f"modprobe failed rc={r.rc} {r.tail()!r}"
-            if not r.ok:
-                return out
-        r = c.run(render(cmd, name=c.name), sudo=True, timeout=300)
-        out["reset"] = "ok" if r.ok else f"rc={r.rc} {r.tail()!r}"
-        if not r.ok:
-            return out
-
-        def active():
-            devs = Afmctl(c, timeout=60).devices()
-            return devs if devs and len(devs) >= (c.gpus or 1) and all(d.config_phase == "ACTIVE" for d in devs) else None
-        ok, devs = wait_until(active, timeout, interval, what=f"{c.name} GPUs ACTIVE after the datapath reset")
-        out["active"] = "all" if ok else "not all within %.0fs" % timeout
-        return out
-
     res = {}
-    for c, out, exc in fan_out(one, computes):
+    for c, out, exc in fan_out(lambda c: reset_tray(c, cmd, load, timeout, interval), computes):
         if exc:
             checks.fail(f"{c.name}: datapath reset failed: {type(exc).__name__}: {str(exc)[:160]}")
             continue
         res[c.name] = out
-        if str(out.get("amdgpu", "loaded")) != "loaded":
-            checks.fail(f"{c.name}: amdgpu not loaded: {out['amdgpu']}")
-        elif out.get("reset") != "ok":
-            checks.fail(f"{c.name}: {cmd}: {out.get('reset')}")
-        else:
-            checks.check(out.get("active") == "all", f"{c.name}: GPUs {out.get('active')} ACTIVE after the reset")
+        problem = reset_tray_problem(out, cmd)
+        checks.check(problem is None, f"{c.name}: {problem}")
     record_property("datapath_reset", res)
     checks.assert_all()
 

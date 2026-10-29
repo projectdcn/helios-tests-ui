@@ -451,6 +451,13 @@ and title.
   TransferBench + RCCL; OS reboot, DC cycle (BMC) and AC cycle (PDU) of one
   node, then a datapath reset of the rest and cross-domain traffic.
   Not yet covered: 005/006 and 010…017, which need AFM's vPOD and reconfigure API.
+* **TC-RAS-reset-008A, DC power cycle of every compute.** Over each tray's BMC
+  (Redfish, the BMC credentials of `tests/bmc`): all logins are checked first
+  (nothing is cycled if one fails), then `batch_size` trays at a time get
+  ForceOff, wait for Off, a hold, On (re-sent if the BMC ignored it); each tray
+  must answer SSH with a new boot id, then amdgpu is loaded, the datapath reset
+  and every GPU ACTIVE (as HC-013). The BMC's DC power events are recorded.
+  `thresholds.ras.dc_cycle_all`. AFM is not judged: run the health check after.
 * **TC-CTL-139…150, GPU metrics exporter.** Container up and port 5000
   bound (started with your `docker run` template if absent), HTTP 200 in
   Prometheus format, per-GPU power, temperature, utilization and VRAM

@@ -1373,3 +1373,10 @@ cases:
   category: afm
   origin: AMD tracking sheet 2026-10-26
   tracking_id: TC-AFM-L1-7
+# DC power cycle of every compute tray over Redfish (tests/ras/test_dc_cycle_all.py) - added 29 Oct 2026
+- id: TC-RAS-reset-008A
+  level: L2
+  title: 'DC power cycle every compute tray through its BMC (Redfish ForceOff -> Off -> On, in batches); each tray
+    returns over SSH with a new boot id, amdgpu loaded, datapath reset and every GPU ACTIVE'
+  category: ras-reset
+  origin: added 2026-10-29

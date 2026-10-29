@@ -69,6 +69,47 @@ def _workers(inventory, key: str, n: int, default: bool) -> int:
     return n if inventory.th(f"datapath.{key}", default) else 1
 
 
+# ------------------------------------------------------------------ tray datapath reset (HC-013, after a power cycle)
+DATAPATH_RESET = "afmctl reset device --datapath"
+
+
+def reset_tray(c, cmd: str = DATAPATH_RESET, load_amdgpu: bool = True, active_timeout: float = 300,
+               interval: float = 10) -> dict:
+    """Bring one tray's datapath up: modprobe amdgpu when it is not loaded (amdgpu is blacklisted at boot on
+    g02-g17, so every rebooted tray needs it), run ``cmd`` (the datapath reset) and wait until every GPU is ACTIVE.
+    Returns {"amdgpu": "loaded" | why, "reset": "ok" | why, "active": "all" | why}; stops at the first failure."""
+    from .afmctl import Afmctl
+    from .wait import wait_until
+    out: dict = {}
+    if load_amdgpu and not c.run("lsmod | grep -q '^amdgpu '", timeout=30).ok:
+        r = c.run("modprobe amdgpu", sudo=True, timeout=300)
+        out["amdgpu"] = "loaded" if r.ok else f"modprobe failed rc={r.rc} {r.tail()!r}"
+        if not r.ok:
+            return out
+    r = c.run(render(cmd, name=c.name), sudo=True, timeout=300)
+    out["reset"] = "ok" if r.ok else f"rc={r.rc} {r.tail()!r}"
+    if not r.ok:
+        return out
+
+    def active():
+        devs = Afmctl(c, timeout=60).devices()
+        return devs if devs and len(devs) >= (c.gpus or 1) and all(d.config_phase == "ACTIVE" for d in devs) else None
+    ok, _ = wait_until(active, active_timeout, interval, what=f"{c.name} GPUs ACTIVE after the datapath reset")
+    out["active"] = "all" if ok else "not all within %.0fs" % active_timeout
+    return out
+
+
+def reset_tray_problem(out: dict, cmd: str = DATAPATH_RESET) -> str | None:
+    """The failure in a reset_tray() result, None when the tray came back."""
+    if str(out.get("amdgpu", "loaded")) != "loaded":
+        return f"amdgpu not loaded: {out['amdgpu']}"
+    if out.get("reset") != "ok":
+        return f"{cmd}: {out.get('reset')}"
+    if out.get("active") != "all":
+        return f"GPUs {out.get('active')} ACTIVE after the reset"
+    return None
+
+
 # ------------------------------------------------------------------ L2 ping
 
 def _l2_ping_afmctl(computes, inventory, checks: Checks, evidence: list | None = None) -> int:
