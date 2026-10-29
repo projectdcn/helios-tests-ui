@@ -286,13 +286,13 @@ Read-only gate to run before every disruptive batch, after each one, and wheneve
   HC-001..006 (SSH, BMC power, GPUs ACTIVE, other GPU workload, GPU ECC / kernel hardware errors, tray resources) and
   HC-007..011 (leftover helios-* AFM objects, critical AFM events, controller restarts, tray versions, hardware
   inventory + compute<->switch links). HC-005 counts corrected CPU machine-check events without failing on them.
-- HC-013, on by default (`--no-datapath-reset` / GUI: untick "Reset the datapath before the L2 ping" for a fully
-  read-only check), runs right before the first datapath case (TC-AFM-001 L2 ping; TransferBench is not part of the
+- HC-013, on by default and not disruptive (`--no-datapath-reset` / GUI: untick "Reset the datapath before the L2
+  ping" for a fully read-only check), runs whenever it is selected - in the health check and in normal
+  (non-disruptive) runs alike - right before the first datapath case (TC-AFM-001 L2 ping; TransferBench is not part of the
   health check): `modprobe amdgpu` on a tray where it is not loaded (a rebooted tray: amdgpu is blacklisted at boot,
   `thresholds.health.datapath_reset.load_amdgpu`), then `commands.ras.datapath_reset` (`afmctl reset device
-  --datapath`) on every tray, and a wait until every GPU is ACTIVE again (`active_timeout_s`, 300). A blocker; it
-  briefly disturbs traffic. The checks before it see the rack as it was, the datapath pre-flight and the L2 ping the
-  freshly reset rack.
+  --datapath`) on every tray, and a wait until every GPU is ACTIVE again (`active_timeout_s`, 300). A blocker. The
+  checks before it see the rack as it was, the datapath pre-flight and the L2 ping the freshly reset rack.
 - In the workbook: rows HC-000…HC-011 (Origin "Added - helios-tests (15 Oct 2026)", Scope "Health check (…)"), and
   column M "Health check" = Blocker / Warning on all 48 cases (`tools/select_cases.py --health Blocker,Warning`).
 - `testplan/health-known.yaml`: g02-g17 issues already reported to AMD, accepted with `--known` (shown as KNOWN).

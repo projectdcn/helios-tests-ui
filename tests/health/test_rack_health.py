@@ -1,6 +1,6 @@
 """HC-001..HC-006, HC-013 - health-only checks of the full-rack health check (helios/healthcheck.py, tools/rack_health.py).
 
-Read-only (HC-013, the optional datapath reset, only with --datapath-reset), SSH only (plus the optional BMC power query from the runner). Thresholds under ``thresholds.health``.
+Read-only (HC-013, the datapath reset, runs when selected; --no-datapath-reset skips it), SSH only (plus the optional BMC power query from the runner). Thresholds under ``thresholds.health``.
 """
 from __future__ import annotations
 
@@ -24,15 +24,15 @@ DATAPATH_RESET = "afmctl reset device --datapath"
 @pytest.mark.healthcheck("blocker")
 @pytest.mark.tc("HC-013")
 def test_datapath_reset_every_tray(computes, inventory, checks, record_property, pytestconfig):
-    """Datapath reset before the L2 ping / traffic cases of the health check (rack_health.py does it unless
-    ``--no-datapath-reset``; the GUI's "Reset the datapath before L2 ping / traffic", ticked by default): on every
-    tray load amdgpu when it is not loaded (a rebooted tray: amdgpu is blacklisted at boot) - thresholds
+    """Datapath reset before the L2 ping / traffic cases (health check and normal runs alike; not disruptive): on
+    every tray load amdgpu when it is not loaded (a rebooted tray: amdgpu is blacklisted at boot) - thresholds
     ``health.datapath_reset.load_amdgpu`` (true) - then ``commands.ras.datapath_reset`` (afmctl reset device --datapath)
-    and wait until every GPU is ACTIVE again (``health.datapath_reset.active_timeout_s``, 300 s). Briefly disturbs
-    traffic. Runs right before the first datapath case (helios/pytest_plugin.py), so the datapath pre-flight, L2 ping
-    and traffic see the reset rack and the checks before it the rack as it was."""
+    and wait until every GPU is ACTIVE again (``health.datapath_reset.active_timeout_s``, 300 s). Runs whenever it is
+    selected (``--no-datapath-reset`` / the GUI health box unticked skips it), right before the first datapath case
+    (helios/pytest_plugin.py), so the datapath pre-flight, L2 ping and traffic see the reset rack and the checks
+    before it the rack as it was."""
     if not pytestconfig.getoption("--datapath-reset"):
-        pytest.skip("datapath reset not requested (pytest --datapath-reset; rack_health.py does it unless --no-datapath-reset)")
+        pytest.skip("datapath reset turned off (--no-datapath-reset)")
     load = inventory.th("health.datapath_reset.load_amdgpu", True)
     timeout = float(inventory.th("health.datapath_reset.active_timeout_s", 300))
     interval = float(inventory.th("health.datapath_reset.poll_interval_s", 10))

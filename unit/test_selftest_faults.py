@@ -194,7 +194,8 @@ FAULTS = {
     # ---- RAS
     "datapath_reset_fails": (lambda d: _edit_rule(d, "afmctl reset", rc=1, stderr="reset failed"),
                              {"TC-RAS-reset-001", "TC-RAS-reset-002", "TC-RAS-reset-003", "TC-RAS-reset-004",
-                              "TC-RAS-reset-007", "TC-RAS-reset-008", "TC-RAS-reset-009"}),
+                              "TC-RAS-reset-007", "TC-RAS-reset-008", "TC-RAS-reset-009",
+                              "HC-013"}),   # HC-013 runs whenever selected (not opt-in) and resets every tray
     "node_never_returns": (lambda d: _edit_rule(d, "^true$", rc=255),
                            {"TC-BUG-021", "HC-001", *GATED_TRAFFIC}),  # same SSH probe; pre-flight + health check see nodes down
     # ---- metrics exporter
@@ -238,7 +239,7 @@ FAULTS = {
                               "TC-RAS-reset-008", "TC-RAS-reset-009", "TC-SWH-037T"}),
     # one bad tray: the pre-flight excludes c2 - single-tray cases run on c1 as PARTIAL, two-tray cases are BLOCKED
     "gpu_not_active": (lambda d: _edit(d / "afmctl_device_c2.json", r'"config_phase": "ACTIVE"', '"config_phase": "PROVIDER"'),
-                       {"TC-BU-011", "HC-003", *GATED_TRAFFIC}),
+                       {"TC-BU-011", "HC-003", "HC-013", *GATED_TRAFFIC}),   # HC-013 waits for every GPU ACTIVE
     "ping_no_summary": (lambda d: _edit(d / "afmctl_ping.txt", r"Summary:(.|\n)*", "ERR - Failed to start ping test\n"),
                         {"TC-AFM-001", "TC-HW-017", *GATED_TRAFFIC}),
     # MR3 failure mode: one plane silently drops a port's ingress while links/LLDP/VLAN look healthy

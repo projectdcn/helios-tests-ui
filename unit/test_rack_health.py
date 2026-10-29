@@ -264,11 +264,12 @@ def _hc013(tmp_path, *extra, mutate=None, tc="HC-013,HC-003"):
     return [(r["tc_id"], r["outcome"]) for r in rows], p.stdout
 
 
-def test_hc013_datapath_reset_only_on_request_and_first(tmp_path):
-    """HC-013 skips unless --datapath-reset; with it, it runs before every other case and passes on the healthy fake."""
-    order, _ = _hc013(tmp_path / "a")
+def test_hc013_datapath_reset_by_default_and_first(tmp_path):
+    """HC-013 runs whenever selected (not disruptive) and only --no-datapath-reset skips it; it runs before every
+    other case and passes on the healthy fake."""
+    order, _ = _hc013(tmp_path / "a", "--no-datapath-reset")
     assert dict(order)["HC-013"] == "skipped"
-    order, out = _hc013(tmp_path / "b", "--datapath-reset")
+    order, out = _hc013(tmp_path / "b")
     assert order[0] == ("HC-013", "passed"), out[-2000:]
     assert dict(order)["HC-003"] == "passed"
 

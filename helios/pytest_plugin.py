@@ -1,6 +1,7 @@
 """pytest plugin: inventory loading, per-node parametrization, test-plan ID tracking, results export."""
 from __future__ import annotations
 
+import argparse
 import csv
 import json
 import logging
@@ -41,9 +42,9 @@ def pytest_addoption(parser):
     g.addoption("--computes", default=None, help="comma-separated subset of compute names")
     g.addoption("--allow-disruptive", action="store_true", help="run tests marked disruptive")
     g.addoption("--run-manual", action="store_true", help="run tests marked manual")
-    g.addoption("--datapath-reset", action="store_true",
-                help="health check: reset every tray's datapath (afmctl reset device --datapath) right before the "
-                     "L2 ping / traffic cases (HC-013); tools/rack_health.py passes it unless --no-datapath-reset")
+    g.addoption("--datapath-reset", action=argparse.BooleanOptionalAction, default=True,
+                help="HC-013, when selected: reset every tray's datapath (afmctl reset device --datapath) right before "
+                     "the L2 ping / traffic cases (default on; --no-datapath-reset skips it)")
     g.addoption("--results-dir", default=None,
                 help="folder that gets this run's <rack>-<timestamp>/ results folder (default results/runs/<rack>)")
 
