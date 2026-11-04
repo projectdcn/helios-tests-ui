@@ -65,6 +65,9 @@ BAD_HOSTNAMES = {"", "sonic", "localhost", "localhost.localdomain"}
 RFC1123 = re.compile(r"^(?=.{1,253}$)([a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)(\.[a-zA-Z0-9]([a-zA-Z0-9-]{0,61}"
                      r"[a-zA-Z0-9])?)*$")
 AUTH_FAIL_RE = r"authentication failure|Failed password|Invalid user"
+# sudo logs every command it runs, so the grep for AUTH_FAIL_RE would otherwise count itself
+SUDO_COMMAND_RE = re.compile(r"\bsudo(\[\d+\])?:.*\bCOMMAND=")
+FRU_JSON_PATHS = ("/etc/sonic/fru.json", "/etc/afm/agent/fru.json")
 SAVED = "/etc/sonic/config_db{}.json"
 
 
@@ -820,11 +823,15 @@ def _find_key(obj, key):
 @pytest.mark.l2
 @pytest.mark.tc("TC-SWH-079")
 def test_fru_json_valid(switch, inventory, record_property):
-    """The switch FRU JSON (switch.fru_json_path, else afm.fru_json_path, else /etc/sonic/fru.json) is valid JSON
-    with num-mac-address == switch.fru_num_mac (512)."""
-    path = inventory.th("switch.fru_json_path") or inventory.th("afm.fru_json_path") or "/etc/sonic/fru.json"
-    r = switch.run(f"cat {shlex.quote(path)}", sudo=True, timeout=60)
-    assert r.ok, f"{switch.name}: cannot read {path}: {r.tail()!r}"
+    """The switch FRU JSON (switch.fru_json_path, else afm.fru_json_path, else the first of /etc/sonic/fru.json and
+    /etc/afm/agent/fru.json that exists) is valid JSON with num-mac-address == switch.fru_num_mac (512)."""
+    path = inventory.th("switch.fru_json_path") or inventory.th("afm.fru_json_path")
+    candidates = [path] if path else list(FRU_JSON_PATHS)
+    for path in candidates:
+        r = switch.run(f"cat {shlex.quote(path)}", sudo=True, timeout=60)
+        if r.ok:
+            break
+    assert r.ok, f"{switch.name}: cannot read {' or '.join(candidates)}: {r.tail()!r}"
     try:
         fru = json.loads(r.stdout)
     except ValueError as e:
@@ -842,7 +849,8 @@ def test_auth_log_clean(switch, inventory, record_property):
     (switch.auth_fail_ignore regexes excepted)."""
     assert switch.run("test -s /var/log/auth.log", sudo=True, timeout=30).ok, f"{switch.name}: /var/log/auth.log missing or empty"
     out = switch.run(f"grep -hE {shlex.quote(AUTH_FAIL_RE)} /var/log/auth.log", sudo=True, timeout=120).stdout
-    fails = [ln for ln in out.splitlines() if ln.strip() and not _ignored(ln, inventory.th("switch.auth_fail_ignore"))]
+    fails = [ln for ln in out.splitlines() if ln.strip() and not SUDO_COMMAND_RE.search(ln)
+             and not _ignored(ln, inventory.th("switch.auth_fail_ignore"))]
     record_property("auth_failures", fails[-20:])
     limit = int(inventory.th("switch.auth_fail_max", 0))
     assert len(fails) <= limit, f"{switch.name}: {len(fails)} authentication failure(s) (> {limit}): {fails[-3:]}"
