@@ -20,11 +20,13 @@ FP = f"{CLUSTER}/failoverpolicies"
 # ------------------------------------------------------------------ RBAC
 
 def _write_probes(t: str, tag: str) -> list[tuple]:
-    """(group, method, path, body) - one harmless create per group, cleaned up with _probe_cleanup."""
+    """(group, method, path, body) - one harmless create per group, cleaned up with _probe_cleanup. The auth probe
+    role grants only auth/read: AFM refuses (403) a role granting permissions its creator does not hold
+    (privilege-escalation guard), so a cluster permission would make an auth-only user's write fail."""
     return [
         ("auth", "POST", f"{AUTH}/tenant/{t}/roles", {"kind": "Role", "api-version": "v1",
                                                      "meta": {"name": f"{tag}-probe", "tenant": t},
-                                                     "spec": {"permissions": [perm("cluster", "Pod", ("read",))]}}),
+                                                     "spec": {"permissions": [perm("auth", actions=("read",))]}}),
         ("monitoring", "POST", f"{MONITORING}/alertPolicies", {"meta": {"name": f"{tag}-probe"},
                                                               "spec": {"resource": "Event", "enable": False}}),
         ("cluster", "POST", FP, {"meta": {"name": f"{tag}-probe"},
