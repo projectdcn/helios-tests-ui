@@ -428,6 +428,24 @@ def perm(group: str, kind: str = "_All_", actions=("all-actions",)) -> dict:
     return {"resource-group": group, "resource-kind": kind, "resource-namespace": "_All_", "actions": list(actions)}
 
 
+def read_denied(resp, allowed_names=()) -> bool:
+    """Whether an unauthorized read was denied. AFM answers a single-object GET with 403 but a list GET with 200
+    and the unauthorized objects filtered out (g02-g17, 5 Nov 2026), so a list counts as denied when it holds no
+    object except ``allowed_names`` (e.g. the user itself in the users list)."""
+    if resp.status_code == 403:
+        return True
+    if resp.status_code != 200:
+        return False
+    try:
+        body = resp.json()
+    except ValueError:
+        return False
+    if not isinstance(body, dict) or "list-meta" not in body and "items" not in body:
+        return False
+    names = {(i.get("meta") or {}).get("name") for i in body.get("items") or []}
+    return names <= set(allowed_names)
+
+
 def new_password() -> str:
     """Throw-away password for test users (mixed character classes for the AFM password policy)."""
     return f"Hx{secrets.token_urlsafe(10)}#9a"

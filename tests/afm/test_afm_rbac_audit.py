@@ -12,7 +12,7 @@ from datetime import datetime, timezone
 import pytest
 
 from afm_helpers import CLUSTER_FIELDS, PORT_FIELDS, PORT_KNOWN_NO_SERIES, _metric
-from helios.afm import AUTH, CLUSTER, MONITORING, perm, wait_for
+from helios.afm import AUTH, CLUSTER, MONITORING, perm, read_denied, wait_for
 
 FP = f"{CLUSTER}/failoverpolicies"
 
@@ -40,14 +40,19 @@ def _probe_cleanup(t: str, group: str, tag: str) -> str:
 
 
 def _reads(afm, user, t, granted: set, checks, record_property):
-    """Record what the user can READ in groups it was not granted. MR3 (AICC-797) answers 200 for any
-    authenticated user; inventory afm.rbac_reads_denied: true asserts 403 instead (strict read RBAC)."""
+    """Reads of groups the user was not granted must be denied: AFM answers list GETs with 200 and the
+    unauthorized objects filtered out (the users list keeps the user itself), so a 403 or a list without foreign
+    objects counts as denied (helios.afm.read_denied)."""
     probes = {"auth": f"{AUTH}/tenant/{t}/users", "monitoring": f"{MONITORING}/alerts", "cluster": f"{CLUSTER}/computenodes"}
-    got = {g: user.raw("GET", path, relogin=False).status_code for g, path in probes.items() if g not in granted}
+    got = {}
+    for g, path in probes.items():
+        if g in granted:
+            continue
+        r = user.raw("GET", path, relogin=False)
+        denied = read_denied(r, (user.username,))
+        got[g] = f"HTTP {r.status_code}, {'denied' if denied else 'DATA RETURNED'}"
+        checks.check(denied, f"read of ungranted group {g} ({path}) -> HTTP {r.status_code} with data, expected denied")
     record_property("reads_of_ungranted_groups", got)
-    if afm.cfg.get("rbac_reads_denied"):     # inventory afm.rbac_reads_denied: true
-        for g, code in got.items():
-            checks.check(code == 403, f"read of ungranted group {g} -> HTTP {code}, expected 403")
 
 
 def _cluster_role_rbac(afm, make_user, uniq, checks, record_property):
@@ -106,8 +111,7 @@ def test_cluster_role_bad_login(afm, make_user, uniq, checks, record_property):
 @pytest.mark.tc("TC-CTL-046")
 def test_auth_monitoring_workload_roles(afm, make_user, uniq, checks, record_property):
     """One user per group role (auth, monitoring, workload): each can write (create) in its own group and is
-    denied writes (403) in the others; reads of other groups are recorded (strict with
-    inventory afm.rbac_reads_denied)."""
+    denied writes (403) in the others; reads of other groups are denied (403 or a filtered, empty list)."""
     t = afm.tenant
     seen = {}
     for group in ("auth", "monitoring", "workload"):

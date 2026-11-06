@@ -12,7 +12,7 @@ from datetime import datetime, timedelta, timezone
 
 import pytest
 
-from helios.afm import AUTH, CLUSTER, MONITORING, ev_names, perm
+from helios.afm import AUTH, CLUSTER, MONITORING, ev_names, perm, read_denied
 
 AP = f"{MONITORING}/alertPolicies"
 FP = f"{CLUSTER}/failoverpolicies"
@@ -148,7 +148,8 @@ def test_watch_bearer_token(afm_cfg, inventory, checks, record_property):
 @pytest.mark.tc("TC-CTL-117")
 def test_group_role_crud(afm, make_user, uniq, checks, record_property):
     """A role granting several groups (cluster FailoverPolicy, monitoring AlertPolicy): the user can create and
-    delete both kinds, reads computes only if granted (403 here), and cannot create users (auth group)."""
+    delete both kinds, cannot read computes (the list comes back filtered/empty or 403, a single ComputeNode GET is
+    403) and cannot create users (auth group)."""
     t = afm.tenant
     u, _ = make_user(uniq("grp"), [perm("cluster", "FailoverPolicy"), perm("monitoring", "AlertPolicy")])
     fp, ap = uniq("fp"), uniq("ap")
@@ -158,7 +159,12 @@ def test_group_role_crud(afm, make_user, uniq, checks, record_property):
     got["delete FailoverPolicy"] = u.raw("DELETE", f"{FP}/{fp}").status_code
     got["create AlertPolicy"] = u.raw("POST", AP, _ap(ap)).status_code
     got["delete AlertPolicy"] = u.raw("DELETE", f"{AP}/{ap}").status_code
-    got["read ComputeNode"] = u.raw("GET", f"{CLUSTER}/computenodes", relogin=False).status_code
+    lst = u.raw("GET", f"{CLUSTER}/computenodes", relogin=False)
+    list_denied = read_denied(lst)
+    got["list ComputeNodes"] = f"HTTP {lst.status_code}, {'denied' if list_denied else 'DATA RETURNED'}"
+    node = next((c["meta"]["name"] for c in afm.computes()), None)
+    if node:
+        got["read ComputeNode"] = u.raw("GET", f"{CLUSTER}/computenodes/{node}", relogin=False).status_code
     got["create User"] = u.raw("POST", f"{AUTH}/tenant/{t}/users",
                                {"meta": {"name": uniq("x"), "tenant": t}, "spec": {"type": "local", "password": "Xx1#abcdefgh"}},
                                relogin=False).status_code
@@ -167,8 +173,10 @@ def test_group_role_crud(afm, make_user, uniq, checks, record_property):
     record_property("matrix", got)
     for k in ("create FailoverPolicy", "delete FailoverPolicy", "create AlertPolicy", "delete AlertPolicy"):
         checks.check(got[k] in (200, 201, 204), f"{k} -> HTTP {got[k]}, expected allowed")
+    checks.check(list_denied, f"list ComputeNodes -> {got['list ComputeNodes']}, expected 403 or an empty list")
     for k in ("read ComputeNode", "create User"):
-        checks.check(got[k] == 403, f"{k} -> HTTP {got[k]}, expected 403")
+        if k in got:
+            checks.check(got[k] == 403, f"{k} -> HTTP {got[k]}, expected 403")
     checks.assert_all()
 
 
