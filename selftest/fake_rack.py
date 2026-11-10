@@ -1011,8 +1011,8 @@ class FakeSwitchTransport:
                                                  "oper_status": "up" if sim.link_state(i, ns, p) == "up" else "down",
                                                  "flap_count": str(fc), **({"last_down_time": last} if last else {})}))
                 res = self._res(cmd, "\n".join(lines) + "\n")
-            elif (m := re.fullmatch(r"show interfaces counters(?: (fec-stats))? -n (asic\d+)(?: -d all)?", cmd)) \
-                    and (sim.layout or sim.port_err):
+            elif (m := re.fullmatch(r"show interfaces counters(?: (fec-stats))? -n (asic\d+)(?: -d all)?(?: (?:-i )?(Ethernet\d+))?",
+                                    cmd)) and (sim.layout or (sim.port_err and not m.group(3))):
                 # per-port counters (the replay lists the self-test rack's ports, not a recorded layout's): traffic
                 # grows a little at every read, errors only where vrack /links errors injected a growth per read
                 fec, ns = m.group(1), m.group(2)
@@ -1020,6 +1020,8 @@ class FakeSwitchTransport:
                 n = sim.ctr_reads[k] = sim.ctr_reads.get(k, 0) + 1
                 rows = []
                 for x, (p, _e) in enumerate(sim.all_ports(i, ns)):
+                    if m.group(3) and p != m.group(3):    # one port (-i EthernetN): what the guide models ask, 10 Nov
+                        continue
                     up = p in sim.ports(i, ns) and sim.link_state(i, ns, p) == "up"
                     err = sim.port_err.get((i, ns, p)) or {}
                     if fec:
@@ -1045,16 +1047,42 @@ class FakeSwitchTransport:
                 rows += [["100", f"02:00:00:FF:{k:02X}:00", "Ethernet0", "Static"] for k in range(sim.stale_macs)]
                 res = self._res(cmd, _table(["No.", "Vlan", "MacAddress", "Port", "Type"],
                                             [[str(n + 1)] + r for n, r in enumerate(rows)]) + f"Total number of entries {len(rows)}\n")
-            elif m := re.fullmatch(r"show interfaces status -n (asic\d+) -d all", cmd):
+            elif (m := re.fullmatch(r"show interfaces status -n (asic\d+)(?: -d all)?(?: (Ethernet\d+))?", cmd)) \
+                    and (sim.layout or (cmd.endswith(" -d all") and not m.group(2))):   # new forms: layout racks only
+                # 10 Nov: without '-d all' and with one port too - 23 guide steps of the 9 Nov gates had 'no rule matches'
                 ns_ = m.group(1)
                 cabled = sim.ports(i, ns_)
                 rows = [[p, e["lanes"], e["speed"], str(sim.mtu.get((i, ns_, p), 9100)), "N/A" if sim.layout else "rs",
                          e["alias"], sim.port_vlan(i, ns_, p) if p in cabled else "routed",
                          sim.link_state(i, ns_, p) if p in cabled else "down", sim.admin(i, ns_, p),
                          "N/A" if sim.layout else "OSFP", "N/A"]
-                        for p, e in sim.all_ports(i, ns_)]
+                        for p, e in sim.all_ports(i, ns_) if not m.group(2) or p == m.group(2)]
                 res = self._res(cmd, _table(["Interface", "Lanes", "Speed", "MTU", "FEC", "Alias", "Vlan", "Oper",
                                              "Admin", "Type", "Asym PFC"], rows))
+            elif (m := re.fullmatch(r"show interfaces counters fec-histogram -n (asic\d+) (Ethernet\d+)", cmd)) and sim.layout:
+                # 10 Nov: the 9 Nov gates' guide models asked this 91 times ('no rule matches'); the real one's format
+                ns_, p = m.group(1), m.group(2)
+                up = p in sim.ports(i, ns_) and sim.link_state(i, ns_, p) == "up"
+                k = (i, ns_, "hist")
+                n = sim.ctr_reads[k] = sim.ctr_reads.get(k, 0) + 1
+                deep = (sim.port_err.get((i, ns_, p)) or {}).get("fec_uncorr", 0)
+                bins = ([24754838865339 + n * 827667246, 1599 + n * 40, 45 + n, 1] + [0] * 12) if up else [0] * 16
+                if up and deep:
+                    bins[13] = deep * n
+                res = self._res(cmd, "Symbol Errors Per Codeword         Codewords\n----------------------------  --------------\n"
+                                + "".join(f"{'BIN' + str(b):<28}  {v:>14}\n" for b, v in enumerate(bins)))
+            elif (m := re.fullmatch(r"show interfaces flap -n (asic\d+)(?: (Ethernet\d+))?", cmd)) and sim.layout:
+                ns_ = m.group(1)
+                rows = []
+                for p, _e in sim.all_ports(i, ns_):
+                    if m.group(2) and p != m.group(2):
+                        continue
+                    fc, last = sim.flap_count.get((i, ns_, p), (0, ""))
+                    oper = "Up" if p in sim.ports(i, ns_) and sim.link_state(i, ns_, p) == "up" else "Down"
+                    rows.append([p, str(fc), "Up" if sim.admin(i, ns_, p) == "up" else "Down", oper,
+                                 last or "Never", "Never" if not fc else (last or "Never")])
+                res = self._res(cmd, _table(["Interface", "Flap Count", "Admin", "Oper", "Link Down TimeStamp(UTC)",
+                                             "Link Up TimeStamp(UTC)"], rows))
             elif m := re.fullmatch(r"config interface -n (asic\d+) mtu (Ethernet\d+) (\d+)", cmd):
                 key, mtu = (i, m.group(1), m.group(2)), int(m.group(3))
                 if key[2] in sim.ports(i, key[1]):
@@ -1478,6 +1506,37 @@ class FakeComputeTransport:
                 out, rc = "", 1 if "mch_mock_driver_missing" in st.f else 0
             elif c == "date -u '+%Y-%m-%d %H:%M:%S'":
                 out = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S") + "\n"
+            elif c in ("lspci -d 1002:", "lspci -k -d 1002:") and sim.layout:   # the self-test racks keep their replay
+                # 10 Nov: the 9 Nov gates' models read the tray's GPUs with lspci (125 steps 'no rule matches'); real
+                # format - the function is .0 here, .1 in afmctl
+                drv = "mch_mock_driver_missing" not in st.f
+                out = "".join(f"{self.bdf(g)[:-1]}0 Processing accelerators: Advanced Micro Devices, Inc. [AMD/ATI] Device 75c1\n"
+                              + ("\tSubsystem: Advanced Micro Devices, Inc. [AMD/ATI] Device 75c1\n"
+                                 + ("\tKernel driver in use: amdgpu\n" if drv else "") + "\tKernel modules: amdgpu\n"
+                                 if "-k" in c else "") for g in range(4))
+            elif re.fullmatch(r"journalctl -k -p (?:err|3|warning|4) (?:-n \d+ )?(?:-b )?--no-pager", c) and sim.layout:
+                out = "-- No entries --\n"
+            elif c == "uname -r" and sim.layout:
+                out = "7.0.0-38-generic\n"
+            elif c == "dkms status" and sim.layout:
+                out = ("amdgpu/7.1.0-2410483.26.04, 7.0.0-38-generic, x86_64: installed (Original modules exist)\n"
+                       "ifoe-drv/0.2.10.1000, 7.0.0-38-generic, x86_64: installed\n")
+            elif c == "cat /proc/cmdline" and sim.layout:
+                out = ("BOOT_IMAGE=/boot/vmlinuz-7.0.0-38-generic root=UUID=00000000-0000-0000-0000-000000000000 ro "
+                       "panic=0 nowatchdog amdgpu.noretry=1 iommu=pt\n")
+            elif (m := re.fullmatch(r"afmctl show port statistics fec -b (\S+)(?: -s \d+)? -p (\d+)", c)) and sim.layout:
+                gs = list(self._gpus(m.group(1)))
+                if not gs:
+                    out, rc = f"({m.group(1)}) : ERR - No such device\n", 1
+                else:
+                    g, pid = gs[0], int(m.group(2))
+                    up = self._port_up(g, pid) if pid in sim.gpu_pids() else False
+                    bins = [24282438232249, 85121855, 330527, 428, 7] + [0] * 11 if up else [0] * 16
+                    out = (f"BDF                           : {self.bdf(g)}\n  Station id                  : {int(pid) // 2}\n"
+                           f"  Port id                     : {pid}\n  Statistics:\n"
+                           f"    {'Bit error rate':<46}: 0\n    {'Link up count':<46}: {1 if up else 0}\n"
+                           + "".join(f"    {'FEC CW symbol errs ' + str(b):<46}: {v}\n" for b, v in enumerate(bins))
+                           + f"    {'FEC CW symbol errs uncorrectable':<46}: 0\n    {'Rx drop total':<46}: 0\n  ---\n")
             elif m := re.fullmatch(r"journalctl -t afmctl --since '([^']+) UTC' --no-pager", c):
                 since = datetime.strptime(m.group(1), "%Y-%m-%d %H:%M:%S").replace(tzinfo=timezone.utc).timestamp()
                 out = "".join(f"afmctl[{4242 + n}]: phase=end sub_cmd=reset status=0\n"

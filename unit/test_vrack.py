@@ -124,3 +124,37 @@ def test_state_survives_a_restart_with_the_clock_shifted(tmp_path, monkeypatch):
     st2, why = vrack.load_state(f, meta)
     assert "restored" in why and st2.sim.links_down[(0, "asic0", "Ethernet0")]["since"] == 10.0   # 50 - 40
     assert vrack.load_state(f, {**meta, "qos": "lossless"})[0] is None
+
+
+def test_g02_g17_answers_what_the_guide_models_ask():
+    """10 Nov: in the 9 Nov gates' guided evals ~1/3 of the steps were 'no rule matches' (rc 127) - fec-histogram,
+    lspci, journalctl -k, status / counters of one port, afmctl FEC statistics - and the cases failed on that."""
+    import sys
+    sys.path.insert(0, str(ROOT / "selftest"))
+    from fake_afm import State
+    from fake_rack import FakeComputeTransport, FakeSwitchTransport
+    from helios.inventory import Host
+    from helios.transport import ReplayTransport
+
+    st = State(set(), {"switches": 6, "computes": 18, "layout": "g02-g17"})
+    rp = str(ROOT / "selftest" / "replay")
+    hs = Host(name="st1", host=st.sim.switch_ips[0], role="switch")
+    sw = FakeSwitchTransport(hs, st, 0, ReplayTransport(hs, rp))
+    port = next(p for p, _e in st.sim.all_ports(0, "asic0") if p in st.sim.ports(0, "asic0"))
+    for cmd, want in ((f"show interfaces counters fec-histogram -n asic0 {port}", "BIN15"),
+                      (f"show interfaces status -n asic0 {port}", port), ("show interfaces status -n asic0", port),
+                      (f"show interfaces counters -n asic0 -i {port}", port), (f"show interfaces counters fec-stats -n asic0 {port}", port),
+                      (f"show interfaces flap -n asic0 {port}", "Flap Count")):
+        r = sw.run(cmd)
+        assert r.rc == 0 and want in r.stdout, (cmd, r.rc, r.stdout[:200], r.stderr[:200])
+    one = sw.run(f"show interfaces status -n asic0 {port}").stdout
+    assert one.count("Ethernet") == 2                    # the port's own row (name and alias), not the chip's 257
+    hc = Host(name="ct01", host="127.0.0.1", role="compute")
+    ct = FakeComputeTransport(hc, st, 0, ReplayTransport(hc, rp))
+    for cmd, want in (("lspci -d 1002:", "0001:01:00.0 Processing accelerators"), ("lspci -k -d 1002:", "Kernel driver in use: amdgpu"),
+                      ("journalctl -k -p err -n 200 --no-pager", "No entries"), ("uname -r", "7.0.0-38-generic"),
+                      ("dkms status", "amdgpu/"), ("cat /proc/cmdline", "BOOT_IMAGE"),
+                      ("afmctl show port statistics fec -b 0001:01:00.1 -p 5", "FEC CW symbol errs 15")):
+        r = ct.run(cmd)
+        assert r.rc == 0 and want in r.stdout, (cmd, r.rc, r.stdout[:200], r.stderr[:200])
+    assert ct.run("afmctl show port statistics fec -b 0001:01:00.0 -p 5").rc == 1    # .0 is lspci's: No such device
