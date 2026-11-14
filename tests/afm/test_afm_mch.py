@@ -17,7 +17,7 @@ import pytest
 
 from helios.afm import CLUSTER, MONITORING, conditions_ok
 from helios.afm_ops import CN, SN, TERMINAL
-from helios.afmctl import mac_stat_ports
+from helios.afmctl import link_status, mac_stat_ports
 
 pytestmark = [pytest.mark.l3]
 
@@ -162,7 +162,7 @@ def test_mi450_numbering(ops, mch, checks, record_property):
 
 def _disabled(row) -> bool:
     sp, st = row.get("spec") or {}, row.get("status") or {}
-    return "disable" in str(sp.get("admin_state", "")).lower() or "disable" in str(st.get("link_status", "")).lower()
+    return "disable" in str(sp.get("admin_state", "")).lower() or "disable" in link_status(st.get("link_status")).lower()
 
 
 @pytest.mark.tc("TC-MCH-009")
@@ -189,7 +189,7 @@ def test_used_up_unused_disabled(ops, mch, checks, record_property):
     for name, tray in _trays(ops):
         for bdf in _bdfs(ops, tray):
             rows = {int(p["id"]): p for p in _port_rows(ops, tray, bdf)}
-            down = [p for p in mch["used"] if (rows.get(p, {}).get("status") or {}).get("link_status") != "LINK_UP"]
+            down = [p for p in mch["used"] if link_status((rows.get(p, {}).get("status") or {}).get("link_status")) != "LINK_UP"]
             checks.check(not down, f"{tray.name}/{bdf}: used ports not LINK_UP: {down[:6]}")
             wrong = [p for p in set(rows) - mch["used"] if not _disabled(rows[p])]
             checks.check(not wrong, f"{tray.name}/{bdf}: unused ports reported down/up instead of disabled: {wrong[:6]}")

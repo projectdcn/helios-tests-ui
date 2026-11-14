@@ -34,6 +34,19 @@ class Port:
         return self.admin_state.lower() == "enabled" and "UP" in self.link_status.upper()
 
 
+def link_status(value) -> str:
+    """afmctl ``status.link_status`` as one string. afmctl 0.0.1-85 sends "LINK_UP"; 0.0.1-101 sends a list of flags
+    (["LINK_UP"], or ["NO_PHY_LINK", "PCS_NO_BLOCK_LOCK", ...] on a down link). LINK_UP / LINK_DISABLED win when present;
+    other flag lists are joined with ","."""
+    if isinstance(value, (list, tuple)):
+        flags = [str(v) for v in value if v is not None]
+        for key in ("LINK_UP", "LINK_DISABLED"):
+            if key in flags:
+                return key
+        return ",".join(flags)
+    return "" if value is None else str(value)
+
+
 def _devices(doc) -> list[dict]:
     # the log's own parsers accept device|devices|list
     if isinstance(doc, list):
@@ -61,7 +74,7 @@ def parse_show_port(text: str) -> dict[str, list[Port]]:
             if pid is None:
                 continue
             ports.append(Port(int(pid), str((p.get("spec") or {}).get("admin_state", "")),
-                              str((p.get("status") or {}).get("link_status", ""))))
+                              link_status((p.get("status") or {}).get("link_status"))))
         out[str(d.get("bdf", ""))] = sorted(ports, key=lambda x: x.id)
     return out
 

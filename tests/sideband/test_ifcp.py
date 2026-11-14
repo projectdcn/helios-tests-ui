@@ -13,7 +13,7 @@ from __future__ import annotations
 
 import pytest
 
-from helios.afmctl import Afmctl, check_acc_renumbering, parse_port_description
+from helios.afmctl import Afmctl, check_acc_renumbering, link_status, parse_port_description
 from helios.rack import fan_out
 
 pytestmark = pytest.mark.l2
@@ -39,7 +39,7 @@ def _collect(computes, checks):
 
 
 def _up(p) -> bool:
-    return (p.get("spec") or {}).get("admin_state") == "enabled" and "UP" in str((p.get("status") or {}).get("link_status", "")).upper()
+    return (p.get("spec") or {}).get("admin_state") == "enabled" and link_status((p.get("status") or {}).get("link_status")) == "LINK_UP"
 
 
 @pytest.mark.tc("TC-BU-003")

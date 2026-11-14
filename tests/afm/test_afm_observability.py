@@ -14,6 +14,7 @@ from collections import Counter
 import pytest
 
 from helios.afm import conditions_ok
+from helios.afmctl import link_status
 
 pytestmark = [pytest.mark.l2]
 
@@ -363,7 +364,7 @@ def _port_status_mismatches(ops, seen: dict) -> list[str]:
                 if ap is None:
                     continue
                 seen["gpu"] |= set(ap)
-                link, st = (p.get("status") or {}).get("link_status"), ap.get("oper-state")
+                link, st = link_status((p.get("status") or {}).get("link_status")), ap.get("oper-state")
                 ok = st == "PortDisabled" if link == "LINK_DISABLED" else (st == "PortReady") == (link == "LINK_UP")
                 if not ok:
                     out.append(f"{tray.name} {d.bdf} port {p.get('id')}: AFM {st}, afmctl {link}")

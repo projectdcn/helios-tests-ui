@@ -20,6 +20,7 @@ import time
 from typing import Any
 
 from .afm import CLUSTER, AfmClient, AfmError, conditions_ok, wait_for
+from .afmctl import link_status
 
 from .progress import action  # noqa: E402
 
@@ -628,7 +629,7 @@ class AfmOps:
                 st, sp = p.get("status") or {}, p.get("spec") or {}
                 i = st.get("ifcp") or {}
                 out[(d.bdf, int(p.get("id")))] = {
-                    "link": st.get("link_status"), "admin": sp.get("admin_state"), "ll_up": i.get("ll_up") == "yes",
+                    "link": link_status(st.get("link_status")), "admin": sp.get("admin_state"), "ll_up": i.get("ll_up") == "yes",
                     "peer_enabled": i.get("peer_enabled") == "yes",
                     "error": i.get("in_error") == "yes" or i.get("peer_in_error") == "yes"}
         return out

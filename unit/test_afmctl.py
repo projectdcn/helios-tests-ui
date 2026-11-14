@@ -35,6 +35,33 @@ def test_parse_show_device_and_port():
     assert [(p.id, p.up) for p in ports["0001:01:00.1"]] == [(0, False), (1, True), (2, False)]
 
 
+def test_link_status_list_format_afmctl_101():
+    """afmctl 0.0.1-101 sends link_status as a list of flags; ifcp_up / port checks must still see LINK_UP."""
+    from helios.afm_ops import AfmOps
+
+    ports = parse_show_port('{"device":[{"bdf":"0001:01:00.1","port":['
+                            '{"id":"5","spec":{"admin_state":"enabled"},"status":{"link_status":["LINK_UP"]}},'
+                            '{"id":"23","spec":{"admin_state":"enabled"},"status":{"link_status":'
+                            '["NO_PHY_LINK","PCS_NO_BLOCK_LOCK"]}}]}]}')
+    assert [(p.id, p.up, p.link_status) for p in ports["0001:01:00.1"]] == [
+        (5, True, "LINK_UP"), (23, False, "NO_PHY_LINK,PCS_NO_BLOCK_LOCK")]
+
+    class FakeAfmctl:
+        def devices(self):
+            return parse_show_device('{"device":[{"bdf":"0001:01:00.1","spec":{"accelerator_id":"1"}}]}')
+
+        def ports_raw(self, bdf):
+            ok = {"ll_up": "yes", "peer_enabled": "yes", "in_error": "no", "peer_in_error": "no"}
+            return [{"id": "5", "spec": {"admin_state": "enabled"}, "status": {"link_status": ["LINK_UP"], "ifcp": ok}},
+                    {"id": "6", "spec": {"admin_state": "enabled"}, "status": {"link_status": "LINK_UP", "ifcp": ok}},
+                    {"id": "23", "spec": {"admin_state": "enabled"},
+                     "status": {"link_status": ["NO_PHY_LINK"], "ifcp": ok}}]
+
+    ops = AfmOps.__new__(AfmOps)
+    ops.afmctl = lambda tray: FakeAfmctl()
+    assert ops.ifcp_up(None) == {("0001:01:00.1", 5), ("0001:01:00.1", 6)}
+
+
 def test_l2_ping_plan_uses_discovered_ids_and_common_up_ports():
     inv = load_inventory(ROOT / "selftest" / "inventory.yaml")
     rack = Rack(inv)
