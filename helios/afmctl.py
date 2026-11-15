@@ -131,10 +131,12 @@ def parse_ping(text: str) -> PingResult:
         res.non_ifoe_fail = int(m.group(1))
     for line in text.splitlines():
         toks = line.split()
-        # per-port table: col2 = port, cols 4/6/8 = Request/Response/Non-IFoE result
-        if len(toks) >= 8 and toks[0].isdigit() and toks[1].isdigit() and "FAIL" in (toks[3], toks[5], toks[7]):
+        # per-port table: col1 = accel id, col2 = port, then the Request/Response/Non-IFoE results ("n/n PASS|FAIL");
+        # afmctl 0.0.1-101 (g02-g17 15 Nov) added a VC column before them, so the results are found by their words
+        verdicts = [t for t in toks[2:] if t in ("PASS", "FAIL")]
+        if len(toks) >= 8 and toks[0].isdigit() and toks[1].isdigit() and len(verdicts) == 3 and "FAIL" in verdicts:
             res.failed_ports.append(toks[1])
-            res.port_checks[toks[1]] = [c for c, v in zip(_CHECKS, (toks[3], toks[5], toks[7])) if v == "FAIL"]
+            res.port_checks[toks[1]] = [c for c, v in zip(_CHECKS, verdicts) if v == "FAIL"]
     return res
 
 

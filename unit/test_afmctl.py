@@ -136,6 +136,26 @@ def test_parse_ping_reads_all_three_checks_per_port():
     assert r.describe() == "IFoE request 1/36, response 0/36, non-IFoE 1/36 failed; ports 25 (non-IFoE); 26 (req)"
 
 
+G02_VC_101 = """0001:01:00.1                   : Ping test results (1 pings per port pair)
+Accel ID    Port#     VC    IFoE Req        IFoE Rsp        Non-IFoE    
+--------    -----     --    --------        ---------       --------    
+13          28        0     1/1 PASS        1/1 PASS        1/1 PASS    
+13          29        0     0/1 FAIL        0/1 FAIL        1/1 PASS    
+13          30        0     1/1 PASS        1/1 PASS        1/1 PASS    
+
+Summary:
+  IFoE Request    : 35/36 PASS, 1/36 fail (2.78% loss)
+  IFoE Response   : 35/36 PASS, 1/36 fail (2.78% loss)
+  Non-IFoE        : 36/36 PASS, 0/36 fail (0.00% loss)
+"""
+
+
+def test_parse_ping_with_vc_column_afmctl_101():
+    """afmctl 0.0.1-101 (g02-g17 15 Nov) adds a VC column: the failed port is still found (the pre-flight re-pings it)."""
+    r = parse_ping(G02_VC_101)
+    assert r.failed_ports == ["29"] and r.port_checks == {"29": ["req", "rsp"]} and not r.ok
+
+
 def test_a_non_ifoe_only_failure_is_not_ok():
     """The request count alone would call this a pass."""
     text = G02_1337.replace("8           26        0/1 FAIL", "8           26        1/1 PASS").replace(
