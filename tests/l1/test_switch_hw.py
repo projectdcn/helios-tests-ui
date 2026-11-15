@@ -13,6 +13,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 import pytest
 
+from helios.afmctl import parse_port_description
 from helios.parsers import parse_speed_gbps, to_float
 
 pytestmark = pytest.mark.l1
@@ -506,8 +507,11 @@ def _expected_up(inventory, switch):
         return None
     if spec == "described":
         # a port with a CONFIG_DB cabling description ('To ComputeTray Slot../GPU..[..]/Port..') is cabled;
-        # on MR3 these are exactly the GPU-facing ports, unused ports carry no description
-        described = {p for ns in switch.namespaces() for p, d in switch.port_descriptions(ns).items() if d}
+        # on MR3 these are exactly the GPU-facing ports, unused ports carry no description. SONiC 1112.3-BD.9
+        # (g02-g17, 14 Nov) also describes the empty front-panel cages ('Front-panel 100G SW0 QSFP port') - a
+        # label, not cabling, so only cabling descriptions count
+        described = {p for ns in switch.namespaces() for p, d in switch.port_descriptions(ns).items()
+                     if parse_port_description(d)}
         return lambda port: port in described
     if isinstance(spec, str):
         rx = re.compile(spec)
