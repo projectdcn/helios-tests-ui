@@ -465,11 +465,15 @@ def test_restart_sideband_agent(ops, afm_ready, checks, record_property):
     same = sorted(s for s in pids0 if pids1.get(s) == pids0[s])
     record_property("pids", {"before": pids0, "after": pids1})
     checks.check(not same, f"sb-node-agent of slot(s) {same} kept its PID: not restarted")
+    def connected(sl):
+        # re-located on every poll: right after the restart the agents start on one switch and AFM then spreads them
+        # over the switches again, so a slot can move while it is being waited for (g02-g17 15 Nov: slot 0 moved
+        # to st2 80 s after the restart; polling the switch it left never saw it connect)
+        h, _ = ops.slot_host(sl)
+        return h is not None and (h.agent_api(13000 + sl, "/api/health") or {}).get("is-connected") is True
     for slot in slots:
-        sw, _ = ops.slot_host(slot)
-        if sw is not None:
-            checks.check(ops.wait(lambda s=sw, sl=slot: (s.agent_api(13000 + sl, "/api/health") or {}).get("is-connected") is True,
-                                  120, 10), f"slot {slot} agent not connected")
+        checks.check(ops.wait(lambda sl=slot: connected(sl), float(ops.th("agent_connect_s", 240)), 10),
+                     f"slot {slot} agent not connected")
     _rack_ok(ops, checks)
     checks.assert_all()
 

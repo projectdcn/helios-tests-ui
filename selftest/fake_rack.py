@@ -202,6 +202,9 @@ class Sim:
         if "no_rebalance" in self.f and slot in self.homed and self.homed[slot] in live:
             return self.homed[slot]
         pref = slot % self.n_sw
+        if "slot_moves_after_restart" in self.f and slot == 0 and live and \
+                time.monotonic() - self.last_agent_restart > 2:     # AFM spreads the agents out again (g02-g17 15 Nov)
+            return live[(live.index(pref) + 1) % len(live)] if pref in live else live[0]
         if pref in live or not live:
             return pref if self.agent_up[pref] else None
         self.homed[slot] = live[slot % len(live)]
@@ -699,7 +702,8 @@ class FakeSwitchTransport:
 
     def _ifcp_frames(self, ns, port, seconds: int) -> str:
         """tcpdump -e -tt -x output of a fabric port's IFCP keepalives (real rack, QFX5252 26 Oct): one frame each way
-        every 5 s while the session is up - switch->compute 802.1Q VLAN 0 priority 7 / 0x88b6, compute->switch 0xeb87."""
+        every 5 s while the session is up - switch->compute 802.1Q VLAN 0 priority 7 / 0x88b6; compute->switch in the
+        same 802.1Q / 0x88b6 format (real rack since ~Nov 2026; earlier 0xeb87). First line: the port's MAC."""
         sim = self.st.sim
         cab = sim.ports(self.i, ns).get(port)
         if cab is None:
@@ -715,9 +719,9 @@ class FakeSwitchTransport:
         for k in range(seconds // 5):
             out += [f"{t0 + 5 * k:.6f} {sw_mac} > {gpu_mac}, ethertype 802.1Q (0x8100), length 25: vlan 0, p 7, "
                     "ethertype Unknown (0x88b6), ", "\t0x0000:  0102 0304 0506 0708 090a 0b"]
-            out += [f"{t0 + 5 * k + 0.5:.6f} {gpu_mac} > {sw_mac}, ethertype Unknown (0xeb87), length 56: ",
-                    "\t0x0000:  0102 0304 0506 0708 090a 0b0c 0d0e 0f10"]
-        return "\n".join(out) + ("\n" if out else "")
+            out += [f"{t0 + 5 * k + 0.5:.6f} {gpu_mac} > {sw_mac}, ethertype 802.1Q (0x8100), length 60: vlan 0, p 7, "
+                    "ethertype Unknown (0x88b6), ", "\t0x0000:  0102 0304 0506 0708 090a 0b0c 0d0e 0f10"]
+        return sw_mac + "\n" + "\n".join(out) + ("\n" if out else "")
 
     def run(self, cmd: str, *, timeout: float = 120, sudo: bool = False, env=None) -> CmdResult:
         st, sim, i = self.st, self.st.sim, self.i
@@ -791,9 +795,10 @@ class FakeSwitchTransport:
                         if "no_healthy_event" not in st.f:
                             sim.event("computenode_healthy", f"compute {sim.cname(slot)} healthy")
                     res = self._res(cmd)
-            elif m := re.fullmatch(r"(?:ip netns exec (asic\d+) )?timeout (\d+) tcpdump -i (Ethernet\d+) -nn -e -tt -x "
-                                   r"'ether proto 0xeb87 or \(vlan and ether proto 0x88b6\)'", cmd):
-                res = self._res(cmd, self._ifcp_frames(m.group(1) or "asic0", m.group(3), int(m.group(2))), 124)
+            elif m := re.fullmatch(r"(?:ip netns exec (asic\d+) )?cat /sys/class/net/(Ethernet\d+)/address 2>/dev/null; "
+                                   r"(?:ip netns exec asic\d+ )?timeout (\d+) tcpdump -i Ethernet\d+ -nn -e -tt -x "
+                                   r"'ether proto 0xeb87 or ether proto 0x88b6 or \(vlan and ether proto 0x88b6\)'", cmd):
+                res = self._res(cmd, self._ifcp_frames(m.group(1) or "asic0", m.group(2), int(m.group(3))), 124)
             elif cmd == "true":
                 res = self._res(cmd)
             elif cmd == "sonic-installer list":
@@ -940,8 +945,11 @@ class FakeSwitchTransport:
                 conn = (c is not None and c["status"]["admission-phase"] == "admitted") or slot not in sim.sb_pid \
                     or "control_path_kept" in st.f
                 conn = conn and not sim.disconnected
-                res = self._res(cmd, json.dumps({"is-connected": conn, "healthy": True}) if sim.agent_up[i] else "",
-                                0 if sim.agent_up[i] else 7)
+                if "slot_moves_after_restart" in st.f and slot == 0 and time.monotonic() - sim.last_agent_restart <= 2:
+                    conn = False                            # still starting on the switch it is about to leave
+                here = sim.agent_up[i] and (slot not in sim.sb_pid or sim.slot_host(slot) == i)   # else: refused
+                res = self._res(cmd, json.dumps({"is-connected": conn, "healthy": True}) if here else "",
+                                0 if here else 7)
         if res is None:
             return self.fallback.run(cmd, timeout=timeout, sudo=sudo, env=env)
         log.debug("[%s] $ %s", self.host.name, build_command(cmd, sudo, env))

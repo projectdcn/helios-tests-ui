@@ -361,3 +361,17 @@ def test_lifecycle_fault_detected(tmp_path, fault, tcs):
 def test_fault_detected(tmp_path, fault):
     verdicts = _run(tmp_path, fault, FAULTS[fault])
     assert {k for k, v in verdicts.items() if v == "FAIL"} == FAULTS[fault], verdicts
+
+
+def test_agent_restart_follows_a_slot_that_moves(tmp_path):
+    """TC-AR-001: a slot's agent re-homed to another switch while it is waited for is looked up again, not reported
+    'not connected' from the switch it left (g02-g17 15 Nov)."""
+    verdicts = _run(tmp_path, "slot_moves_after_restart", {"TC-AR-001"}, inventory="inventory-afm3.yaml")
+    assert verdicts.get("TC-AR-001") == "PASS", verdicts
+
+
+def test_nonleader_restart_short_write_outage_is_tolerated(tmp_path):
+    """TC-AFM-AGGW-023: a write refused for a moment right after a non-leader restart (503 audit-etcd timeout) is
+    retried and bounded by write_recover_s, the case is about the watch stream (g02-g17 15 Nov)."""
+    verdicts = _run(tmp_path, "audit_503_after_restart", {"TC-AFM-AGGW-023"}, inventory="inventory-afm3.yaml")
+    assert verdicts.get("TC-AFM-AGGW-023") == "PASS", verdicts

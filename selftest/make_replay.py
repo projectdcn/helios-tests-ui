@@ -319,7 +319,7 @@ add("ip route show", "default via 10.0.0.254 dev eth0 metric 202\n10.0.0.0/24 de
     "src 10.0.0.11\n", name="ip_route.txt", host=SW)
 add("ping -c 5 -W 2 10.0.0.254", "5 packets transmitted, 5 received, 0% packet loss, time 4006ms\n",
     name="ping_gw.txt", host=SW)
-add("cat /etc/sonic/fru.json", _json.dumps({"fru": {"product-name": "HELIOS-SW-2ASIC", "num-mac-address": 512,
+add("cat /etc/sonic/fru.json", _json.dumps({"fru": {"product-name": "HELIOS-SW-2ASIC", "num-mac-address": 1024,
                                                     "base-mac-address": "AA:BB:CC:00:11:22"}}, indent=2),
     name="fru.json", host=SW)
 add("test -s /var/log/auth.log", "", host=SW)

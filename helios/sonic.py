@@ -209,8 +209,17 @@ class SonicSwitch:
                 procs = procs if procs is not None else self.container_processes(container)
                 if re.search(rf"(^|/){re.escape(prog)}(\s|$)", procs, re.M):
                     continue
+                # SONiC's radv start.sh does not start radvd (nor register it with supervisor) on a switch without
+                # VLAN interfaces - every g02-g17 switch (15 Nov) - though critical_processes still lists it
+                if container == "radv" and prog == "radvd" and not self.vlan_interfaces():
+                    continue
             down.append(f"{prog}:{status.get(prog, 'not running')}")
         return down
+
+    def vlan_interfaces(self) -> list[str]:
+        """CONFIG_DB VLAN_INTERFACE keys (host namespace)."""
+        out = self.run("sonic-db-cli CONFIG_DB keys 'VLAN_INTERFACE|*'", sudo=True, timeout=60).stdout
+        return [ln.strip() for ln in out.splitlines() if ln.strip()]
 
     def supervisor_status(self, container: str) -> dict[str, str]:
         # supervisorctl exits non-zero when anything isn't RUNNING; the table is still what we want.
@@ -492,8 +501,13 @@ class SonicSwitch:
     # -- IFCP on the wire (tests/sideband/test_ifcp_wire.py) --------------------
     # QFX5252 / g02-g17 (26 Oct 2026): IFCP frames reach the switch CPU on the fabric port's netdev in its ASIC
     # namespace. switch->compute: 802.1Q VLAN 0, PCP 7, inner ethertype 0x88b6; compute->switch: ethertype 0xeb87.
+    # Since ~Nov 2026 the compute answers in the switch's format (802.1Q VLAN 0, PCP 7, 0x88b6), so the direction
+    # is told by the source MAC (the port's own MAC = tx), not by the ethertype.
     IFCP_TX_ETHERTYPE, IFCP_RX_ETHERTYPE = "0x88b6", "0xeb87"
-    IFCP_FILTER = "ether proto 0xeb87 or (vlan and ether proto 0x88b6)"
+    _MAC_RE = re.compile(r"^([0-9a-f]{2}(?::[0-9a-f]{2}){5})$")
+    # the compute's 802.1Q frames arrive with the tag offloaded (VLAN acceleration), so "vlan and ..." misses them on
+    # ingress: match the bare ethertype as well
+    IFCP_FILTER = "ether proto 0xeb87 or ether proto 0x88b6 or (vlan and ether proto 0x88b6)"
     _FRAME_RE = re.compile(r"^(\d+\.\d+) (\S+) > (\S+), ethertype (.*?), length (\d+)")
 
     def ifcp_capture(self, port: str, ns: str | None, seconds: float) -> list[dict]:
@@ -501,21 +515,26 @@ class SonicSwitch:
         compute, 'rx'), src, dst, pcp (None when untagged), ethertype, length, payload (hex)}], in time order.
         Raises RuntimeError when tcpdump is missing or cannot open the port."""
         prefix = f"ip netns exec {ns} " if ns else ""
-        cmd = (f"{prefix}timeout {int(seconds)} tcpdump -i {shlex.quote(port)} -nn -e -tt -x "
-               f"{shlex.quote(self.IFCP_FILTER)}")
+        q = shlex.quote(port)
+        cmd = (f"{prefix}cat /sys/class/net/{q}/address 2>/dev/null; "
+               f"{prefix}timeout {int(seconds)} tcpdump -i {q} -nn -e -tt -x {shlex.quote(self.IFCP_FILTER)}")
         r = self.run(cmd, sudo=True, timeout=seconds + 60)
-        if r.rc not in (0, 124) and not r.stdout.strip():          # 124: stopped by timeout (normal)
+        lines = r.stdout.splitlines()
+        if r.rc not in (0, 124) and not any(self._FRAME_RE.match(ln) for ln in lines):  # 124: stopped by timeout
             raise RuntimeError(f"tcpdump on {port} failed rc={r.rc}: {r.tail()!r}")
+        own = next((m.group(1) for ln in lines if (m := self._MAC_RE.match(ln.strip().lower()))), "")
         frames: list[dict] = []
-        for line in r.stdout.splitlines():
+        for line in lines:
             m = self._FRAME_RE.match(line)
             if m:
                 types = re.findall(r"\((0x[0-9a-f]{4})\)", line)
                 pcp = re.search(r"vlan \d+, p (\d)", line)
                 et = types[-1] if types else ""
-                frames.append({"t": float(m.group(1)), "src": m.group(2).lower(), "dst": m.group(3).rstrip(",").lower(),
+                src = m.group(2).lower()
+                tx = src == own if own else et == self.IFCP_TX_ETHERTYPE
+                frames.append({"t": float(m.group(1)), "src": src, "dst": m.group(3).rstrip(",").lower(),
                                "pcp": int(pcp.group(1)) if pcp else None, "ethertype": et,
-                               "dir": "tx" if et == self.IFCP_TX_ETHERTYPE else "rx", "length": int(m.group(5)),
+                               "dir": "tx" if tx else "rx", "length": int(m.group(5)),
                                "payload": ""})
             elif frames and re.match(r"^\s+0x[0-9a-f]{4}:", line):
                 frames[-1]["payload"] += "".join(line.split()[1:])

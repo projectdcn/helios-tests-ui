@@ -235,6 +235,8 @@ class Handler(BaseHTTPRequestHandler):
         user = user or "admin"
         if "api_down_on_one_node" in st.f and not all(st.sim.ctrl_up.values()) and method != "GET":
             return self._err(503, "controller quorum degraded")
+        if "audit_503_after_restart" in st.f and method != "GET" and time.monotonic() - st.sim.last_ctrl_restart < 1:
+            return self._err(503, "Auditing failed: audit-etcd: etcdserver: request timed out")   # g02-g17 15 Nov
         if body is ValueError:
             return self._err(400, "invalid JSON body")
         with st.lock:

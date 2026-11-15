@@ -915,7 +915,7 @@
   rc: 0
   host: ^sw
   file: techsupport_list.txt
-- cmd: '^ip netns exec asic\d timeout \d+ tcpdump -i Ethernet\d+ -nn -e -tt -x '
+- cmd: '^ip netns exec asic\d cat /sys/class/net/Ethernet\d+/address 2>/dev/null; ip netns exec asic\d timeout \d+ tcpdump -i Ethernet\d+ -nn -e -tt -x '
   rc: 124
   host: ^sw
   file: ifcp_capture.txt

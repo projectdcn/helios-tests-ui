@@ -168,7 +168,8 @@ def assess(rack, computes, inventory, tools=(), min_computes: int = 1) -> Assess
 
     healthy = [c for c in computes if c.name not in out.excluded]
     if th("ping_probe", True) and healthy:
-        for name, msg in _ping_probe(healthy, float(th("ping_timeout_s", 200)), out.evidence):
+        for name, msg in _ping_probe(healthy, float(th("ping_timeout_s", 200)), out.evidence,
+                                     retries=int(th("ping_retries", 1))):
             out.excluded.setdefault(name, msg)
 
     window, max_rate = float(th("window_s", 5)), float(th("max_rate_pps", 100))
@@ -203,9 +204,11 @@ def run(rack, computes, inventory) -> list[str]:
     return a.problems + [m for m in a.excluded.values() if m not in a.problems]
 
 
-def _ping_probe(computes, timeout: float, evidence: list | None = None) -> list[tuple[str, str]]:
+def _ping_probe(computes, timeout: float, evidence: list | None = None, retries: int = 1) -> list[tuple[str, str]]:
     """One in-tray L2 ping per GPU (ring: GPU i -> GPU i+1) over all LINK_UP ports on both ends. Each failed
-    ping's command and afmctl output is appended to ``evidence``."""
+    ping's command and afmctl output is appended to ``evidence``. The ports that lost a frame are pinged again up to
+    ``retries`` times: the pre-flight keeps out broken trays, and a single sporadic drop (one frame per port, ~1 in
+    36 on g02-g17 since 28 Oct) that does not repeat is not one - the loss itself is what TC-NA-004 / E2E-009 test."""
     from .afmctl import ping_evidence
 
     def one(c):
@@ -225,6 +228,14 @@ def _ping_probe(computes, timeout: float, evidence: list | None = None) -> list[
             res, r = a.ping(d.bdf, dst.accel_id, common, timeout=timeout)
             if evidence is not None and (res.total is None or not res.ok):
                 evidence.append(ping_evidence(f"[probe] {c.name}/{d.bdf} -> acc {dst.accel_id}", r))
+            for k in range(retries):
+                lost = [int(p) for p in res.failed_ports if str(p).isdigit()]
+                if res.total is None or res.ok or not lost:
+                    break
+                res, r = a.ping(d.bdf, dst.accel_id, lost, timeout=timeout)
+                if evidence is not None:
+                    evidence.append(ping_evidence(f"[probe retry {k + 1}, ports {lost}] {c.name}/{d.bdf} -> acc "
+                                                  f"{dst.accel_id}: {'ok' if res.ok else 'lost again'}", r))
             if res.total is None:
                 fails.append(f"in-tray ping probe {c.name} GPU {d.bdf} (acc {d.accel_id}) -> acc {dst.accel_id}: "
                              f"no ping summary from afmctl (rc={r.rc})")

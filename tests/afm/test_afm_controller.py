@@ -230,7 +230,15 @@ def test_watch_survives_nonleader_restart(ops, afm_ready, uniq, cleanup, checks,
     ops.wait(lambda: _all_started(ops), 300, 10)
     name = uniq("ap")
     cleanup(f"{AP}/{name}")
-    ops.afm.post(AP, _ap(name))
+    # g02-g17 15 Nov: the first write right after the restart got HTTP 503 'Auditing failed ... audit-etcd ...
+    # request timed out' while etcd re-settled - measured and bounded as in AGGW-024, not a one-shot POST
+    outage = _write_after_started(ops, name, record_property)
+    if outage is None:
+        w.close()
+        pytest.fail(f"no write worked within {_WRITE_GIVE_UP_S:.0f} s after the non-leader restart (see write_errors)")
+    limit = float((ops.th("aggwatch", {}) or {}).get("write_recover_s", 30))
+    checks.check(outage <= limit, f"writes failed for {outage:.0f} s after a non-leader restart "
+                                  f"(limit {limit:.0f} s, thresholds.afm.aggwatch.write_recover_s)")
     w.collect(wait, lambda evs: name in ev_names(evs, "Created"))
     record_property("stream_closed", w.closed)
     checks.check(not w.closed, "stream closed by a non-leader restart")

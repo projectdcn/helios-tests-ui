@@ -403,7 +403,7 @@ FAULTS = {
     "only_default_route": (lambda d: _edit(d / "ip_route.txt", r"^10\.0\.0\.0/24 .*\n", ""), {"TC-SWH-077"}),
     "gateway_ping_loss": (lambda d: _edit(d / "ping_gw.txt", r"5 received, 0% packet loss", "3 received, 40% packet loss"),
                           {"TC-SWH-078"}),
-    "fru_mac_count": (lambda d: _edit(d / "fru.json", r'"num-mac-address": 512', '"num-mac-address": 256'), {"TC-SWH-079"}),
+    "fru_mac_count": (lambda d: _edit(d / "fru.json", r'"num-mac-address": 1024', '"num-mac-address": 512'), {"TC-SWH-079"}),
     "auth_failures": (lambda d: _edit_rule(d, "authentication\\ failure", rc=0, file=None,
                                            stdout="Oct 26 10:00:01 sw1 sshd[42]: Failed password for root from 10.9.9.9\n"),
                       {"TC-SWH-080"}),

@@ -111,19 +111,22 @@ def test_ifcp_egress_switch_to_compute(switch, inventory, capture, checks, recor
 
 @pytest.mark.tc("TC-041")
 def test_ifcp_ingress_compute_to_switch(switch, inventory, capture, checks, record_property):
-    """Every sampled port receives compute->switch IFCP frames (ifcp.rx_ethertype) from the GPU port the switch
-    sends to (rx source MAC == tx destination MAC)."""
+    """Every sampled port receives compute->switch IFCP frames from the GPU port the switch sends to (rx source MAC ==
+    tx destination MAC), in either compute format: ifcp.rx_ethertype (0xeb87, untagged) or the switch's own
+    802.1Q 0x88b6 (the compute answers in that format since ~Nov 2026)."""
     res, _ = capture
-    want_et = str(_th(inventory, "rx_ethertype", switch.IFCP_RX_ETHERTYPE)).lower()
+    want_et = {str(_th(inventory, "rx_ethertype", switch.IFCP_RX_ETHERTYPE)).lower(),
+               str(_th(inventory, "tx_ethertype", switch.IFCP_TX_ETHERTYPE)).lower()}
     out = {}
     for (ns, port), frames in res.items():
         where = f"{switch.name}/{ns}/{port}"
         rx = [f for f in frames if f["dir"] == "rx"]
         tx_dst = {f["dst"] for f in frames if f["dir"] == "tx"}
-        out[where] = {**_summary(frames), "src": sorted({f["src"] for f in rx})}
+        out[where] = {**_summary(frames), "src": sorted({f["src"] for f in rx}),
+                      "rx_ethertype": sorted({f["ethertype"] for f in rx})}
         if not checks.check(rx, f"{where}: no compute->switch IFCP frame captured"):
             continue
-        checks.check(all(f["ethertype"] == want_et for f in rx), f"{where}: ingress IFCP frames not {want_et}")
+        checks.check(all(f["ethertype"] in want_et for f in rx), f"{where}: ingress IFCP frames not {sorted(want_et)}")
         if tx_dst:
             stray = sorted({f["src"] for f in rx} - tx_dst)
             checks.check(not stray, f"{where}: ingress IFCP from {stray}, switch sends to {sorted(tx_dst)}")

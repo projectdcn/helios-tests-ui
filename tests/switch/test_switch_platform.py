@@ -824,7 +824,8 @@ def _find_key(obj, key):
 @pytest.mark.tc("TC-SWH-079")
 def test_fru_json_valid(switch, inventory, record_property):
     """The switch FRU JSON (switch.fru_json_path, else afm.fru_json_path, else the first of /etc/sonic/fru.json and
-    /etc/afm/agent/fru.json that exists) is valid JSON with num-mac-address == switch.fru_num_mac (512)."""
+    /etc/afm/agent/fru.json that exists) is valid JSON with num-mac-address == switch.fru_num_mac (1024: the test plan and the QFX5252 syseeprom of
+    every g02-g17 switch, 15 Nov)."""
     path = inventory.th("switch.fru_json_path") or inventory.th("afm.fru_json_path")
     candidates = [path] if path else list(FRU_JSON_PATHS)
     for path in candidates:
@@ -838,7 +839,7 @@ def test_fru_json_valid(switch, inventory, record_property):
         pytest.fail(f"{switch.name}: {path} is not valid JSON: {e}")
     n = _find_key(fru, "num-mac-address")
     record_property("num_mac_address", n)
-    want = int(inventory.th("switch.fru_num_mac", 512))
+    want = int(inventory.th("switch.fru_num_mac", 1024))
     assert n is not None and int(n) == want, f"{switch.name}: {path} num-mac-address {n}, expected {want}"
 
 
