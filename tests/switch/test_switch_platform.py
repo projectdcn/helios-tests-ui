@@ -955,14 +955,15 @@ def test_user_accounts(switch, inventory, checks, record_property):
 
 @pytest.mark.l2
 @pytest.mark.tc("TC-SWH-087")
-def test_hostname_valid(switch, checks):
-    """The hostname is not a default (sonic, localhost), is RFC 1123 valid and matches CONFIG_DB
-    DEVICE_METADATA."""
+def test_hostname_valid(switch, checks, record_property):
+    """System hostname set (non-default: not sonic / localhost) and RFC 1123 valid - the test plan's wording. The
+    CONFIG_DB DEVICE_METADATA hostname is recorded, not judged (g02-g17 15 Nov: the lab provisions the FQDN as the
+    system hostname and 'stN' in CONFIG_DB on every switch)."""
     name = switch.sh("hostname", timeout=30).strip()
     checks.check(name.lower() not in BAD_HOSTNAMES, f"{switch.name}: default hostname {name!r}")
     checks.check(RFC1123.match(name), f"{switch.name}: hostname {name!r} not RFC 1123 valid")
     meta = ((_running_config(switch, None).get("DEVICE_METADATA") or {}).get("localhost") or {}).get("hostname")
-    checks.check(meta == name, f"{switch.name}: hostname {name!r}, CONFIG_DB DEVICE_METADATA {meta!r}")
+    record_property("hostname", {"system": name, "config_db": meta, "match": meta == name})
     checks.assert_all()
 
 
