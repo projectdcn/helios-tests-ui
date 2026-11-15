@@ -132,6 +132,12 @@ def test_afm_health_fault_detected(tmp_path, fault, tc):
     assert {t for t, x in v.items() if x == "FAIL"} == {tc}, v
 
 
+def test_afm_health_quiet_rack_old_critical_event_passes(tmp_path):
+    """HC-008 counts its window back from the controller's clock, not from the newest event: a critical event 2h
+    ago on a rack quiet since then is outside the 60 min window."""
+    assert _afm_health(tmp_path, "stale_critical_event")["HC-008"] == "PASS"
+
+
 def test_rack_health_subset_run_judged_on_its_cases(tmp_path):
     """--tc limits the run; the verdict is judged on those cases only (not INCOMPLETE for the rest)."""
     r = subprocess.run([sys.executable, "tools/rack_health.py", "--inventory", "selftest/inventory.yaml",

@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import os
 from datetime import datetime, timedelta, timezone
+from email.utils import parsedate_to_datetime
 
 import pytest
 
@@ -111,6 +112,13 @@ def _ts(s: str) -> datetime | None:
         return None
 
 
+def _http_date(s: str) -> datetime | None:
+    try:
+        return parsedate_to_datetime(s).astimezone(timezone.utc) if s else None
+    except (TypeError, ValueError):
+        return None
+
+
 @pytest.mark.healthcheck("warn")
 @pytest.mark.tc("HC-008")
 def test_no_recent_critical_events(ops, inventory, checks, record_property):
@@ -126,7 +134,10 @@ def test_no_recent_critical_events(ops, inventory, checks, record_property):
     if newest is None:
         record_property("critical_events", {})
         return
-    since = newest - timedelta(minutes=window)
+    # anchor on the controller's own clock (HTTP Date of the events response) so a rack that has been quiet longer
+    # than the window passes; the newest event is only the fallback (it is the last disturbance on a quiet rack)
+    anchor = _http_date(getattr(getattr(ops, "afm", None), "last_date", "")) or newest
+    since = max(anchor, newest) - timedelta(minutes=window)
     prev = _ts(os.environ.get("HELIOS_HEALTH_SINCE", "").replace(" ", "T"))
     if prev is not None and prev < since:
         since = prev

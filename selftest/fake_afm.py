@@ -121,6 +121,12 @@ class State:
                                     "severity": "critical", "type": "vpod_configuration_failed",
                                     "message": "vPOD pod-1.system configuration failed",
                                     "object-ref": {"kind": "VPod", "name": "pod-1.system"}})
+        if "stale_critical_event" in faults:      # the last disturbance was 2h ago; the rack has been quiet since
+            old = (datetime.now(timezone.utc) - timedelta(hours=2)).strftime("%Y-%m-%dT%H:%M:%S.%fZ")
+            self.sim.events.append({"kind": "Event", "meta": {"name": "crit-old", "creation-time": old, "mod-time": old},
+                                    "severity": "critical", "type": "vpod_degraded",
+                                    "message": "vPod pod-1.system status changed to degraded",
+                                    "object-ref": {"kind": "VPod", "name": "pod-1.system"}})
         if "controller_restarted" in faults:      # afm-controller on the first switch restarted a minute ago
             self.sim.ctrl_started[0] = time.time() - 60
             self.sim.ctrl_restarts[0] += 1

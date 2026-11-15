@@ -66,6 +66,7 @@ class AfmClient:
             urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
         self._logged_in = False
         self.login_response: requests.Response | None = None
+        self.last_date: str = ""   # HTTP Date header of the last response: the controller's clock
 
     # ------------------------------------------------------------- auth
     def _secret(self, key: str) -> str | None:
@@ -129,6 +130,7 @@ class AfmClient:
         except requests.RequestException as e:
             log.debug("AFM< %s %s -> %s (%.2fs)", method, url, e, time.monotonic() - t0)
             raise
+        self.last_date = r.headers.get("Date", "") or self.last_date
         ctype = r.headers.get("Content-Type", "")
         text = r.text if "json" in ctype or "text" in ctype or len(r.content) < 2048 else \
             f"<{len(r.content)} bytes {ctype}>"
