@@ -1,0 +1,9 @@
+[WallClock Related]
+Running 10 iterations on 8 items.  Detected wall clock rate of 100000Khz = 0.01 usec per cycle
+ Rank GPU Iter Delta(cycles) Delta(usec) TS cost(usec) 
+  0    0  AVG        81.00        0.81      0.0300     
+  0    1  AVG        30.00        0.30      0.0300     
+  0    2  AVG        88.00        0.88      0.0300     
+  0    3  AVG        91.00        0.91      0.0300     
+Minimum Delta detected: 30.00 cycles (0.30 usec)
+Maximum Delta detected: 91.00 cycles (0.91 usec)

@@ -124,7 +124,9 @@ def test_healthy_rack_passes(tmp_path):
 
 
 # every test behind the datapath pre-flight gate (helios/preflight.py) - a broken fabric must block all of them
-GATED_TRAFFIC = {"SMOKE-RCCL-1N", "SMOKE-RCCL-MN", "TC-AFM-001", "TC-AFM-002", "TC-AFM-003", "TC-AFM-004",
+GATED_TRAFFIC = {"SMOKE-RCCL-1N", "TC-DP-001", "TC-DP-002", "TC-DP-003", "TC-DP-004", "TC-DP-005", "TC-DP-006",
+                 "TC-DP-007", "TC-DP-008", "TC-AFM-001",
+                 "TC-AFM-002", "TC-AFM-003", "TC-AFM-004",
                  "TC-AFM-005A", "TC-HW-008", "TC-HW-017", "TC-AFM-LU-001", "TC-RAS-reset-001", "TC-RAS-reset-002",
                  "TC-RAS-reset-003", "TC-RAS-reset-004", "TC-RAS-reset-007", "TC-RAS-reset-008", "TC-RAS-reset-009",
                  "TC-SWH-037T"}
@@ -231,12 +233,30 @@ FAULTS = {
                               {"TC-AFM-LU-001", "TC-HW-017"}),
     # ---- RCCL smoke / TransferBench multi-rank
     "smoke_collective_fails": (lambda d: _edit(d / "rccl_smoke.txt", r"(AllToAll\s+\|\s+P\s+\|\s+P\s+\|\s+)P", r"\1F"),
-                               {"SMOKE-RCCL-1N", "SMOKE-RCCL-MN"}),
+                               {"SMOKE-RCCL-1N", "TC-DP-001"}),
     "smoke_oom_skip": (lambda d: _edit(d / "rccl_smoke.txt", r"(Broadcast\s+\|\s+P\s+\|\s+P\s+\|\s+)P", r"\1S"),
-                       {"SMOKE-RCCL-1N", "SMOKE-RCCL-MN"}),
+                       {"SMOKE-RCCL-1N", "TC-DP-001"}),
     "tb_worker_rank_fails": (lambda d: _edit_rule(d, "TB_RANK=[1-9]", rc=1, stderr="connect to master failed"),
                              {"TC-AFM-003", "TC-RAS-reset-003", "TC-RAS-reset-004", "TC-RAS-reset-007",
-                              "TC-RAS-reset-008", "TC-RAS-reset-009", "TC-SWH-037T"}),
+                              "TC-RAS-reset-008", "TC-RAS-reset-009", "TC-SWH-037T",
+                              "TC-DP-002", "TC-DP-003", "TC-DP-005", "TC-DP-006", "TC-DP-007"}),
+    # ---- TransferBench presets (tests/l1/test_tb_fullrack.py)
+    "tb_smoketest_fails": (lambda d: _edit(d / "tb_smoketest.txt", r"(Copy \(D2H\)\s+\| ALL \|  02  \| )\*\*\*", r"\1**F"),
+                           {"TC-DP-004"}),
+    "tb_rank_config_mismatch": (lambda d: _edit(d / "tb_smoketest_mr.txt", r"^All tests passed$",
+                                                "  ERROR: cfg.gfx.unrollFactor) must be consistent across all ranks (Rank 1)"),
+                                {"TC-DP-005"}),
+    "tb_link_slow": (lambda d: _edit(d / "tb_podp2p.txt", r"(Rank 01    GPU 02 │  Rank 00    GPU 00 │ +)48\.20", r"\g<1> 9.40"),
+                     {"TC-DP-006"}),
+    "tb_link_missing": (lambda d: _edit(d / "tb_podp2p.txt", r"(Rank 00    GPU 03 │  Rank 01    GPU 01 │ +)48\.40", r"\g<1>  N/A"),
+                        {"TC-DP-006"}),
+    "tb_bisection_transfer_slow": (lambda d: _edit(d / "tb_bisection.txt", r"(Transfer 5    │ )410\.020", r"\g<1> 96.300"),
+                                   {"TC-DP-007"}),
+    # c2's XCC timestamp counters 6 ms apart (g02-g17 18 Nov, 5 trays): TC-DP-008 fails; 006/007 cannot judge c2's sends
+    "gpu_wallclock_skew": (lambda d: _edit(d / "tb_wallclock_c2.txt", r"Maximum Delta detected: [\d.]+ cycles \([\d.]+ usec\)",
+                                           "Maximum Delta detected: 686845.80 cycles (6868.46 usec)"),
+                           {"TC-DP-006", "TC-DP-007", "TC-DP-008"}),
+    "tb_poda2a_gpu_slow": (lambda d: _edit(d / "tb_poda2a.txt", r"(RTotal   │ +)31\.50", r"\g<1> 9.10"), {"TC-DP-003"}),
     # one bad tray: the pre-flight excludes c2 - single-tray cases run on c1 as PARTIAL, two-tray cases are BLOCKED
     "gpu_not_active": (lambda d: _edit(d / "afmctl_device_c2.json", r'"config_phase": "ACTIVE"', '"config_phase": "PROVIDER"'),
                        {"TC-BU-011", "HC-003", "HC-013", *GATED_TRAFFIC}),   # HC-013 waits for every GPU ACTIVE
@@ -277,8 +297,9 @@ FAULTS = {
     # the tools a datapath test declares are missing on every tray (g02-g17: TransferBench not installed on 7 trays):
     # the pre-flight excludes all trays for exactly those tests -> BLOCKED; tests without declared tools still run
     "tools_missing": (lambda d: _edit_rule(d, "^command -v", rc=1),
-                      {"TC-AFM-002", "TC-AFM-003", "TC-AFM-004", "TC-AFM-005A", "SMOKE-RCCL-1N", "SMOKE-RCCL-MN",
-                       "TC-SWH-037T"}),
+                      {"TC-AFM-002", "TC-AFM-003", "TC-AFM-004", "TC-AFM-005A", "SMOKE-RCCL-1N", "TC-DP-001",
+                       "TC-DP-002", "TC-DP-003", "TC-DP-004", "TC-DP-005", "TC-DP-006", "TC-DP-007",
+                       "TC-DP-008", "TC-SWH-037T"}),
     # ---- added switch cases (TC-SWH-037..042)
     "gpu_port_routed": (lambda d: _edit(d / "intf_status_asic0.txt", r"(Ethernet8\s+.*?)trunk ", r"\1routed"),
                         {"TC-SWH-037", "TC-SWH-091"}),

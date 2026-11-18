@@ -3,7 +3,8 @@ from __future__ import annotations
 import pytest
 
 from helios.parsers import (parse_bandwidth, parse_db_hash, parse_kv, parse_rccl, parse_size,
-                            parse_speed_gbps, parse_table, to_float)
+                            parse_speed_gbps, parse_table, parse_tb_poda2a, parse_tb_podp2p, parse_tb_smoketest,
+                            parse_tb_transfers, parse_tb_wallclock, to_float)
 from helios.transport import build_command
 
 # Verbatim-style SONiC output: right-aligned cells, a cell with spaces, preamble + trailer.
@@ -129,3 +130,76 @@ def test_parse_prometheus_and_http():
     assert s[1].labels["msg"] == 'say "hi"' and s[1].value != s[1].value  # NaN kept
     assert s[2].value == 1.0  # trailing timestamp ignored
     assert split_http_response("curl: (7) Failed to connect")[0] is None
+
+
+# TransferBench v1.70.02 smoketest across 18 trays (g02-g17, 17 Nov 2026), trimmed
+TB_SMOKE = """\
+Running tests on 72 GPUs total across 18 rank(s)
+Legend: *=Pass .=Skip F=Fail
+                                                      | GFX | GFX |
+| Name                      | GPU | Test | DMA | Test | 001 | 256 |
+|---------------------------|-----|------|-----|------|-----|-----|
+| Copy (H2D)                | ALL |  01  | *** |  09  | **. | .** |
+|---------------------------|-----|------|-----|------|-----|-----|
+| Copy (D2D) (Remote Read ) | ALL |  04  | *** |  12  | **. | .** |
+| Broadcast  (One to All)   | ALL |  05  | ... |  13  | ... | ... |
+All tests passed
+"""
+
+
+def test_parse_tb_smoketest():
+    r = parse_tb_smoketest(TB_SMOKE)
+    assert (r.gpus, r.ranks, r.passed, r.failed(), r.errors) == (72, 18, True, [], [])
+    assert list(r.rows) == ["Copy (H2D)", "Copy (D2D) (Remote Read )", "Broadcast  (One to All)"]
+    assert r.ran() == 14                       # '*' cells; skipped '.' not counted
+    bad = parse_tb_smoketest(TB_SMOKE.replace("|  09  | **. |", "|  09  | *F. |").replace(
+        "All tests passed", "  ERROR: cfg.gfx.unrollFactor) must be consistent across all ranks (Rank 15)"))
+    assert bad.failed() == ["Copy (H2D)"] and not bad.passed
+    assert bad.errors == ["ERROR: cfg.gfx.unrollFactor) must be consistent across all ranks (Rank 15)"]
+
+
+TB_POD = """\
+[268435456 bytes per Transfer] [GFX:8] [1 Read(s) 1 Write(s)] [MemType:default GPU] [NIC QueuePairs:0] [#Ranks:2]
+\u2502 SRC+EXE\\DST \u2502            \u2502 Rank 00         \u2502 Rank 01         \u2502  STotal  \u2502  Actual  \u2502
+\u2502     Rank 00 \u2502     GPU 00 \u2502     N/A    3.62 \u2502    3.64    3.65 \u2502    10.91 \u2502    10.80 \u2502
+\u2502             \u2502     GPU 01 \u2502    4.48     N/A \u2502    4.50    4.50 \u2502    13.48 \u2502    13.30 \u2502
+\u2502     Rank 01 \u2502     GPU 00 \u2502    7.66    7.67 \u2502     N/A    7.75 \u2502    23.08 \u2502    22.90 \u2502
+\u2502             \u2502     GPU 01 \u2502    8.99    8.89 \u2502    9.15     N/A \u2502    27.03 \u2502    26.80 \u2502
+\u2502             \u2502   RTotal   \u2502   21.13   20.18 \u2502   21.29   15.90 \u2502    74.50 \u2502    73.80 \u2502
+"""
+
+
+def test_parse_tb_poda2a():
+    p = parse_tb_poda2a(TB_POD)
+    assert p.ranks == 2 and (p.stotal, p.actual) == (74.50, 73.80)
+    assert p.src == [(0, 0, 10.91), (0, 1, 13.48), (1, 0, 23.08), (1, 1, 27.03)]
+    assert p.rx == [21.13, 20.18, 21.29, 15.90]
+    assert parse_tb_poda2a("ERROR: rank 3 failed").errors == ["ERROR: rank 3 failed"]
+
+
+def test_parse_tb_podp2p():
+    text = ("│ SRC Rank │ SRC MEM │ DST Rank │ DST MEM │ bw (GB/s) │\n"
+            "│  Rank 00 │  GPU 00 │  Rank 00 │  GPU 01 │       N/A │\n"
+            "│  Rank 00 │  GPU 00 │  Rank 01 │  GPU 02 │     48.21 │\n"
+            "|  Rank 01 |  GPU 03 |  Rank 00 |  GPU 00 |      7.50 |\n"
+            "│  Rank 00 │  GPU 00 │  Rank 01 │  GPU 02 │     96.40 │\n"    # bidirectional table later: ignored
+            "│  Rank 17    GPU 03 │  Rank 00    GPU 01 │    224.82 │\n")   # v1.70.02 layout (g02-g17, 17 Nov)
+    assert parse_tb_podp2p(text) == {(0, 0, 0, 1): None, (0, 0, 1, 2): 48.21, (1, 3, 0, 0): 7.5, (17, 3, 0, 1): 224.82}
+
+
+def test_parse_tb_transfers():
+    # TransferBench cmdline bisection, 18 ranks (g02-g17, 18 Nov 2026), trimmed
+    text = """\
+   Executor: Rank 0 GPU 00 │  63.171 GB/s │  16.997 ms │  1073741824 bytes │  45.052 GB/s (sum) [ctheliosr-rck-g02-g17-01]
+             Transfer 0    │  45.052 GB/s │  23.833 ms │  1073741824 bytes │ R0G0 -> R0G0:8 -> R9G0
+             Transfer 71   │  51.824 GB/s │  20.719 ms │  1073741824 bytes │ R17G3 -> R17G3:8 -> R8G3
+           Aggregate (CPU) │4458.837 GB/s │  17.338 ms │ 77309411328 bytes │ Overhead 0.138 ms
+"""
+    r = parse_tb_transfers(text)
+    assert r.transfers == {0: (0, 0, 9, 0, 45.052), 71: (17, 3, 8, 3, 51.824)} and r.aggregate_cpu == 4458.837
+
+
+def test_parse_tb_wallclock():
+    assert parse_tb_wallclock("Minimum Delta detected: 275399.60 cycles (2754.00 usec)\n"
+                              "Maximum Delta detected: 686845.80 cycles (6868.46 usec)\n") == 6868.46   # ct01, 18 Nov
+    assert parse_tb_wallclock("no figure") is None

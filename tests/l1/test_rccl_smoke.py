@@ -1,8 +1,9 @@
 """RcclSmokeTest (AMD helicop utils) — RCCL pass/fail sanity, single-node and multi-node.
 
-Not a test-plan case; a fast correctness gate to run before the rccl-tests
-bandwidth cases (TC-AFM-004/005A). Multi-node runs one process per GPU,
-bootstrapped with NCCL_COMM_ID, so it needs neither MPI nor node-to-node SSH.
+A fast correctness gate to run before the rccl-tests bandwidth cases (TC-AFM-004/005A). The single-node run is
+not a test-plan case (SMOKE-RCCL-1N); the multi-node run over all selected trays is plan case TC-DP-001 (added
+17 Nov 2026, testplan/added.yaml). Multi-node runs one process per GPU, bootstrapped with NCCL_COMM_ID (what
+LaunchSmokeTest.sh does), so it needs neither MPI nor node-to-node SSH.
 
 Inventory ``commands.rccl_smoke``: bin (path on the computes), env (prefix,
 e.g. "NCCL_LOG_DIR=/tmp/helios-rccl-logs"), args (e.g. "--size 1gb"),
@@ -62,7 +63,7 @@ def test_rccl_smoke_single_node(datapath_ready, computes, inventory, checks):
 
 
 @pytest.mark.datapath(tools=["rccl_smoke"], min_computes=2)
-@pytest.mark.tc("SMOKE-RCCL-MN")
+@pytest.mark.tc("TC-DP-001")
 def test_rccl_smoke_multi_node(datapath_ready, computes, inventory, checks):
     """One rank per GPU across all selected computes (cross-domain over the scale-up fabric)."""
     if len(computes) < 2:

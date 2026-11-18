@@ -7,6 +7,7 @@ failures in ``checks`` and returns the measurements; the caller asserts.
 from __future__ import annotations
 
 import ipaddress
+import random
 import re
 import socket
 import time
@@ -16,7 +17,7 @@ from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor, wait
 import pytest
 
 from .compute import render
-from .parsers import parse_bandwidth, parse_rccl, parse_size, parse_smoketest
+from .parsers import parse_bandwidth, parse_rccl, parse_size, parse_smoketest, parse_tb_wallclock
 from .rack import Checks, fan_out
 
 
@@ -315,6 +316,61 @@ def _tb_multirank(pairs, inventory, checks, regexes, kw, timeout, min_bw) -> dic
         _, r0, exc0 = res[0]
         out[tag] = _tb_check(tag, r0, exc0, regexes, min_bw, checks)
     return out
+
+
+def tb_binary(inventory) -> str:
+    """TransferBench path on the trays: commands.transferbench.bin, else taken from rank_cmd / in_domain."""
+    b = inventory.cmd("transferbench.bin")
+    if b:
+        return b
+    for key in ("transferbench.rank_cmd", "transferbench.in_domain"):
+        m = re.search(r"(\S*TransferBench)(?=\s)", inventory.cmd(key) or "")
+        if m:
+            return m.group(1)
+    pytest.skip("TransferBench path unknown: set commands.transferbench.bin")
+
+
+def transferbench_all_ranks(computes, inventory, checks: Checks, preset: str, tag: str, env: str = "",
+                            args: str = "", timeout: float | None = None):
+    """One TransferBench job over all ``computes``: one rank per tray, rank 0 on the first (what
+    /opt/TransferBench/LaunchTransferBench.sh does, without node-to-node SSH). Returns rank 0's CmdResult (it prints
+    the results) or None after recording the failure. The bootstrap port is random unless
+    commands.transferbench.fullrack_port is set - other users' periodic smoketests use the default 29500.
+    env: extra TransferBench settings (e.g. "PARALLEL_LVL=1 P2P_MODE=1"); args: after the preset (size, transfers)."""
+    binary = tb_binary(inventory)
+    port = int(inventory.cmd("transferbench.fullrack_port") or random.randint(30000, 39999))
+    master, n = addr(computes[0]), len(computes)
+    head = f"TB_MASTER_PORT={port} TB_NUM_RANKS={n} TB_RANK={{r}} TB_MASTER_ADDR={master} TB_SINGLE_LOG=1"
+    tail = " ".join(x for x in (env, binary, preset, args) if x)
+    jobs = [(c, f"{head.format(r=r)} {tail}") for r, c in enumerate(computes)]
+    res = run_ranks(jobs, float(timeout or inventory.cmd("transferbench.fullrack_timeout_s", 900)),
+                    sudo=use_sudo(inventory))
+    for node, r, exc in res[1:]:
+        checks.check(not exc and r.ok, f"{tag}: rank on {node.name} failed: {exc or f'rc={r.rc} {r.tail()!r}'}")
+    node0, r0, exc0 = res[0]
+    if exc0 or not r0.ok:
+        checks.fail(f"{tag}: rank 0 on {node0.name} failed: {exc0 or f'rc={r0.rc} {r0.tail()!r}'}")
+        return None
+    return r0
+
+
+def wallclock_skew(computes, inventory) -> dict:
+    """TransferBench 'wallclock' on every tray: {tray name: largest timestamp difference between the XCCs of one of
+    its GPUs in microseconds, or None (no figure / run failed)}. TransferBench times each GFX transfer with these
+    timestamps, so on a tray whose XCC clocks disagree its GPU-timed per-transfer bandwidth is wrong (g02-g17, 18 Nov:
+    5.5-6.9 ms skew on 5 trays made 1 GB copies there read 133-650 GB/s instead of ~880 GB/s)."""
+    cmd = f"{tb_binary(inventory)} wallclock"
+    out = {}
+    for c, r, exc in fan_out(lambda c: run_on(c, cmd, inventory, 120), computes):
+        out[c.name] = None if exc or r is None or not r.ok else parse_tb_wallclock(r.stdout)
+    return out
+
+
+def skewed_trays(computes, inventory) -> dict:
+    """{tray name: skew us} for trays above thresholds.datapath.transferbench.wallclock_max_skew_us (default 10) or
+    without a figure (None)."""
+    limit = float(inventory.th("datapath.transferbench.wallclock_max_skew_us", 10))
+    return {n: v for n, v in wallclock_skew(computes, inventory).items() if v is None or v > limit}
 
 
 def transferbench_incast(dst, srcs, inventory, checks: Checks, duration_s: float, size: str | None = None) -> dict:

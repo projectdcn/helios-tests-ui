@@ -314,3 +314,124 @@ def parse_smoketest(text: str) -> SmokeResult:
             if parts[0] and cells and all(c in ("P", "F", "S", "-") for c in cells):
                 res.rows[parts[0]] = cells
     return res
+
+
+# ------------------------------------------------------- TransferBench presets
+
+@dataclass
+class TbSmokeResult:
+    """TransferBench 'smoketest' preset: '| Copy (H2D) | ALL |  01  | *** |  09  | **. | .** |' (*=pass .=skip F=fail)."""
+    rows: dict[str, list[str]] = field(default_factory=dict)  # test name -> result cells
+    gpus: int | None = None                                    # 'Running tests on N GPUs total across R rank(s)'
+    ranks: int | None = None
+    passed: bool = False                                       # 'All tests passed'
+    errors: list[str] = field(default_factory=list)            # 'ERROR: ...' lines (e.g. config mismatch across ranks)
+
+    def failed(self) -> list[str]:
+        return [name for name, cells in self.rows.items() if any("F" in c for c in cells)]
+
+    def ran(self) -> int:
+        """Number of individual checks that ran ('*' or 'F')."""
+        return sum(c.count("*") + c.count("F") for cells in self.rows.values() for c in cells)
+
+
+def parse_tb_smoketest(text: str) -> TbSmokeResult:
+    res = TbSmokeResult()
+    for line in text.splitlines():
+        s = line.strip()
+        m = re.search(r"Running tests on (\d+) GPUs total across (\d+) rank", s)
+        if m:
+            res.gpus, res.ranks = int(m.group(1)), int(m.group(2))
+        elif s == "All tests passed":
+            res.passed = True
+        elif re.match(r"^ERROR\b", s):
+            res.errors.append(s)
+        elif s.startswith("|") and not s.startswith("|-"):
+            parts = [p.strip() for p in s.strip("|").split("|")]
+            cells = [p for p in parts[1:] if re.fullmatch(r"[*.F]+", p)]
+            if parts[0] and parts[0] != "Name" and cells:
+                res.rows[parts[0]] = cells
+    return res
+
+
+@dataclass
+class TbPodA2A:
+    """TransferBench 'poda2a' preset: a source-GPU x destination-GPU matrix (GB/s) for every GPU of the pod, an
+    'RTotal' row (per destination GPU receive totals) and the 'STotal' / 'Actual' aggregate in its last two cells."""
+    ranks: int | None = None                                   # '[#Ranks:N]'
+    src: list[tuple[int, int, float]] = field(default_factory=list)   # (rank, gpu, send total GB/s)
+    rx: list[float] = field(default_factory=list)              # receive total per destination GPU
+    stotal: float | None = None
+    actual: float | None = None
+    errors: list[str] = field(default_factory=list)
+
+
+def parse_tb_poda2a(text: str) -> TbPodA2A:
+    res, rank = TbPodA2A(), None
+    for line in text.splitlines():
+        s = line.strip()
+        m = re.search(r"#Ranks:(\d+)", s)
+        if m:
+            res.ranks = int(m.group(1))
+        if re.match(r"^ERROR\b", s):
+            res.errors.append(s)
+            continue
+        if "RTotal" in s:
+            nums = [float(x) for x in re.findall(r"\d+\.\d+", s)]
+            if len(nums) >= 3:
+                res.rx, res.stotal, res.actual = nums[:-2], nums[-2], nums[-1]
+            continue
+        m = re.match(r"^│\s*(?:Rank (\d+))?\s*│\s*GPU (\d+)\s*│(.*)$", s)
+        if m:
+            if m.group(1) is not None:
+                rank = int(m.group(1))
+            nums = [float(x) for x in re.findall(r"\d+\.\d+", m.group(3))]
+            if len(nums) >= 2 and rank is not None:
+                res.src.append((rank, int(m.group(2)), nums[-2]))
+    return res
+
+
+_P2P_ROW = re.compile(r"Rank (\d+)\s*[│|]?\s*GPU (\d+)\s*[│|]\s*Rank (\d+)\s*[│|]?\s*GPU (\d+)\s*[│|]\s*([\d.]+|N/A)")
+
+
+def parse_tb_podp2p(text: str) -> dict[tuple[int, int, int, int], float | None]:
+    """TransferBench 'podp2p' with OUTPUT_FORMAT=0 (one row per link, unidirectional):
+    '│  Rank 00    GPU 00 │  Rank 01    GPU 02 │    132.96 │' (v1.70.02: no divider between rank and GPU)
+    -> {(src_rank, src_gpu, dst_rank, dst_gpu): GB/s or None (N/A)}. Same-tray links and GPU->itself are listed too.
+    With P2P_MODE=0 the unidirectional table comes first; only the first value per link is kept."""
+    out: dict[tuple[int, int, int, int], float | None] = {}
+    for m in _P2P_ROW.finditer(text):
+        k = tuple(int(x) for x in m.groups()[:4])
+        if k not in out:
+            out[k] = None if m.group(5) == "N/A" else float(m.group(5))
+    return out
+
+
+_XFER_ROW = re.compile(r"Transfer\s+(\d+)\s*[│|]\s*([\d.]+) GB/s\s*[│|].*?[│|]\s*R(\d+)G(\d+)\s*->\s*R\d+G\d+(?::\d+)?\s*->\s*R(\d+)G(\d+)")
+_AGG_CPU = re.compile(r"Aggregate \(CPU\)\s*[│|]\s*([\d.]+) GB/s")
+
+
+@dataclass
+class TbTransfers:
+    """TransferBench per-Transfer results (cmdline / config runs): 'Transfer 0 │ 45.052 GB/s │ 23.833 ms │ ... │
+    R0G0 -> R0G0:8 -> R9G0' and the 'Aggregate (CPU) │ 4458.837 GB/s' summary (last test of the output wins)."""
+    transfers: dict[int, tuple[int, int, int, int, float]] = field(default_factory=dict)  # n -> (sr, sg, dr, dg, GB/s)
+    aggregate_cpu: float | None = None
+
+
+def parse_tb_transfers(text: str) -> TbTransfers:
+    res = TbTransfers()
+    for m in _XFER_ROW.finditer(text):
+        res.transfers[int(m.group(1))] = (int(m.group(3)), int(m.group(4)), int(m.group(5)), int(m.group(6)),
+                                          float(m.group(2)))
+    hits = _AGG_CPU.findall(text)
+    if hits:
+        res.aggregate_cpu = float(hits[-1])
+    return res
+
+
+def parse_tb_wallclock(text: str) -> float | None:
+    """TransferBench 'wallclock' preset: largest timestamp difference between the XCCs of a GPU, in microseconds
+    ('Maximum Delta detected: 686845.80 cycles (6868.46 usec)'); None when the line is missing."""
+    m = re.search(r"Maximum Delta detected:\s*[\d.]+\s*cycles\s*\(([\d.]+)\s*usec\)", text)
+    return float(m.group(1)) if m else None

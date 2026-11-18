@@ -1380,3 +1380,49 @@ cases:
     returns over SSH with a new boot id, amdgpu loaded, datapath reset and every GPU ACTIVE'
   category: ras-reset
   origin: added 2026-10-29
+# Full-rack collective / TransferBench runs (tests/l1/test_rccl_smoke.py, tests/l1/test_tb_fullrack.py) - added 17 Nov 2026
+- id: TC-DP-001
+  level: L1
+  title: 'RCCL smoke test over all compute trays: one rank per GPU (72 on a full rack), AllReduce/AllGather/ReduceScatter/AllToAll/Broadcast
+    (fp32, + bf16 reductions) at 1 KB/4 MB/1 GB all pass'
+  category: afm
+  origin: added 2026-11-17
+- id: TC-DP-002
+  level: L1
+  title: TransferBench a2a as one job over all compute trays (one rank per tray, every tray's GPUs all-to-all at the same time); aggregate bandwidth reported
+  category: afm
+  origin: added 2026-11-17
+- id: TC-DP-003
+  level: L1
+  title: 'TransferBench poda2a: every GPU of the pod to every other GPU over the scale-up fabric; every GPU sends and receives, no GPU far below the mean;
+    aggregate bandwidth reported'
+  category: afm
+  origin: added 2026-11-17
+- id: TC-DP-004
+  level: L1
+  title: TransferBench smoketest preset on every compute tray (copy / broadcast / gather / all-to-all over GFX and DMA) - all checks pass
+  category: afm
+  origin: added 2026-11-17
+- id: TC-DP-005
+  level: L1
+  title: TransferBench smoketest preset as one job over all compute trays (one rank per tray) - cross-tray copy checks pass
+  category: afm
+  origin: added 2026-11-17
+- id: TC-DP-006
+  level: L1
+  title: 'Per-link scale-up bandwidth: every GPU->GPU link between trays measured on its own (TransferBench podp2p, tray pairs round-robin);
+    every link has a figure, none far below the median; slowest link reported'
+  category: afm
+  origin: added 2026-11-17
+- id: TC-DP-007
+  level: L1
+  title: 'Scale-up bisection bandwidth: first half of the trays <-> second half, every GPU at once in both directions (TransferBench cmdline);
+    aggregate reported'
+  category: afm
+  origin: added 2026-11-17
+- id: TC-DP-008
+  level: L1
+  title: 'GPU wall clock consistent inside each GPU: the XCC timestamp counters of every GPU agree within 10 us (TransferBench wallclock);
+    GPU-timed measurements (TC-DP-006/007) depend on it'
+  category: afm
+  origin: added 2026-11-18

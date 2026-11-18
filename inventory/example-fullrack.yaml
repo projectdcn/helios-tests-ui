@@ -102,6 +102,13 @@ commands:
     bw_regex: null       # null = built-in defaults; set if the summary line differs
     cross_pairs: ring
     timeout_s: 600
+    # full-rack presets (tests/l1/test_tb_fullrack.py, TC-DP-002..005): one rank per tray, rank 0 on the first tray
+    bin: null                 # TransferBench path; null = taken from rank_cmd / in_domain
+    fullrack_port: null       # bootstrap port; null = random 30000-39999 (others' smoketests use the default 29500)
+    fullrack_timeout_s: 900
+    link_size: 1G             # bytes per transfer for the per-link (TC-DP-006) and bisection (TC-DP-007) runs
+    bisection_ses: 256        # CUs per bisection transfer (podp2p's default; 8 caps a transfer at ~63 GB/s)
+    podp2p_timeout_s: 2400
   rccl:
     tests_dir: /opt/rccl-tests
     collectives: [all_reduce, all_gather, reduce_scatter, alltoall, broadcast]
@@ -114,7 +121,7 @@ commands:
     # VERIFY: MPI flags / RCCL env for IFoE cross-domain
     cross_domain: null   # placeholders: {np} {hostlist} {nodes} {collective} {rccl_tests_dir} {min_bytes} {max_bytes} {iters}
     timeout_s: 900
-  rccl_smoke:            # RcclSmokeTest pass/fail gate (SMOKE-RCCL-1N / -MN)
+  rccl_smoke:            # RcclSmokeTest pass/fail gate (SMOKE-RCCL-1N per tray; TC-DP-001 over all trays)
     bin: null            # e.g. /home/<user>/helios/RcclSmokeTest-<rev>/build/RcclSmokeTest
     env: "NCCL_LOG_DIR=/tmp/helios-rccl-logs"
     args: ""             # e.g. "--size 1gb"
@@ -256,7 +263,10 @@ thresholds:
   datapath:
     parallel_computes: true                 # in-domain jobs on all trays at once
     parallel_pairs: false                   # cross-domain pairs one at a time
-    transferbench: {in_domain_min_gbps: null, cross_domain_min_gbps: null}
+    transferbench: {in_domain_min_gbps: null, cross_domain_min_gbps: null,
+                    fullrack_a2a_min_gbps: null, poda2a_min_gbps: null, poda2a_rx_min_ratio: 0.5,
+                    link_min_gbps: null, link_min_ratio: 0.5, bisection_min_gbps: null,
+                    bisection_min_ratio: 0.5}
     rccl: {}                                # e.g. {all_reduce_min_busbw_gbps: 150}
     rccl_cross: {}
     perftest: {min_gbps: null, qp_max_drop_pct: 10}   # per-verb override: write_min_gbps, read_min_gbps, ...

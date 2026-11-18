@@ -1,0 +1,19 @@
+TransferBench v1.70.02 (develop:b82b036) (with NIC+POD support) (Multi-node via sockets)
+Test 1:
+   Executor: Rank 0 GPU 00 │ 412.110 GB/s │   2.605 ms │  1073741824 bytes │ 410.020 GB/s (sum) [c1]
+             Transfer 0    │ 410.020 GB/s │   2.619 ms │  1073741824 bytes │ R0G0 -> R0G0:256 -> R1G0
+   Executor: Rank 0 GPU 01 │ 412.110 GB/s │   2.605 ms │  1073741824 bytes │ 410.020 GB/s (sum) [c1]
+             Transfer 1    │ 410.020 GB/s │   2.619 ms │  1073741824 bytes │ R0G1 -> R0G1:256 -> R1G1
+   Executor: Rank 0 GPU 02 │ 412.110 GB/s │   2.605 ms │  1073741824 bytes │ 410.020 GB/s (sum) [c1]
+             Transfer 2    │ 410.020 GB/s │   2.619 ms │  1073741824 bytes │ R0G2 -> R0G2:256 -> R1G2
+   Executor: Rank 0 GPU 03 │ 412.110 GB/s │   2.605 ms │  1073741824 bytes │ 410.020 GB/s (sum) [c1]
+             Transfer 3    │ 410.020 GB/s │   2.619 ms │  1073741824 bytes │ R0G3 -> R0G3:256 -> R1G3
+   Executor: Rank 1 GPU 00 │ 412.110 GB/s │   2.605 ms │  1073741824 bytes │ 410.020 GB/s (sum) [c2]
+             Transfer 4    │ 410.020 GB/s │   2.619 ms │  1073741824 bytes │ R1G0 -> R1G0:256 -> R0G0
+   Executor: Rank 1 GPU 01 │ 412.110 GB/s │   2.605 ms │  1073741824 bytes │ 410.020 GB/s (sum) [c2]
+             Transfer 5    │ 410.020 GB/s │   2.619 ms │  1073741824 bytes │ R1G1 -> R1G1:256 -> R0G1
+   Executor: Rank 1 GPU 02 │ 412.110 GB/s │   2.605 ms │  1073741824 bytes │ 410.020 GB/s (sum) [c2]
+             Transfer 6    │ 410.020 GB/s │   2.619 ms │  1073741824 bytes │ R1G2 -> R1G2:256 -> R0G2
+   Executor: Rank 1 GPU 03 │ 412.110 GB/s │   2.605 ms │  1073741824 bytes │ 410.020 GB/s (sum) [c2]
+             Transfer 7    │ 410.020 GB/s │   2.619 ms │  1073741824 bytes │ R1G3 -> R1G3:256 -> R0G3
+           Aggregate (CPU) │3280.000 GB/s │   2.700 ms │ 8589934592 bytes │ Overhead 0.081 ms

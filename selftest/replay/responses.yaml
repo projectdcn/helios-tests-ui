@@ -1058,12 +1058,35 @@
 - cmd: '^timeout \d+ afmctl test ping '
   rc: 0
   file: afmctl_ping.txt
+- cmd: ^TransferBench wallclock$
+  rc: 0
+  host: ^c1$
+  file: tb_wallclock_c1.txt
+- cmd: ^TransferBench wallclock$
+  rc: 0
+  host: ^c2$
+  file: tb_wallclock_c2.txt
+- cmd: ^(HELIOS_RUN=\w+ )?(TB_MASTER_PORT=\d+ )?TB_NUM_RANKS=\d+ TB_RANK=0 .*TransferBench poda2a$
+  rc: 0
+  file: tb_poda2a.txt
+- cmd: '^(HELIOS_RUN=\w+ )?(TB_MASTER_PORT=\d+ )?TB_NUM_RANKS=\d+ TB_RANK=0 .*TransferBench podp2p '
+  rc: 0
+  file: tb_podp2p.txt
+- cmd: '^(HELIOS_RUN=\w+ )?(TB_MASTER_PORT=\d+ )?TB_NUM_RANKS=\d+ TB_RANK=0 .*TransferBench cmdline '
+  rc: 0
+  file: tb_bisection.txt
+- cmd: ^(HELIOS_RUN=\w+ )?(TB_MASTER_PORT=\d+ )?TB_NUM_RANKS=\d+ TB_RANK=0 .*TransferBench smoketest$
+  rc: 0
+  file: tb_smoketest_mr.txt
 - cmd: '^(HELIOS_RUN=\w+ )?(TB_MASTER_PORT=\d+ )?TB_NUM_RANKS=\d+ TB_RANK=0 '
   rc: 0
   file: transferbench.txt
 - cmd: ^(HELIOS_RUN=\w+ )?(TB_MASTER_PORT=\d+ )?TB_NUM_RANKS=\d+ TB_RANK=[1-9]
   rc: 0
   stdout: ''
+- cmd: ^TransferBench smoketest$
+  rc: 0
+  file: tb_smoketest.txt
 - cmd: RcclSmokeTest
   rc: 0
   file: rccl_smoke.txt

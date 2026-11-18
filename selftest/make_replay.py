@@ -379,7 +379,8 @@ for i in range(3):
               f"{t + 0.931305:.6f} {_GPU_MAC} > {_SW_MAC}, ethertype Unknown (0xeb87), length 56: \n"
               "\t0x0000:  0120 0003 0101 0000 0000 0000 0000 0000\n\t0x0010:  0000 0000 0000 0000 0000 0000 0000 0000\n"
               "\t0x0020:  0000 0000 0000 0000 0000"]
-add(r"^ip netns exec asic\d timeout \d+ tcpdump -i Ethernet\d+ -nn -e -tt -x ", "\n".join(_ifcp) + "\n",
+add(r"^ip netns exec asic\d cat /sys/class/net/Ethernet\d+/address 2>/dev/null; "
+    r"ip netns exec asic\d timeout \d+ tcpdump -i Ethernet\d+ -nn -e -tt -x ", "\n".join(_ifcp) + "\n",
     name="ifcp_capture.txt", rc=124, host=SW, regex=True)
 
 # --------------------------------------------------------------- computes
@@ -506,8 +507,93 @@ Summary:
 """, name="afmctl_ping.txt", regex=True)
 # TransferBench socket multi-rank: rank 0 prints the results, workers print nothing
 # (multi-rank jobs carry a HELIOS_RUN=<tag> marker so a failed job's other ranks can be killed)
-rules.append({"cmd": r"^(HELIOS_RUN=\w+ )?(TB_MASTER_PORT=\d+ )?TB_NUM_RANKS=\d+ TB_RANK=0 ", "rc": 0, "file": "transferbench.txt"})
+
+
+def _tb_smoke(gpus: int, ranks: int) -> str:
+    """TransferBench 'smoketest' preset (v1.70.02 layout); multi-rank runs skip Broadcast/Gather/AllToAll."""
+    rows = [("Copy (H2D)", 1), ("Copy (D2H)", 2), ("Copy (D2D) (Remote Write)", 3), ("Copy (D2D) (Remote Read )", 4),
+            ("Broadcast  (One to All)", 5), ("Gather     (All to One)", 6), ("All To All (Remote Write)", 7),
+            ("All To All (Remote Read)", 8)]
+    sep = "|---------------------------|-----|------|-----|------|-----|-----|"
+    out = ["TransferBench v1.70.02 (develop:b82b036) (with NIC+POD support) "
+           + ("(Single-node mode)" if ranks == 1 else "(Multi-node via sockets)"),
+           "", f"Running tests on {gpus} GPUs total across {ranks} rank(s)", "Legend: *=Pass .=Skip F=Fail",
+           "                                                      | GFX | GFX |",
+           "| Name                      | GPU | Test | DMA | Test | 001 | 256 |", sep]
+    for name, n in rows:
+        skip = ranks > 1 and n > 4
+        out += [f"| {name:<25} | ALL |  {n:02d}  | {'...' if skip else '***'} |  {n + 8:02d}  | "
+                f"{'...' if skip else '**.'} | {'...' if skip else '.**'} |", sep]
+    out.append("All tests passed")
+    if ranks > 1:
+        out.append("[WARN] Broadcast / Gather / AllToAll tests are disabled by default on multi-node; set TEST_LIST to enable them")
+    return "\n".join(out) + "\n"
+
+
+def _tb_poda2a(ranks: int, gpus: int) -> str:
+    """TransferBench 'poda2a' preset: source x destination GB/s matrix + STotal/Actual columns + RTotal row."""
+    n = ranks * gpus
+    pair = 4.5
+    head = "".join(f"│ Rank {r:02d}{' ' * 25}" for r in range(ranks))
+    out = ["GPU-GFX IntraPod All-To-All benchmark:", "==============================",
+           f"[268435456 bytes per Transfer] [GFX:8] [1 Read(s) 1 Write(s)] [MemType:default GPU] [NIC QueuePairs:0] "
+           f"[#Ranks:{ranks}]", "--- Pod AllToAll Group 0 ---",
+           f"│ SRC+EXE\\DST │            {head}│  STotal  │  Actual  │"]
+    for r in range(ranks):
+        for g in range(gpus):
+            cells = " │ ".join(" ".join("    N/A" if (rr, gg) == (r, g) else f"{pair:7.2f}" for gg in range(gpus))
+                                for rr in range(ranks))
+            label = f"Rank {r:02d}" if g == 0 else "       "
+            out.append(f"│     {label} │     GPU {g:02d} │ {cells} │ {pair * (n - 1):8.2f} │ {pair * (n - 1) * 0.98:8.2f} │")
+    rt = " │ ".join(" ".join(f"{pair * (n - 1):7.2f}" for _ in range(gpus)) for _ in range(ranks))
+    out.append(f"│             │   RTotal   │ {rt} │ {pair * (n - 1) * n:8.2f} │ {pair * (n - 1) * n * 0.98:8.2f} │")
+    return "\n".join(out) + "\n"
+
+
+def _tb_podp2p(ranks: int, gpus: int) -> str:
+    """TransferBench 'podp2p', P2P_MODE=1 OUTPUT_FORMAT=0 (v1.70.02 layout): one row per link, same-tray links too."""
+    rows = [f"│  Rank {a:02d}    GPU {b:02d} │  Rank {x:02d}    GPU {y:02d} │ {(150.0 if a == x else 48.0 + (b + y) / 10):9.2f} │"
+            for a in range(ranks) for b in range(gpus) for x in range(ranks) for y in range(gpus)]
+    return ("Bytes Per Direction 1073741824\nUnidirectional copy peak bandwidth GB/s [Local read / Remote write] "
+            "(GPU-Executor: GFX)\n│ SRC Rank   SRC MEM │ DST Rank   DST MEM │ bw (GB/s) │\n" + "\n".join(rows) + "\n")
+
+
+def _tb_bisection(ranks: int, gpus: int) -> str:
+    """TransferBench cmdline over ranks (v1.70.02 per-Transfer layout): GPU g of rank i <-> GPU g of rank i + ranks/2."""
+    half, out, n = ranks // 2, ["TransferBench v1.70.02 (develop:b82b036) (with NIC+POD support) (Multi-node via sockets)",
+                                "Test 1:"], 0
+    for i in range(half):
+        for a, b in ((i, i + half), (i + half, i)):
+            for g in range(gpus):
+                out += [f"   Executor: Rank {a} GPU {g:02d} │ 412.110 GB/s │   2.605 ms │  1073741824 bytes │ "
+                        f"410.020 GB/s (sum) [c{a + 1}]",
+                        f"             Transfer {n:<4} │ 410.020 GB/s │   2.619 ms │  1073741824 bytes │ "
+                        f"R{a}G{g} -> R{a}G{g}:256 -> R{b}G{g}"]
+                n += 1
+    out.append(f"           Aggregate (CPU) │{410.0 * n:8.3f} GB/s │   2.700 ms │ {n << 30} bytes │ Overhead 0.081 ms")
+    return "\n".join(out) + "\n"
+
+
+def _tb_wallclock(skews_us) -> str:
+    """TransferBench 'wallclock' preset (v1.70.02): per-GPU average delta between the XCC timestamp counters."""
+    rows = [f"  0    {g}  AVG    {us * 100:9.2f}     {us:7.2f}      0.0300     " for g, us in enumerate(skews_us)]
+    hi = max(skews_us)
+    lo = min(skews_us)
+    return ("[WallClock Related]\nRunning 10 iterations on 8 items.  Detected wall clock rate of 100000Khz = 0.01 usec per cycle\n"
+            " Rank GPU Iter Delta(cycles) Delta(usec) TS cost(usec) \n" + "\n".join(rows) +
+            f"\nMinimum Delta detected: {lo * 100:.2f} cycles ({lo:.2f} usec)\nMaximum Delta detected: {hi * 100:.2f} cycles ({hi:.2f} usec)\n")
+
+
+add(r"^TransferBench wallclock$", _tb_wallclock([0.83, 0.24, 0.86, 0.90]), name="tb_wallclock_c1.txt", host="^c1$", regex=True)
+add(r"^TransferBench wallclock$", _tb_wallclock([0.81, 0.30, 0.88, 0.91]), name="tb_wallclock_c2.txt", host="^c2$", regex=True)
+TB_RANK0 = r"^(HELIOS_RUN=\w+ )?(TB_MASTER_PORT=\d+ )?TB_NUM_RANKS=\d+ TB_RANK=0 "
+add(TB_RANK0 + r".*TransferBench poda2a$", _tb_poda2a(2, 4), name="tb_poda2a.txt", regex=True)
+add(TB_RANK0 + r".*TransferBench podp2p ", _tb_podp2p(2, 4), name="tb_podp2p.txt", regex=True)
+add(TB_RANK0 + r".*TransferBench cmdline ", _tb_bisection(2, 4), name="tb_bisection.txt", regex=True)
+add(TB_RANK0 + r".*TransferBench smoketest$", _tb_smoke(8, 2), name="tb_smoketest_mr.txt", regex=True)
+rules.append({"cmd": TB_RANK0, "rc": 0, "file": "transferbench.txt"})
 add(r"^(HELIOS_RUN=\w+ )?(TB_MASTER_PORT=\d+ )?TB_NUM_RANKS=\d+ TB_RANK=[1-9]", "", regex=True)
+add(r"^TransferBench smoketest$", _tb_smoke(4, 1), name="tb_smoketest.txt", regex=True)
 add(r"RcclSmokeTest", """RcclSmokeTest v0.36 (96e7ac2)
 Running single-node smoke test
 GPUs      : 4
